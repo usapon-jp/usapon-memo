@@ -21,10 +21,7 @@ body {
   min-width: 320px;
   min-height: 100vh;
   margin: 0;
-  background:
-    radial-gradient(circle at 18% 8%, rgba(234, 245, 232, 0.72), transparent 30%),
-    radial-gradient(circle at 86% 18%, rgba(255, 245, 189, 0.58), transparent 28%),
-    var(--color-bg);
+  background: #fff;
 }
 
 button,
@@ -349,29 +346,59 @@ button {
   color: #b45c4d;
 }
 
-.editor-header {
-  margin-bottom: 24px;
+.editor-shell {
+  max-width: 520px;
+  padding: 26px 24px 156px;
+  background: #fff;
 }
 
-.editor-header div {
-  min-width: 0;
+.editor-header {
+  margin-bottom: 54px;
+}
+
+.icon-button.ghost {
+  background: transparent;
+  color: #55534e;
+}
+
+.editor-title {
+  margin-bottom: 38px;
   text-align: center;
 }
 
+.editor-title h1 {
+  margin: 0;
+  font-size: 33px;
+  line-height: 1.25;
+  letter-spacing: 0;
+}
+
+.editor-title h1 span {
+  margin-left: 12px;
+  color: #aabf8d;
+  font-size: 21px;
+}
+
+.editor-stage {
+  display: grid;
+  justify-items: center;
+}
+
 .editor-note {
-  width: min(100%, 390px);
-  min-height: 360px;
+  width: min(100%, 282px);
+  min-height: 206px;
   position: relative;
   margin: 0 auto;
-  padding: 48px 26px 86px;
+  padding: 70px 46px 58px 42px;
+  box-shadow: 0 20px 34px rgba(97, 89, 72, 0.14);
 }
 
 .memo-tape {
   position: absolute;
-  top: -13px;
+  top: -16px;
   left: 50%;
-  width: 66px;
-  height: 28px;
+  width: 82px;
+  height: 36px;
   transform: translateX(-50%) rotate(-1deg);
   border-radius: 2px;
   background: rgba(214, 203, 176, 0.5);
@@ -409,48 +436,61 @@ button {
 
 .checklist-editor {
   display: grid;
-  gap: 12px;
-  margin-top: 22px;
+  gap: 22px;
+  margin-top: 0;
 }
 
 .checklist-row {
   display: grid;
-  grid-template-columns: 22px 1fr;
+  grid-template-columns: 30px 1fr;
   align-items: center;
-  gap: 10px;
+  gap: 14px;
 }
 
 .checklist-row input[type="checkbox"] {
-  width: 19px;
-  height: 19px;
+  width: 24px;
+  height: 24px;
   margin: 0;
   accent-color: #8ea381;
   cursor: pointer;
 }
 
 .checklist-row input[type="text"] {
-  border-bottom: 2px solid rgba(92, 92, 92, 0.14);
+  appearance: none;
+  border-bottom: 3px solid rgba(92, 92, 92, 0.12);
+  border-radius: 0;
   background: transparent;
-  font-size: 17px;
+  font-size: 26px;
+  line-height: 1.2;
+  box-shadow: none;
 }
 
-.add-line-button {
-  min-height: 40px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 18px;
-  padding: 0 16px;
-  background: rgba(255, 255, 255, 0.56);
+.checklist-row input[type="text"]:focus {
+  outline: none;
+  box-shadow: none;
 }
 
 .editor-note img {
   position: absolute;
-  right: 16px;
-  bottom: 8px;
-  width: 66px;
-  height: 74px;
+  right: 23px;
+  bottom: 10px;
+  width: 68px;
+  height: 76px;
   object-fit: contain;
+}
+
+.memo-edit-button {
+  min-height: 54px;
+  margin-top: 30px;
+  padding: 0 34px;
+  border: 0;
+  border-radius: 999px;
+  background: #f8f7f3;
+  color: var(--color-text-main);
+  font: inherit;
+  font-size: 18px;
+  font-weight: 700;
+  cursor: pointer;
 }
 
 .memo-body-field {
@@ -471,13 +511,13 @@ button {
 .swatches {
   display: flex;
   justify-content: center;
-  gap: 18px;
-  margin-top: 24px;
+  gap: 28px;
+  margin-top: 44px;
 }
 
 .swatches button {
-  width: 44px;
-  height: 44px;
+  width: 56px;
+  height: 56px;
   border: 0;
   border-radius: 8px;
   box-shadow: 0 5px 12px rgba(0, 0, 0, 0.04);
@@ -485,41 +525,78 @@ button {
 }
 
 .swatches button.selected {
-  outline: 2px solid rgba(92, 92, 92, 0.24);
-  outline-offset: 4px;
+  outline: 3px solid rgba(92, 92, 92, 0.2);
+  outline-offset: 5px;
 }
 
 .editor-actions {
-  width: min(100%, 520px);
-  display: flex;
-  justify-content: flex-end;
+  width: min(calc(100% - 32px), 520px);
+  position: fixed;
+  left: 50%;
+  bottom: max(22px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: 5;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
-  margin: 28px auto 0;
+  margin: 0;
+  pointer-events: none;
 }
 
 .primary-action,
-.secondary-action {
-  min-height: 48px;
+.secondary-action,
+.tertiary-action {
+  min-height: 58px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
-  padding: 0 22px;
+  gap: 6px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  color: var(--color-text-main);
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  pointer-events: auto;
+  box-shadow: 0 8px 18px rgba(97, 89, 72, 0.08);
 }
 
 .primary-action {
-  min-width: 148px;
-  background: #bfd3af;
-  color: #fff;
+  background: #f4edba;
 }
 
-.primary-action:disabled {
+.primary-action:disabled,
+.secondary-action:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
 
 .secondary-action {
-  background: #f4edba;
+  background: #eaf5e8;
+}
+
+.tertiary-action {
+  background: #fff5bd;
+}
+
+.editor-danger-zone {
+  display: flex;
+  justify-content: center;
+  margin-top: 22px;
+}
+
+.editor-danger-zone button {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 999px;
+  background: #fff0eb;
+  color: #b45c4d;
+  font-weight: 700;
+  cursor: pointer;
 }
 
 @media (max-width: 520px) {
@@ -528,8 +605,7 @@ button {
     padding-inline: 18px;
   }
 
-  .list-header h1,
-  .editor-header h1 {
+  .list-header h1 {
     font-size: 24px;
   }
 
@@ -558,12 +634,37 @@ button {
   }
 
   .editor-note {
-    min-height: 330px;
-    padding-inline: 22px;
+    min-height: 194px;
+    padding: 66px 38px 56px 34px;
+  }
+
+  .editor-title h1 {
+    font-size: 30px;
+  }
+
+  .checklist-row input[type="text"] {
+    font-size: 25px;
+  }
+
+  .swatches {
+    gap: 24px;
+  }
+
+  .swatches button {
+    width: 52px;
+    height: 52px;
   }
 
   .editor-actions {
-    display: grid;
-    grid-template-columns: 1fr;
+    width: calc(100% - 28px);
+    gap: 8px;
+  }
+
+  .primary-action,
+  .secondary-action,
+  .tertiary-action {
+    min-height: 56px;
+    padding-inline: 8px;
+    font-size: 14px;
   }
 }

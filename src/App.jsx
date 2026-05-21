@@ -1,15 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Archive,
   ArrowLeft,
-  Check,
   CheckSquare,
   MoreHorizontal,
   Plus,
-  Save,
+  RotateCcw,
   Trash2
 } from 'lucide-react';
-import { getStorageKey, loadMemoData, saveMemoData } from './storage.js';
+import { loadMemoData, saveMemoData } from './storage.js';
 
 const CATEGORIES = [
   { id: 'relax', color: '#EAF5E8', label: 'のんびり', buddy: 'piyo.png', alt: 'ひよこ' },
@@ -29,9 +27,9 @@ const createChecklistItem = (text = '', done = false) => ({
 const createEmptyDraft = () => ({
   id: null,
   title: '',
-  category: 'relax',
+  category: 'routine',
   memo: '',
-  checklist: [createChecklistItem()],
+  checklist: [createChecklistItem(), createChecklistItem()],
   status: 'active'
 });
 
@@ -54,7 +52,7 @@ const formatDate = (value) => {
 
 export default function App() {
   const [data, setData] = useState(loadMemoData);
-  const [screen, setScreen] = useState('list');
+  const [screen, setScreen] = useState('editor');
   const [draft, setDraft] = useState(createEmptyDraft);
   const [showArchived, setShowArchived] = useState(false);
 
@@ -81,7 +79,7 @@ export default function App() {
     setScreen('editor');
   };
 
-  const saveDraft = () => {
+  const saveDraft = (status = 'active') => {
     const checklist = cleanChecklist(draft.checklist);
     const memoText = draft.memo.trim();
     if (!draft.title.trim() && checklist.length === 0 && !memoText) return;
@@ -93,18 +91,28 @@ export default function App() {
       category: draft.category,
       memo: memoText,
       checklist,
-      status: draft.status || 'active',
+      status,
       createdAt: draft.createdAt || now,
       updatedAt: now
     };
 
+    const isEditing = Boolean(draft.id);
     setData(current => ({
       ...current,
       memos: draft.id
         ? current.memos.map(memo => memo.id === draft.id ? nextMemo : memo)
         : [nextMemo, ...current.memos]
     }));
-    setScreen('list');
+    if (isEditing) {
+      setScreen('list');
+      return;
+    }
+    setDraft(createEmptyDraft());
+    setScreen('editor');
+  };
+
+  const resetDraft = () => {
+    setDraft(createEmptyDraft());
   };
 
   const archiveMemo = (memoId) => {
@@ -141,7 +149,9 @@ export default function App() {
         draft={draft}
         setDraft={setDraft}
         onBack={() => setScreen('list')}
+        onOpenList={() => setScreen('list')}
         onSave={saveDraft}
+        onReset={resetDraft}
         onDelete={draft.id ? () => deleteMemo(draft.id) : null}
       />
     );
@@ -153,7 +163,6 @@ export default function App() {
         <div>
           <p className="eyebrow">うさぽんメモ</p>
           <h1>やることリスト</h1>
-          <span>保存先: {getStorageKey()}</span>
         </div>
         <button className="icon-button primary" type="button" onClick={openNewMemo} aria-label="メモを追加">
           <Plus size={24} />
@@ -249,7 +258,7 @@ function MemoCard({ memo, onOpen, onArchive, onRestore, onDelete, isArchived }) 
   );
 }
 
-function MemoEditor({ draft, setDraft, onBack, onSave, onDelete }) {
+function MemoEditor({ draft, setDraft, onBack, onOpenList, onSave, onReset, onDelete }) {
   const inputRefs = useRef({});
   const category = CATEGORY_MAP[draft.category] || CATEGORY_MAP.relax;
   const canSave = draft.title.trim() || draft.memo.trim() || cleanChecklist(draft.checklist).length > 0;
@@ -302,72 +311,52 @@ function MemoEditor({ draft, setDraft, onBack, onSave, onDelete }) {
   return (
     <main className="editor-shell">
       <header className="editor-header">
-        <button className="icon-button" type="button" onClick={onBack} aria-label="一覧へ戻る">
+        <button className="icon-button ghost" type="button" onClick={onBack} aria-label="一覧へ戻る">
           <ArrowLeft size={22} />
         </button>
-        <div>
-          <p className="eyebrow">{draft.id ? '編集' : '新規メモ'}</p>
-          <h1>やることを書く</h1>
-        </div>
-        {onDelete ? (
-          <button className="icon-button danger" type="button" onClick={onDelete} aria-label="削除">
-            <Trash2 size={20} />
-          </button>
-        ) : (
-          <span className="icon-button-spacer" />
-        )}
+        <button className="icon-button ghost" type="button" onClick={onOpenList} aria-label="一覧を開く">
+          <MoreHorizontal size={24} />
+        </button>
       </header>
 
-      <section className={`editor-note sticky-note ${draft.category}`}>
-        <span className="memo-tape" aria-hidden="true" />
-        <label className="title-field">
-          <span>題名</span>
-          <input
-            value={draft.title}
-            placeholder="買い物メモ"
-            onChange={(event) => setDraft(current => ({ ...current, title: event.target.value }))}
-          />
-        </label>
-
-        <div className="checklist-editor">
-          {draft.checklist.map((item, index) => (
-            <label key={item.id} className="checklist-row">
-              <input
-                type="checkbox"
-                checked={item.done}
-                onChange={(event) => updateChecklistItem(item.id, { done: event.target.checked })}
-                aria-label={`${index + 1}行目をチェック`}
-              />
-              <input
-                ref={(element) => {
-                  if (element) inputRefs.current[item.id] = element;
-                }}
-                value={item.text}
-                placeholder={index === 0 ? '牛乳' : 'やること'}
-                onChange={(event) => updateChecklistItem(item.id, { text: event.target.value })}
-                onKeyDown={(event) => handleKeyDown(event, item, index)}
-              />
-            </label>
-          ))}
-        </div>
-
-        <button className="add-line-button" type="button" onClick={() => addItem()}>
-          <Plus size={16} />
-          行を追加
-        </button>
-
-        <img src={`${import.meta.env.BASE_URL}assets/${category.buddy}`} alt={category.alt} />
+      <section className="editor-title">
+        <h1>やることリスト <span aria-hidden="true">☘</span></h1>
       </section>
 
-      <label className="memo-body-field">
-        <span>メモ</span>
-        <textarea
-          rows={4}
-          placeholder="あとで見返したいこと"
-          value={draft.memo}
-          onChange={(event) => setDraft(current => ({ ...current, memo: event.target.value }))}
-        />
-      </label>
+      <section className="editor-stage">
+        <section className={`editor-note sticky-note ${draft.category}`}>
+          <span className="memo-tape" aria-hidden="true" />
+
+          <div className="checklist-editor">
+            {draft.checklist.map((item, index) => (
+              <label key={item.id} className="checklist-row">
+                <input
+                  type="checkbox"
+                  checked={item.done}
+                  onChange={(event) => updateChecklistItem(item.id, { done: event.target.checked })}
+                  aria-label={`${index + 1}行目をチェック`}
+                />
+                <input
+                  type="text"
+                  ref={(element) => {
+                    if (element) inputRefs.current[item.id] = element;
+                  }}
+                  value={item.text}
+                  placeholder={index === 0 ? '買い物' : 'やること'}
+                  onChange={(event) => updateChecklistItem(item.id, { text: event.target.value })}
+                  onKeyDown={(event) => handleKeyDown(event, item, index)}
+                />
+              </label>
+            ))}
+          </div>
+
+          <img src={`${import.meta.env.BASE_URL}assets/${category.buddy}`} alt={category.alt} />
+        </section>
+
+        <button className="memo-edit-button" type="button" onClick={() => focusItem(draft.checklist[0]?.id)}>
+          編集する
+        </button>
+      </section>
 
       <div className="swatches" aria-label="メモの色">
         {CATEGORIES.map(item => (
@@ -382,20 +371,25 @@ function MemoEditor({ draft, setDraft, onBack, onSave, onDelete }) {
         ))}
       </div>
 
-      <div className="editor-actions">
-        {draft.id && draft.status !== 'archived' && (
-          <button
-            className="secondary-action"
-            type="button"
-            onClick={() => setDraft(current => ({ ...current, status: 'archived' }))}
-          >
-            <Archive size={17} />
-            アーカイブ
+      {onDelete && (
+        <div className="editor-danger-zone">
+          <button type="button" onClick={onDelete}>
+            <Trash2 size={17} />
+            削除
           </button>
-        )}
-        <button className="primary-action" type="button" onClick={onSave} disabled={!canSave}>
-          <Save size={18} />
-          保存する
+        </div>
+      )}
+
+      <div className="editor-actions">
+        <button className="primary-action" type="button" onClick={() => onSave('active')} disabled={!canSave}>
+          保存
+        </button>
+        <button className="secondary-action" type="button" onClick={() => onSave('draft')} disabled={!canSave}>
+          下書きに追加
+        </button>
+        <button className="tertiary-action" type="button" onClick={onReset}>
+          <RotateCcw size={17} />
+          リセット
         </button>
       </div>
     </main>

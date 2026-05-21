@@ -22,7 +22,7 @@ const normalizeMemo = (memo = {}) => ({
   category: ['todo', 'routine', 'relax', 'wakuwaku'].includes(memo.category) ? memo.category : 'relax',
   memo: typeof memo.memo === 'string' ? memo.memo : '',
   checklist: normalizeChecklist(memo.checklist),
-  status: memo.status === 'archived' ? 'archived' : 'active',
+  status: ['active', 'draft', 'archived'].includes(memo.status) ? memo.status : 'active',
   createdAt: typeof memo.createdAt === 'string' ? memo.createdAt : new Date().toISOString(),
   updatedAt: typeof memo.updatedAt === 'string' ? memo.updatedAt : new Date().toISOString()
 });
