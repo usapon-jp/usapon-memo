@@ -1,0 +1,19 @@
+{
+  "name": "うさぽんメモ",
+  "short_name": "うさぽんメモ",
+  "description": "スマホの中にある、うさぎの付箋ボード。",
+  "start_url": "/usapon-memo/",
+  "scope": "/usapon-memo/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#fffdf8",
+  "theme_color": "#fffaf0",
+  "icons": [
+    {
+      "src": "/usapon-memo/assets/usa.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

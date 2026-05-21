@@ -1,267 +1,264 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
-  CheckSquare,
-  MoreHorizontal,
+  Check,
+  Home,
+  List,
   Plus,
-  RotateCcw,
+  Save,
+  StickyNote,
   Trash2
 } from 'lucide-react';
+import {
+  MEMO_COLORS,
+  clamp,
+  createChecklistItem,
+  createEmptyMemo,
+  getMemoPreview,
+  isMemoVisibleOnBoard,
+  normalizeMemo,
+  sortMemos
+} from './memoModel.js';
 import { loadMemoData, saveMemoData } from './storage.js';
 
-const CATEGORIES = [
-  { id: 'relax', color: '#EAF5E8', label: 'のんびり', buddy: 'piyo.png', alt: 'ひよこ' },
-  { id: 'wakuwaku', color: '#FFF5BD', label: 'わくわく', buddy: 'lemon.png', alt: 'レモン' },
-  { id: 'todo', color: '#E8F4FA', label: 'TODO', buddy: 'usa.png', alt: 'グレーのうさぎ' },
-  { id: 'routine', color: '#FFF8E8', label: 'ルーティン', buddy: 'pon.png', alt: '茶色のうさぎ' }
-];
+const COLOR_OPTIONS = Object.entries(MEMO_COLORS).map(([id, meta]) => ({ id, ...meta }));
+const TODAY_MESSAGES = ['今日のメモがあるよ', '未完了メモがあるよ', 'ひとつずつ片づけよ'];
 
-const CATEGORY_MAP = Object.fromEntries(CATEGORIES.map(category => [category.id, category]));
-
-const createChecklistItem = (text = '', done = false) => ({
-  id: crypto.randomUUID(),
-  text,
-  done
+const createDraft = (patch = {}) => createEmptyMemo({
+  x: 12 + Math.floor(Math.random() * 28),
+  y: 14 + Math.floor(Math.random() * 34),
+  ...patch
 });
-
-const createEmptyDraft = () => ({
-  id: null,
-  title: '',
-  category: 'routine',
-  memo: '',
-  checklist: [createChecklistItem(), createChecklistItem()],
-  status: 'active'
-});
-
-const cleanChecklist = (items) => items
-  .map(item => ({ ...item, text: item.text.trim() }))
-  .filter(item => item.text);
-
-const getTitleFromDraft = (draft) => {
-  const explicitTitle = draft.title.trim();
-  if (explicitTitle) return explicitTitle;
-  return cleanChecklist(draft.checklist)[0]?.text || 'やることリスト';
-};
-
-const formatDate = (value) => {
-  if (!value) return '';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-  return `${date.getFullYear()}.${String(date.getMonth() + 1).padStart(2, '0')}.${String(date.getDate()).padStart(2, '0')}`;
-};
 
 export default function App() {
   const [data, setData] = useState(loadMemoData);
-  const [screen, setScreen] = useState('editor');
-  const [draft, setDraft] = useState(createEmptyDraft);
-  const [showArchived, setShowArchived] = useState(false);
+  const [page, setPage] = useState('home');
+  const [draft, setDraft] = useState(() => createDraft());
 
   useEffect(() => {
     saveMemoData(data);
   }, [data]);
 
-  const activeMemos = useMemo(() => (
-    data.memos
-      .filter(memo => showArchived ? memo.status === 'archived' : memo.status !== 'archived')
-      .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
-  ), [data.memos, showArchived]);
+  const visibleMemos = useMemo(
+    () => sortMemos(data.memos.filter(isMemoVisibleOnBoard)),
+    [data.memos]
+  );
 
-  const openNewMemo = () => {
-    setDraft(createEmptyDraft());
-    setScreen('editor');
-  };
+  const allMemos = useMemo(() => sortMemos(data.memos), [data.memos]);
 
-  const openMemo = (memo) => {
-    setDraft({
+  const saveMemo = (memo) => {
+    const nextMemo = normalizeMemo({
       ...memo,
-      checklist: memo.checklist.length ? memo.checklist.map(item => ({ ...item })) : [createChecklistItem()]
+      updatedAt: new Date().toISOString()
     });
-    setScreen('editor');
+
+    setData(current => {
+      const exists = current.memos.some(item => item.id === nextMemo.id);
+      return {
+        ...current,
+        memos: exists
+          ? current.memos.map(item => item.id === nextMemo.id ? nextMemo : item)
+          : [nextMemo, ...current.memos]
+      };
+    });
+    setPage('home');
+    setDraft(createDraft());
   };
 
-  const saveDraft = (status = 'active') => {
-    const checklist = cleanChecklist(draft.checklist);
-    const memoText = draft.memo.trim();
-    if (!draft.title.trim() && checklist.length === 0 && !memoText) return;
-
-    const now = new Date().toISOString();
-    const nextMemo = {
-      id: draft.id || crypto.randomUUID(),
-      title: getTitleFromDraft(draft),
-      category: draft.category,
-      memo: memoText,
-      checklist,
-      status,
-      createdAt: draft.createdAt || now,
-      updatedAt: now
-    };
-
-    const isEditing = Boolean(draft.id);
-    setData(current => ({
-      ...current,
-      memos: draft.id
-        ? current.memos.map(memo => memo.id === draft.id ? nextMemo : memo)
-        : [nextMemo, ...current.memos]
-    }));
-    if (isEditing) {
-      setScreen('list');
-      return;
-    }
-    setDraft(createEmptyDraft());
-    setScreen('editor');
-  };
-
-  const resetDraft = () => {
-    setDraft(createEmptyDraft());
-  };
-
-  const archiveMemo = (memoId) => {
+  const patchMemo = (id, patch) => {
     setData(current => ({
       ...current,
       memos: current.memos.map(memo => (
-        memo.id === memoId ? { ...memo, status: 'archived', updatedAt: new Date().toISOString() } : memo
+        memo.id === id
+          ? normalizeMemo({ ...memo, ...patch, updatedAt: new Date().toISOString() })
+          : memo
       ))
     }));
   };
 
-  const restoreMemo = (memoId) => {
-    setData(current => ({
-      ...current,
-      memos: current.memos.map(memo => (
-        memo.id === memoId ? { ...memo, status: 'active', updatedAt: new Date().toISOString() } : memo
-      ))
-    }));
-  };
-
-  const deleteMemo = (memoId) => {
-    const confirmed = window.confirm('このメモを削除しますか？');
+  const deleteMemo = (id) => {
+    const confirmed = window.confirm('この付箋を削除しますか？');
     if (!confirmed) return;
     setData(current => ({
       ...current,
-      memos: current.memos.filter(memo => memo.id !== memoId)
+      memos: current.memos.filter(memo => memo.id !== id)
     }));
-    setScreen('list');
+    setPage('list');
   };
 
-  if (screen === 'editor') {
-    return (
-      <MemoEditor
-        draft={draft}
-        setDraft={setDraft}
-        onBack={() => setScreen('list')}
-        onOpenList={() => setScreen('list')}
-        onSave={saveDraft}
-        onReset={resetDraft}
-        onDelete={draft.id ? () => deleteMemo(draft.id) : null}
-      />
-    );
-  }
+  const openNewMemo = (type = 'note') => {
+    setDraft(createDraft({
+      type,
+      checklist: type === 'checklist' ? [createChecklistItem()] : []
+    }));
+    setPage('create');
+  };
+
+  const openEditMemo = (memo) => {
+    setDraft(normalizeMemo(memo));
+    setPage('create');
+  };
 
   return (
-    <main className="app-shell">
-      <header className="list-header">
-        <div>
-          <p className="eyebrow">うさぽんメモ</p>
-          <h1>やることリスト</h1>
-        </div>
-        <button className="icon-button primary" type="button" onClick={openNewMemo} aria-label="メモを追加">
-          <Plus size={24} />
-        </button>
-      </header>
+    <main className="phone-shell">
+      {page === 'home' && (
+        <HomePage
+          memos={visibleMemos}
+          onAdd={() => openNewMemo('note')}
+          onOpenList={() => setPage('list')}
+          onEdit={openEditMemo}
+          onMove={patchMemo}
+          onToggle={(id, patch) => patchMemo(id, patch)}
+        />
+      )}
 
-      <section className="list-hero">
-        <img src={`${import.meta.env.BASE_URL}assets/piyo.png`} alt="ピヨ" />
-        <div>
-          <p>思いついたことを、軽く置いておく場所。</p>
-          <button type="button" onClick={openNewMemo}>新しいメモを書く</button>
-        </div>
-      </section>
+      {page === 'create' && (
+        <MemoCreatePage
+          draft={draft}
+          setDraft={setDraft}
+          onBack={() => setPage('home')}
+          onSave={saveMemo}
+        />
+      )}
 
-      <div className="segmented-control" aria-label="表示切り替え">
-        <button type="button" className={!showArchived ? 'active' : ''} onClick={() => setShowArchived(false)}>
-          メモ
-        </button>
-        <button type="button" className={showArchived ? 'active' : ''} onClick={() => setShowArchived(true)}>
-          アーカイブ
-        </button>
-      </div>
-
-      {activeMemos.length === 0 ? (
-        <button className="empty-state" type="button" onClick={openNewMemo}>
-          <CheckSquare size={24} />
-          <strong>{showArchived ? 'アーカイブはまだ空です' : 'メモはまだありません'}</strong>
-          <span>{showArchived ? '使わないメモをしまうとここに残ります。' : 'チェック付きメモを作ってみましょう。'}</span>
-        </button>
-      ) : (
-        <section className="memo-grid" aria-label={showArchived ? 'アーカイブ済みメモ' : '保存済みメモ'}>
-          {activeMemos.map(memo => (
-            <MemoCard
-              key={memo.id}
-              memo={memo}
-              onOpen={() => openMemo(memo)}
-              onArchive={() => archiveMemo(memo.id)}
-              onRestore={() => restoreMemo(memo.id)}
-              onDelete={() => deleteMemo(memo.id)}
-              isArchived={showArchived}
-            />
-          ))}
-        </section>
+      {page === 'list' && (
+        <MemoListPage
+          memos={allMemos}
+          onBack={() => setPage('home')}
+          onAdd={() => openNewMemo('note')}
+          onEdit={openEditMemo}
+          onDelete={deleteMemo}
+          onPatch={patchMemo}
+        />
       )}
     </main>
   );
 }
 
-function MemoCard({ memo, onOpen, onArchive, onRestore, onDelete, isArchived }) {
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const category = CATEGORY_MAP[memo.category] || CATEGORY_MAP.relax;
-  const checklist = memo.checklist.filter(item => item.text.trim());
-  const doneCount = checklist.filter(item => item.done).length;
+function HomePage({ memos, onAdd, onOpenList, onEdit, onMove, onToggle }) {
+  const boardRef = useRef(null);
+  const todayMemos = memos.filter(memo => memo.isToday && !memo.completed);
+  const hasToday = todayMemos.length > 0;
+  const message = hasToday ? TODAY_MESSAGES[Math.min(todayMemos.length - 1, TODAY_MESSAGES.length - 1)] : 'きょうもゆっくりいこう';
+
+  const handlePointerDown = (event, memo) => {
+    if (!boardRef.current || event.target.closest('.memo-pin-row button, .complete-chip, input')) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    const rect = boardRef.current.getBoundingClientRect();
+
+    const moveMemo = (moveEvent) => {
+      const x = clamp(((moveEvent.clientX - rect.left) / rect.width) * 100, 0, 74);
+      const y = clamp(((moveEvent.clientY - rect.top) / rect.height) * 100, 0, 78);
+      onMove(memo.id, { x, y });
+    };
+
+    const stopMove = () => {
+      window.removeEventListener('pointermove', moveMemo);
+      window.removeEventListener('pointerup', stopMove);
+      window.removeEventListener('pointercancel', stopMove);
+    };
+
+    window.addEventListener('pointermove', moveMemo);
+    window.addEventListener('pointerup', stopMove);
+    window.addEventListener('pointercancel', stopMove);
+  };
 
   return (
-    <article className={`memo-card sticky-note ${memo.category || 'relax'}`}>
-      <button className="memo-card-main" type="button" onClick={onOpen}>
-        <span className="memo-card-label">{category.label}</span>
-        <strong>{memo.title}</strong>
-        <span className="memo-card-date">{formatDate(memo.updatedAt)}</span>
-        <span className="memo-card-lines">
-          {checklist.slice(0, 4).map(item => (
-            <span key={item.id} className={item.done ? 'is-done' : ''}>
-              <i aria-hidden="true" />
-              {item.text}
-            </span>
-          ))}
-          {checklist.length === 0 && memo.memo && (
-            <span>
-              <i aria-hidden="true" />
-              {memo.memo}
-            </span>
-          )}
-        </span>
-        {checklist.length > 0 && <small>{doneCount}/{checklist.length}</small>}
-        <img src={`${import.meta.env.BASE_URL}assets/${category.buddy}`} alt={category.alt} />
-      </button>
-      <button className="card-menu-button" type="button" onClick={() => setIsMenuOpen(value => !value)} aria-label="メニュー">
-        <MoreHorizontal size={18} />
-      </button>
-      {isMenuOpen && (
-        <div className="card-menu">
-          <button type="button" onClick={onOpen}>編集</button>
-          {isArchived ? (
-            <button type="button" onClick={onRestore}>戻す</button>
-          ) : (
-            <button type="button" onClick={onArchive}>アーカイブ</button>
-          )}
-          <button type="button" className="danger" onClick={onDelete}>削除</button>
+    <section className="home-page">
+      <header className="home-rabbit">
+        <img src={`${import.meta.env.BASE_URL}assets/usa.png`} alt="うさぎ" />
+        <div className={`rabbit-bubble ${hasToday ? 'is-active' : ''}`}>
+          <span>{message}</span>
         </div>
-      )}
+        <button type="button" className="round-tool" onClick={onOpenList} aria-label="メモ一覧">
+          <List size={21} />
+        </button>
+      </header>
+
+      <section className="board-wrap" aria-label="うさぎの付箋ボード">
+        <div className="board-title">
+          <span>うさぎの付箋ボード</span>
+          <small>{memos.length} notes</small>
+        </div>
+        <div ref={boardRef} className="sticky-board">
+          {memos.length === 0 ? (
+            <button type="button" className="board-empty" onClick={onAdd}>
+              <StickyNote size={28} />
+              <strong>付箋を貼ってみよう</strong>
+              <span>右下のボタンから追加できます</span>
+            </button>
+          ) : (
+            memos.map(memo => (
+              <BoardMemo
+                key={memo.id}
+                memo={memo}
+                onPointerDown={(event) => handlePointerDown(event, memo)}
+                onEdit={() => onEdit(memo)}
+                onToggle={(patch) => onToggle(memo.id, patch)}
+              />
+            ))
+          )}
+        </div>
+      </section>
+
+      <footer className="home-footer">
+        <button type="button" className="add-memo-button" onClick={onAdd}>
+          <Plus size={22} />
+          新規メモ
+        </button>
+      </footer>
+    </section>
+  );
+}
+
+function BoardMemo({ memo, onPointerDown, onEdit, onToggle }) {
+  return (
+    <article
+      className={`board-memo ${MEMO_COLORS[memo.color].className} ${memo.pinned ? 'is-pinned' : ''} ${memo.completed ? 'is-completed' : ''}`}
+      style={{ left: `${memo.x}%`, top: `${memo.y}%` }}
+      onPointerDown={onPointerDown}
+    >
+      <div className="memo-pin-row">
+        <button type="button" onClick={() => onToggle({ pinned: !memo.pinned })}>
+          {memo.pinned ? '📌' : '○'}
+        </button>
+        <button type="button" onClick={() => onToggle({ isToday: !memo.isToday })}>
+          {memo.isToday ? '今日' : '＋今日'}
+        </button>
+      </div>
+      <div
+        className="board-memo-body"
+        role="button"
+        tabIndex={0}
+        onClick={onEdit}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') onEdit();
+        }}
+      >
+        {memo.type === 'checklist' ? (
+          <span className="mini-checklist">
+            {memo.checklist.slice(0, 3).map(item => (
+              <span key={item.id} className={item.completed ? 'done' : ''}>
+                <i aria-hidden="true" />
+                {item.text}
+              </span>
+            ))}
+          </span>
+        ) : (
+          <span>{memo.text || '自由メモ'}</span>
+        )}
+      </div>
+      <button type="button" className="complete-chip" onClick={() => onToggle({ completed: !memo.completed })}>
+        {memo.completed ? '完了' : '未完了'}
+      </button>
     </article>
   );
 }
 
-function MemoEditor({ draft, setDraft, onBack, onOpenList, onSave, onReset, onDelete }) {
-  const inputRefs = useRef({});
-  const category = CATEGORY_MAP[draft.category] || CATEGORY_MAP.relax;
-  const canSave = draft.title.trim() || draft.memo.trim() || cleanChecklist(draft.checklist).length > 0;
+function MemoCreatePage({ draft, setDraft, onBack, onSave }) {
+  const canSave = draft.type === 'checklist'
+    ? draft.checklist.some(item => item.text.trim())
+    : draft.text.trim().length > 0;
 
   const updateChecklistItem = (id, patch) => {
     setDraft(current => ({
@@ -270,128 +267,175 @@ function MemoEditor({ draft, setDraft, onBack, onOpenList, onSave, onReset, onDe
     }));
   };
 
-  const focusItem = (id) => {
-    window.setTimeout(() => inputRefs.current[id]?.focus(), 0);
-  };
-
-  const addItem = (afterId = null) => {
-    const nextItem = createChecklistItem();
-    setDraft(current => {
-      const index = current.checklist.findIndex(item => item.id === afterId);
-      const checklist = index === -1
-        ? [...current.checklist, nextItem]
-        : [...current.checklist.slice(0, index + 1), nextItem, ...current.checklist.slice(index + 1)];
-      return { ...current, checklist };
-    });
-    focusItem(nextItem.id);
-  };
-
-  const removeItem = (itemId, focusTarget) => {
+  const addChecklistItem = () => {
     setDraft(current => ({
       ...current,
-      checklist: current.checklist.filter(item => item.id !== itemId)
+      checklist: [...current.checklist, createChecklistItem()]
     }));
-    if (focusTarget) focusItem(focusTarget);
   };
 
-  const handleKeyDown = (event, item, index) => {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      addItem(item.id);
-      return;
-    }
-
-    if (event.key === 'Backspace' && item.text === '' && draft.checklist.length > 1) {
-      event.preventDefault();
-      const focusTarget = draft.checklist[index - 1]?.id || draft.checklist[index + 1]?.id;
-      removeItem(item.id, focusTarget);
-    }
+  const cleanAndSave = () => {
+    const nextDraft = normalizeMemo({
+      ...draft,
+      checklist: draft.checklist.filter(item => item.text.trim())
+    });
+    onSave(nextDraft);
   };
 
   return (
-    <main className="editor-shell">
-      <header className="editor-header">
-        <button className="icon-button ghost" type="button" onClick={onBack} aria-label="一覧へ戻る">
+    <section className="create-page">
+      <header className="page-header">
+        <button type="button" className="icon-button ghost" onClick={onBack} aria-label="ホームへ戻る">
           <ArrowLeft size={22} />
         </button>
-        <button className="icon-button ghost" type="button" onClick={onOpenList} aria-label="一覧を開く">
-          <MoreHorizontal size={24} />
-        </button>
+        <div>
+          <p className="eyebrow">メモ作成</p>
+          <h1>付箋を書く</h1>
+        </div>
+        <span className="header-spacer" />
       </header>
 
-      <section className="editor-title">
-        <h1>やることリスト <span aria-hidden="true">☘</span></h1>
-      </section>
+      <div className="type-tabs" aria-label="メモの種類">
+        <button
+          type="button"
+          className={draft.type === 'note' ? 'active' : ''}
+          onClick={() => setDraft(current => ({ ...current, type: 'note', checklist: [] }))}
+        >
+          自由メモ
+        </button>
+        <button
+          type="button"
+          className={draft.type === 'checklist' ? 'active' : ''}
+          onClick={() => setDraft(current => ({
+            ...current,
+            type: 'checklist',
+            checklist: current.checklist.length ? current.checklist : [createChecklistItem()]
+          }))}
+        >
+          チェックリスト
+        </button>
+      </div>
 
-      <section className="editor-stage">
-        <section className={`editor-note sticky-note ${draft.category}`}>
-          <span className="memo-tape" aria-hidden="true" />
-
-          <div className="checklist-editor">
+      <section className={`create-card ${MEMO_COLORS[draft.color].className}`}>
+        <span className="memo-tape" aria-hidden="true" />
+        {draft.type === 'note' ? (
+          <textarea
+            value={draft.text}
+            placeholder="ここにメモを書く"
+            onChange={(event) => setDraft(current => ({ ...current, text: event.target.value }))}
+          />
+        ) : (
+          <div className="checklist-form">
             {draft.checklist.map((item, index) => (
-              <label key={item.id} className="checklist-row">
+              <label key={item.id} className="checklist-form-row">
                 <input
                   type="checkbox"
-                  checked={item.done}
-                  onChange={(event) => updateChecklistItem(item.id, { done: event.target.checked })}
-                  aria-label={`${index + 1}行目をチェック`}
+                  checked={item.completed}
+                  onChange={(event) => updateChecklistItem(item.id, { completed: event.target.checked })}
+                  aria-label={`${index + 1}行目を完了`}
                 />
                 <input
                   type="text"
-                  ref={(element) => {
-                    if (element) inputRefs.current[item.id] = element;
-                  }}
                   value={item.text}
                   placeholder={index === 0 ? '買い物' : 'やること'}
                   onChange={(event) => updateChecklistItem(item.id, { text: event.target.value })}
-                  onKeyDown={(event) => handleKeyDown(event, item, index)}
                 />
               </label>
             ))}
+            <button type="button" className="line-add" onClick={addChecklistItem}>
+              <Plus size={16} />
+              行を追加
+            </button>
           </div>
-
-          <img src={`${import.meta.env.BASE_URL}assets/${category.buddy}`} alt={category.alt} />
-        </section>
-
-        <button className="memo-edit-button" type="button" onClick={() => focusItem(draft.checklist[0]?.id)}>
-          編集する
-        </button>
+        )}
       </section>
 
-      <div className="swatches" aria-label="メモの色">
-        {CATEGORIES.map(item => (
-          <button
-            key={item.id}
-            type="button"
-            className={draft.category === item.id ? 'selected' : ''}
-            style={{ background: item.color }}
-            onClick={() => setDraft(current => ({ ...current, category: item.id }))}
-            aria-label={item.label}
-          />
-        ))}
-      </div>
+      <section className="memo-options">
+        <div className="color-row" aria-label="メモ色">
+          {COLOR_OPTIONS.map(color => (
+            <button
+              key={color.id}
+              type="button"
+              className={`${color.className} ${draft.color === color.id ? 'selected' : ''}`}
+              onClick={() => setDraft(current => ({ ...current, color: color.id }))}
+              aria-label={color.label}
+            />
+          ))}
+        </div>
 
-      {onDelete && (
-        <div className="editor-danger-zone">
-          <button type="button" onClick={onDelete}>
-            <Trash2 size={17} />
-            削除
-          </button>
+        <div className="flag-grid">
+          <ToggleButton label="ピン留め" active={draft.pinned} onClick={() => setDraft(current => ({ ...current, pinned: !current.pinned }))} />
+          <ToggleButton label="今日のメモ" active={draft.isToday} onClick={() => setDraft(current => ({ ...current, isToday: !current.isToday }))} />
+          <ToggleButton label="完了" active={draft.completed} onClick={() => setDraft(current => ({ ...current, completed: !current.completed }))} />
+        </div>
+      </section>
+
+      <footer className="create-actions">
+        <button type="button" onClick={cleanAndSave} disabled={!canSave}>
+          <Save size={18} />
+          保存する
+        </button>
+      </footer>
+    </section>
+  );
+}
+
+function MemoListPage({ memos, onBack, onAdd, onEdit, onDelete, onPatch }) {
+  return (
+    <section className="list-page">
+      <header className="page-header">
+        <button type="button" className="icon-button ghost" onClick={onBack} aria-label="ホームへ戻る">
+          <ArrowLeft size={22} />
+        </button>
+        <div>
+          <p className="eyebrow">メモ一覧</p>
+          <h1>貼った付箋</h1>
+        </div>
+        <button type="button" className="icon-button primary" onClick={onAdd} aria-label="メモ追加">
+          <Plus size={21} />
+        </button>
+      </header>
+
+      {memos.length === 0 ? (
+        <button type="button" className="list-empty" onClick={onAdd}>
+          <StickyNote size={26} />
+          まだ付箋がありません
+        </button>
+      ) : (
+        <div className="memo-list">
+          {memos.map(memo => (
+            <article key={memo.id} className={`list-memo ${MEMO_COLORS[memo.color].className} ${memo.archived ? 'is-archived' : ''}`}>
+              <button type="button" className="list-memo-main" onClick={() => onEdit(memo)}>
+                <strong>{getMemoPreview(memo)}</strong>
+                <span>{memo.type === 'checklist' ? 'チェックリスト' : '自由メモ'}</span>
+              </button>
+              <div className="list-memo-actions">
+                <button type="button" onClick={() => onPatch(memo.id, { completed: !memo.completed })}>
+                  <Check size={15} />
+                  {memo.completed ? '戻す' : '完了'}
+                </button>
+                <button type="button" onClick={() => onPatch(memo.id, { isToday: !memo.isToday })}>
+                  {memo.isToday ? '今日' : '今日にする'}
+                </button>
+                <button type="button" onClick={() => onPatch(memo.id, { pinned: !memo.pinned })}>
+                  {memo.pinned ? 'ピン中' : 'ピン'}
+                </button>
+                <button type="button" className="danger" onClick={() => onDelete(memo.id)}>
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            </article>
+          ))}
         </div>
       )}
+    </section>
+  );
+}
 
-      <div className="editor-actions">
-        <button className="primary-action" type="button" onClick={() => onSave('active')} disabled={!canSave}>
-          保存
-        </button>
-        <button className="secondary-action" type="button" onClick={() => onSave('draft')} disabled={!canSave}>
-          下書きに追加
-        </button>
-        <button className="tertiary-action" type="button" onClick={onReset}>
-          <RotateCcw size={17} />
-          リセット
-        </button>
-      </div>
-    </main>
+function ToggleButton({ label, active, onClick }) {
+  return (
+    <button type="button" className={active ? 'active' : ''} onClick={onClick}>
+      {label}
+    </button>
   );
 }
