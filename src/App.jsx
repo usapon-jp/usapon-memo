@@ -2,10 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
   Check,
-  Home,
+  Clock,
   List,
+  MoreHorizontal,
   Plus,
-  Save,
   StickyNote,
   Trash2
 } from 'lucide-react';
@@ -15,16 +15,35 @@ import {
   createChecklistItem,
   createEmptyMemo,
   getMemoPreview,
+  getReminderStatus,
   isMemoVisibleOnBoard,
   normalizeMemo,
   sortMemos
 } from './memoModel.js';
 import { loadMemoData, saveMemoData } from './storage.js';
 
-const COLOR_OPTIONS = Object.entries(MEMO_COLORS).map(([id, meta]) => ({ id, ...meta }));
+const COLOR_ORDER = ['green', 'yellow', 'blue', 'pink'];
+const COLOR_OPTIONS = COLOR_ORDER.map(id => ({ id, ...MEMO_COLORS[id] }));
 const TODAY_MESSAGES = ['今日のメモがあるよ', '未完了メモがあるよ', 'ひとつずつ片づけよ'];
 
+const toDatetimeLocalValue = (value) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const offsetDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return offsetDate.toISOString().slice(0, 16);
+};
+
+const fromDatetimeLocalValue = (value) => {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+};
+
 const createDraft = (patch = {}) => createEmptyMemo({
+  color: 'green',
+  type: 'checklist',
+  checklist: [createChecklistItem()],
   x: 12 + Math.floor(Math.random() * 28),
   y: 14 + Math.floor(Math.random() * 34),
   ...patch
@@ -34,14 +53,22 @@ export default function App() {
   const [data, setData] = useState(loadMemoData);
   const [page, setPage] = useState('home');
   const [draft, setDraft] = useState(() => createDraft());
+  const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
     saveMemoData(data);
   }, [data]);
 
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setNow(new Date());
+    }, 60000);
+    return () => window.clearInterval(timer);
+  }, []);
+
   const visibleMemos = useMemo(
-    () => sortMemos(data.memos.filter(isMemoVisibleOnBoard)),
-    [data.memos]
+    () => sortMemos(data.memos.filter(memo => isMemoVisibleOnBoard(memo, now))),
+    [data.memos, now]
   );
 
   const allMemos = useMemo(() => sortMemos(data.memos), [data.memos]);
@@ -86,7 +113,7 @@ export default function App() {
     setPage('list');
   };
 
-  const openNewMemo = (type = 'note') => {
+  const openNewMemo = (type = 'checklist') => {
     setDraft(createDraft({
       type,
       checklist: type === 'checklist' ? [createChecklistItem()] : []
@@ -104,7 +131,7 @@ export default function App() {
       {page === 'home' && (
         <HomePage
           memos={visibleMemos}
-          onAdd={() => openNewMemo('note')}
+          onAdd={() => openNewMemo('checklist')}
           onOpenList={() => setPage('list')}
           onEdit={openEditMemo}
           onMove={patchMemo}
@@ -124,8 +151,9 @@ export default function App() {
       {page === 'list' && (
         <MemoListPage
           memos={allMemos}
+          now={now}
           onBack={() => setPage('home')}
-          onAdd={() => openNewMemo('note')}
+          onAdd={() => openNewMemo('checklist')}
           onEdit={openEditMemo}
           onDelete={deleteMemo}
           onPatch={patchMemo}
@@ -256,9 +284,18 @@ function BoardMemo({ memo, onPointerDown, onEdit, onToggle }) {
 }
 
 function MemoCreatePage({ draft, setDraft, onBack, onSave }) {
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const primaryInputRef = useRef(null);
   const canSave = draft.type === 'checklist'
     ? draft.checklist.some(item => item.text.trim())
     : draft.text.trim().length > 0;
+  const firstChecklistItem = draft.checklist[0] || createChecklistItem();
+
+  useEffect(() => {
+    if (draft.type === 'checklist' && draft.checklist.length === 0) {
+      setDraft(current => ({ ...current, checklist: [createChecklistItem()] }));
+    }
+  }, [draft.type, draft.checklist.length, setDraft]);
 
   const updateChecklistItem = (id, patch) => {
     setDraft(current => ({
@@ -274,6 +311,10 @@ function MemoCreatePage({ draft, setDraft, onBack, onSave }) {
     }));
   };
 
+  const focusEditor = () => {
+    primaryInputRef.current?.focus();
+  };
+
   const cleanAndSave = () => {
     const nextDraft = normalizeMemo({
       ...draft,
@@ -284,71 +325,82 @@ function MemoCreatePage({ draft, setDraft, onBack, onSave }) {
 
   return (
     <section className="create-page">
-      <header className="page-header">
-        <button type="button" className="icon-button ghost" onClick={onBack} aria-label="ホームへ戻る">
-          <ArrowLeft size={22} />
+      <header className="create-topbar">
+        <button type="button" className="create-nav-button" onClick={onBack} aria-label="ホームへ戻る">
+          <ArrowLeft size={34} strokeWidth={2.4} />
         </button>
-        <div>
-          <p className="eyebrow">メモ作成</p>
-          <h1>付箋を書く</h1>
-        </div>
-        <span className="header-spacer" />
+        <button
+          type="button"
+          className="create-nav-button"
+          onClick={() => setSettingsOpen(current => !current)}
+          aria-label="詳細設定"
+          aria-expanded={settingsOpen}
+        >
+          <MoreHorizontal size={32} strokeWidth={3} />
+        </button>
       </header>
 
-      <div className="type-tabs" aria-label="メモの種類">
-        <button
-          type="button"
-          className={draft.type === 'note' ? 'active' : ''}
-          onClick={() => setDraft(current => ({ ...current, type: 'note', checklist: [] }))}
-        >
-          自由メモ
-        </button>
-        <button
-          type="button"
-          className={draft.type === 'checklist' ? 'active' : ''}
-          onClick={() => setDraft(current => ({
-            ...current,
-            type: 'checklist',
-            checklist: current.checklist.length ? current.checklist : [createChecklistItem()]
-          }))}
-        >
-          チェックリスト
-        </button>
-      </div>
+      <h1 className="create-title">やることリスト</h1>
 
       <section className={`create-card ${MEMO_COLORS[draft.color].className}`}>
         <span className="memo-tape" aria-hidden="true" />
         {draft.type === 'note' ? (
           <textarea
+            ref={primaryInputRef}
             value={draft.text}
-            placeholder="ここにメモを書く"
+            placeholder=""
+            aria-label="メモ本文"
             onChange={(event) => setDraft(current => ({ ...current, text: event.target.value }))}
           />
         ) : (
           <div className="checklist-form">
-            {draft.checklist.map((item, index) => (
-              <label key={item.id} className="checklist-form-row">
+            <label className="checklist-form-row">
+              <input
+                type="checkbox"
+                checked={firstChecklistItem.completed}
+                onChange={(event) => updateChecklistItem(firstChecklistItem.id, { completed: event.target.checked })}
+                aria-label="1行目を完了"
+              />
+              <input
+                ref={primaryInputRef}
+                type="text"
+                value={firstChecklistItem.text}
+                placeholder=""
+                aria-label="やること"
+                onChange={(event) => updateChecklistItem(firstChecklistItem.id, { text: event.target.value })}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') addChecklistItem();
+                }}
+              />
+            </label>
+            {draft.checklist.slice(1).map((item, index) => (
+              <label key={item.id} className="checklist-form-row is-secondary">
                 <input
                   type="checkbox"
                   checked={item.completed}
                   onChange={(event) => updateChecklistItem(item.id, { completed: event.target.checked })}
-                  aria-label={`${index + 1}行目を完了`}
+                  aria-label={`${index + 2}行目を完了`}
                 />
                 <input
                   type="text"
                   value={item.text}
-                  placeholder={index === 0 ? '買い物' : 'やること'}
+                  placeholder=""
+                  aria-label={`${index + 2}行目のやること`}
                   onChange={(event) => updateChecklistItem(item.id, { text: event.target.value })}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') addChecklistItem();
+                  }}
                 />
               </label>
             ))}
-            <button type="button" className="line-add" onClick={addChecklistItem}>
-              <Plus size={16} />
-              行を追加
-            </button>
+            <img className="create-card-character" src={`${import.meta.env.BASE_URL}assets/piyo.png`} alt="" aria-hidden="true" />
           </div>
         )}
       </section>
+
+      <button type="button" className="edit-pill" onClick={focusEditor}>
+        編集する
+      </button>
 
       <section className="memo-options">
         <div className="color-row" aria-label="メモ色">
@@ -363,24 +415,70 @@ function MemoCreatePage({ draft, setDraft, onBack, onSave }) {
           ))}
         </div>
 
-        <div className="flag-grid">
-          <ToggleButton label="ピン留め" active={draft.pinned} onClick={() => setDraft(current => ({ ...current, pinned: !current.pinned }))} />
-          <ToggleButton label="今日のメモ" active={draft.isToday} onClick={() => setDraft(current => ({ ...current, isToday: !current.isToday }))} />
-          <ToggleButton label="完了" active={draft.completed} onClick={() => setDraft(current => ({ ...current, completed: !current.completed }))} />
-        </div>
+        {settingsOpen && (
+          <div className="create-settings">
+            <div className="type-tabs" aria-label="メモの種類">
+              <button
+                type="button"
+                className={draft.type === 'note' ? 'active' : ''}
+                onClick={() => setDraft(current => ({ ...current, type: 'note', checklist: [] }))}
+              >
+                自由メモ
+              </button>
+              <button
+                type="button"
+                className={draft.type === 'checklist' ? 'active' : ''}
+                onClick={() => setDraft(current => ({
+                  ...current,
+                  type: 'checklist',
+                  checklist: current.checklist.length ? current.checklist : [createChecklistItem()]
+                }))}
+              >
+                チェックリスト
+              </button>
+            </div>
+
+            <div className="flag-grid">
+              <ToggleButton label="ピン留め" active={draft.pinned} onClick={() => setDraft(current => ({ ...current, pinned: !current.pinned }))} />
+              <ToggleButton label="今日のメモ" active={draft.isToday} onClick={() => setDraft(current => ({ ...current, isToday: !current.isToday }))} />
+              <ToggleButton label="完了" active={draft.completed} onClick={() => setDraft(current => ({ ...current, completed: !current.completed }))} />
+            </div>
+
+            <div className="reminder-field">
+              <label>
+                <span>
+                  <Clock size={16} />
+                  リマインダー
+                </span>
+                <input
+                  type="datetime-local"
+                  value={toDatetimeLocalValue(draft.reminderAt)}
+                  onChange={(event) => setDraft(current => ({ ...current, reminderAt: fromDatetimeLocalValue(event.target.value) }))}
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => setDraft(current => ({ ...current, reminderAt: null }))}
+                disabled={!draft.reminderAt}
+              >
+                解除
+              </button>
+            </div>
+          </div>
+        )}
       </section>
 
       <footer className="create-actions">
         <button type="button" onClick={cleanAndSave} disabled={!canSave}>
-          <Save size={18} />
-          保存する
+          <Check size={23} strokeWidth={2.6} />
+          ホームに追加
         </button>
       </footer>
     </section>
   );
 }
 
-function MemoListPage({ memos, onBack, onAdd, onEdit, onDelete, onPatch }) {
+function MemoListPage({ memos, now, onBack, onAdd, onEdit, onDelete, onPatch }) {
   return (
     <section className="list-page">
       <header className="page-header">
@@ -408,6 +506,11 @@ function MemoListPage({ memos, onBack, onAdd, onEdit, onDelete, onPatch }) {
               <button type="button" className="list-memo-main" onClick={() => onEdit(memo)}>
                 <strong>{getMemoPreview(memo)}</strong>
                 <span>{memo.type === 'checklist' ? 'チェックリスト' : '自由メモ'}</span>
+                {memo.reminderAt && (
+                  <small className={`reminder-label ${getReminderStatus(memo, now) === 'waiting' ? 'is-waiting' : 'is-due'}`}>
+                    {getReminderStatus(memo, now) === 'waiting' ? '待機中' : 'ホームに表示中'}
+                  </small>
+                )}
               </button>
               <div className="list-memo-actions">
                 <button type="button" onClick={() => onPatch(memo.id, { completed: !memo.completed })}>

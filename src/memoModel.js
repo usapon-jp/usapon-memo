@@ -46,6 +46,7 @@ export const createEmptyMemo = (patch = {}) => {
     isToday: false,
     completed: false,
     archived: false,
+    reminderAt: null,
     createdAt: now,
     updatedAt: now,
     ...patch
@@ -59,7 +60,19 @@ export const getMemoPreview = (memo) => {
   return memo.text || '自由メモ';
 };
 
-export const isMemoVisibleOnBoard = (memo) => !memo.archived;
+export const isReminderDue = (memo, now = new Date()) => {
+  if (!memo.reminderAt) return true;
+  const reminderDate = new Date(memo.reminderAt);
+  if (Number.isNaN(reminderDate.getTime())) return true;
+  return reminderDate.getTime() <= now.getTime();
+};
+
+export const getReminderStatus = (memo, now = new Date()) => {
+  if (!memo.reminderAt) return null;
+  return isReminderDue(memo, now) ? 'due' : 'waiting';
+};
+
+export const isMemoVisibleOnBoard = (memo, now = new Date()) => !memo.archived && isReminderDue(memo, now);
 
 const normalizeChecklist = (checklist) => (
   Array.isArray(checklist)
@@ -90,6 +103,7 @@ const migrateLegacyMemo = (memo, index) => {
     isToday: false,
     completed: memo.status === 'completed',
     archived: memo.status === 'archived',
+    reminderAt: null,
     createdAt: typeof memo.createdAt === 'string' ? memo.createdAt : nowIso(),
     updatedAt: typeof memo.updatedAt === 'string' ? memo.updatedAt : nowIso()
   };
@@ -106,6 +120,7 @@ export const normalizeMemo = (memo = {}, index = 0) => {
   const position = DEFAULT_POSITIONS[index % DEFAULT_POSITIONS.length];
   const createdAt = typeof memo.createdAt === 'string' ? memo.createdAt : nowIso();
   const updatedAt = typeof memo.updatedAt === 'string' ? memo.updatedAt : createdAt;
+  const reminderDate = memo.reminderAt ? new Date(memo.reminderAt) : null;
 
   return {
     id: typeof memo.id === 'string' ? memo.id : createId(),
@@ -119,6 +134,7 @@ export const normalizeMemo = (memo = {}, index = 0) => {
     isToday: Boolean(memo.isToday),
     completed: Boolean(memo.completed),
     archived: Boolean(memo.archived),
+    reminderAt: reminderDate && !Number.isNaN(reminderDate.getTime()) ? reminderDate.toISOString() : null,
     createdAt,
     updatedAt
   };

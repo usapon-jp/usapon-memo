@@ -221,19 +221,19 @@ button {
 }
 
 .memo-yellow {
-  background: var(--yellow-note);
+  background: #fff2a8;
 }
 
 .memo-pink {
-  background: var(--pink-note);
+  background: #fff0dc;
 }
 
 .memo-blue {
-  background: var(--blue-note);
+  background: #e2f3fb;
 }
 
 .memo-green {
-  background: var(--green-note);
+  background: #ecf8ee;
 }
 
 .memo-pin-row {
@@ -316,6 +316,11 @@ button {
   z-index: 10;
 }
 
+.create-actions {
+  width: min(146px, calc(100% - 76px));
+  bottom: max(76px, env(safe-area-inset-bottom));
+}
+
 .add-memo-button,
 .create-actions button {
   width: 100%;
@@ -334,9 +339,19 @@ button {
   box-shadow: 0 16px 28px rgba(211, 158, 51, 0.2);
 }
 
+.create-actions button {
+  min-height: 54px;
+  gap: 9px;
+  background: #dce7d2;
+  color: #aaa4a0;
+  font-size: 15px;
+  white-space: nowrap;
+  box-shadow: 0 13px 20px rgba(117, 132, 106, 0.12);
+}
+
 .add-memo-button:disabled,
 .create-actions button:disabled {
-  opacity: 0.48;
+  opacity: 0.78;
   cursor: not-allowed;
 }
 
@@ -370,11 +385,49 @@ button {
   height: 44px;
 }
 
+.create-page {
+  width: min(100%, 430px);
+  min-height: 100dvh;
+  margin: 0 auto;
+  padding: 54px 38px 144px;
+  background: #fff;
+  color: #8d8781;
+}
+
+.create-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.create-nav-button {
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  color: #8d8781;
+  cursor: pointer;
+}
+
+.create-title {
+  margin: 16px 0 0;
+  color: #8d8781;
+  font-size: 25px;
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: 0;
+  text-align: center;
+}
+
 .type-tabs {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 6px;
-  margin-top: 26px;
   padding: 5px;
   border-radius: 999px;
   background: #f2eee5;
@@ -397,109 +450,152 @@ button {
 }
 
 .create-card {
-  width: min(100%, 340px);
-  min-height: 250px;
+  width: 100%;
+  max-width: 238px;
+  min-height: 198px;
   position: relative;
-  margin: 44px auto 0;
-  padding: 42px 24px 26px;
-  border: 1px solid rgba(0, 0, 0, 0.055);
-  border-radius: 8px;
-  box-shadow: 0 18px 34px rgba(97, 89, 72, 0.14);
+  margin: 92px auto 0;
+  padding: 58px 36px 28px;
+  border: 1px solid rgba(139, 181, 153, 0.36);
+  border-radius: 4px;
+  box-shadow: 0 20px 34px rgba(87, 87, 74, 0.12);
 }
 
 .memo-tape {
   position: absolute;
-  top: -15px;
+  top: -13px;
   left: 50%;
-  width: 72px;
+  width: 65px;
   height: 30px;
   transform: translateX(-50%) rotate(-1deg);
   border-radius: 2px;
-  background: rgba(214, 203, 176, 0.56);
+  background: rgba(218, 207, 188, 0.58);
+  box-shadow: 0 5px 11px rgba(120, 103, 77, 0.08);
 }
 
 .create-card textarea {
   width: 100%;
-  min-height: 176px;
+  min-height: 96px;
   resize: none;
   border: 0;
+  border-bottom: 2px solid rgba(90, 96, 89, 0.18);
+  border-radius: 0;
   background: transparent;
-  color: var(--ink);
-  font-size: 22px;
+  color: #8d8781;
+  font-size: 18px;
   font-weight: 800;
-  line-height: 1.65;
+  line-height: 1.55;
   outline: none;
 }
 
 .checklist-form {
   display: grid;
-  gap: 14px;
+  gap: 12px;
 }
 
 .checklist-form-row {
   display: grid;
-  grid-template-columns: 26px 1fr;
+  grid-template-columns: 25px 1fr;
   align-items: center;
-  gap: 12px;
+  gap: 20px;
+}
+
+.checklist-form-row.is-secondary {
+  margin-top: -3px;
 }
 
 .checklist-form-row input[type="checkbox"] {
-  width: 22px;
-  height: 22px;
+  width: 19px;
+  height: 19px;
   margin: 0;
-  accent-color: var(--green);
+  appearance: none;
+  border: 2px solid #8d8781;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.52);
+}
+
+.checklist-form-row input[type="checkbox"]:checked {
+  background:
+    linear-gradient(135deg, transparent 44%, #6f8567 45%, #6f8567 56%, transparent 57%),
+    linear-gradient(45deg, transparent 50%, #6f8567 51%, #6f8567 62%, transparent 63%),
+    rgba(255, 255, 255, 0.62);
 }
 
 .checklist-form-row input[type="text"] {
+  width: 134px;
   min-width: 0;
   border: 0;
-  border-bottom: 2px solid rgba(92, 92, 92, 0.14);
+  border-bottom: 2px solid rgba(83, 92, 84, 0.18);
   border-radius: 0;
   background: transparent;
-  color: var(--ink);
-  font-size: 20px;
+  color: #8d8781;
+  font-size: 18px;
   font-weight: 800;
+  line-height: 1.4;
   outline: none;
 }
 
-.line-add {
-  min-height: 40px;
-  justify-self: start;
+.create-card-character {
+  width: 58px;
+  height: auto;
+  position: absolute;
+  right: 28px;
+  bottom: 30px;
+  pointer-events: none;
+  user-select: none;
+}
+
+.edit-pill {
+  min-width: 108px;
+  min-height: 44px;
   border: 0;
   border-radius: 999px;
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 0 16px;
-  background: rgba(255, 255, 255, 0.56);
+  justify-content: center;
+  margin: 20px auto 0;
+  padding: 0 26px;
+  background: rgba(248, 247, 245, 0.9);
+  color: #8d8781;
+  font-size: 18px;
   font-weight: 800;
   cursor: pointer;
+  box-shadow: 0 12px 20px rgba(90, 84, 74, 0.08);
 }
 
 .memo-options {
   display: grid;
   gap: 22px;
-  margin-top: 30px;
+  margin-top: 20px;
 }
 
 .color-row {
   display: flex;
   justify-content: center;
-  gap: 18px;
+  gap: 25px;
 }
 
 .color-row button {
-  width: 48px;
-  height: 48px;
+  width: 46px;
+  height: 46px;
   border: 0;
   border-radius: 8px;
   cursor: pointer;
-  box-shadow: 0 8px 16px rgba(97, 89, 72, 0.08);
+  box-shadow: 0 8px 16px rgba(97, 89, 72, 0.04);
 }
 
 .color-row button.selected {
-  outline: 3px solid rgba(92, 92, 92, 0.22);
-  outline-offset: 5px;
+  outline: 3px solid rgba(83, 83, 84, 0.22);
+  outline-offset: 6px;
+}
+
+.create-settings {
+  display: grid;
+  gap: 18px;
+  margin-top: 6px;
+  padding: 14px;
+  border-radius: 16px;
+  background: rgba(249, 247, 242, 0.82);
 }
 
 .flag-grid {
@@ -523,6 +619,55 @@ button {
 .flag-grid button.active {
   background: #bfd3af;
   color: #fff;
+}
+
+.reminder-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 72px;
+  gap: 8px;
+  align-items: end;
+}
+
+.reminder-field label {
+  display: grid;
+  gap: 8px;
+}
+
+.reminder-field label span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.reminder-field input {
+  width: 100%;
+  min-height: 44px;
+  min-width: 0;
+  border: 1px solid rgba(146, 132, 103, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--ink);
+  padding: 0 12px;
+  outline: none;
+}
+
+.reminder-field button {
+  min-height: 44px;
+  border: 0;
+  border-radius: 999px;
+  background: #f2eee5;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.reminder-field button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .memo-list {
@@ -582,6 +727,28 @@ button {
   font-weight: 800;
 }
 
+.reminder-label {
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  margin-top: 8px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.reminder-label.is-waiting {
+  background: rgba(255, 255, 255, 0.66);
+  color: #8c897f;
+}
+
+.reminder-label.is-due {
+  background: #bfd3af;
+  color: #fff;
+}
+
 .list-memo-actions {
   display: flex;
   flex-wrap: wrap;
@@ -628,6 +795,10 @@ button {
   }
 
   .flag-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .reminder-field {
     grid-template-columns: 1fr;
   }
 }
