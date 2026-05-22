@@ -240,6 +240,8 @@ function HomePage({ memos, onAdd, onOpenList, onEdit, onMove, onToggle }) {
 }
 
 function BoardMemo({ memo, onPointerDown, onEdit, onToggle }) {
+  const hasTitle = memo.title.trim().length > 0;
+
   return (
     <article
       className={`board-memo ${MEMO_COLORS[memo.color].className} ${memo.pinned ? 'is-pinned' : ''} ${memo.completed ? 'is-completed' : ''}`}
@@ -263,6 +265,9 @@ function BoardMemo({ memo, onPointerDown, onEdit, onToggle }) {
           if (event.key === 'Enter' || event.key === ' ') onEdit();
         }}
       >
+        {hasTitle && (
+          <strong className="board-memo-title">{memo.title}</strong>
+        )}
         {memo.type === 'checklist' ? (
           <span className="mini-checklist">
             {memo.checklist.slice(0, 3).map(item => (
@@ -286,9 +291,12 @@ function BoardMemo({ memo, onPointerDown, onEdit, onToggle }) {
 function MemoCreatePage({ draft, setDraft, onBack, onSave }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const primaryInputRef = useRef(null);
+  const titleInputRef = useRef(null);
+  const checklistInputRefs = useRef({});
+  const pendingFocusId = useRef(null);
   const canSave = draft.type === 'checklist'
-    ? draft.checklist.some(item => item.text.trim())
-    : draft.text.trim().length > 0;
+    ? draft.title.trim().length > 0 || draft.checklist.some(item => item.text.trim())
+    : draft.title.trim().length > 0 || draft.text.trim().length > 0;
   const firstChecklistItem = draft.checklist[0] || createChecklistItem();
 
   useEffect(() => {
@@ -296,6 +304,12 @@ function MemoCreatePage({ draft, setDraft, onBack, onSave }) {
       setDraft(current => ({ ...current, checklist: [createChecklistItem()] }));
     }
   }, [draft.type, draft.checklist.length, setDraft]);
+
+  useEffect(() => {
+    if (!pendingFocusId.current) return;
+    checklistInputRefs.current[pendingFocusId.current]?.focus();
+    pendingFocusId.current = null;
+  }, [draft.checklist.length]);
 
   const updateChecklistItem = (id, patch) => {
     setDraft(current => ({
@@ -305,14 +319,16 @@ function MemoCreatePage({ draft, setDraft, onBack, onSave }) {
   };
 
   const addChecklistItem = () => {
+    const nextItem = createChecklistItem();
+    pendingFocusId.current = nextItem.id;
     setDraft(current => ({
       ...current,
-      checklist: [...current.checklist, createChecklistItem()]
+      checklist: [...current.checklist, nextItem]
     }));
   };
 
   const focusEditor = () => {
-    primaryInputRef.current?.focus();
+    titleInputRef.current?.focus();
   };
 
   const cleanAndSave = () => {
@@ -329,6 +345,7 @@ function MemoCreatePage({ draft, setDraft, onBack, onSave }) {
         <button type="button" className="create-nav-button" onClick={onBack} aria-label="ホームへ戻る">
           <ArrowLeft size={34} strokeWidth={2.4} />
         </button>
+        <h1 className="create-title">やることリスト</h1>
         <button
           type="button"
           className="create-nav-button"
@@ -340,10 +357,23 @@ function MemoCreatePage({ draft, setDraft, onBack, onSave }) {
         </button>
       </header>
 
-      <h1 className="create-title">やることリスト</h1>
-
       <section className={`create-card ${MEMO_COLORS[draft.color].className}`}>
         <span className="memo-tape" aria-hidden="true" />
+        <input
+          ref={titleInputRef}
+          className="memo-title-input"
+          type="text"
+          value={draft.title}
+          placeholder="見出し"
+          aria-label="メモの見出し"
+          onChange={(event) => setDraft(current => ({ ...current, title: event.target.value }))}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              primaryInputRef.current?.focus();
+            }
+          }}
+        />
         {draft.type === 'note' ? (
           <textarea
             ref={primaryInputRef}
@@ -369,7 +399,10 @@ function MemoCreatePage({ draft, setDraft, onBack, onSave }) {
                 aria-label="やること"
                 onChange={(event) => updateChecklistItem(firstChecklistItem.id, { text: event.target.value })}
                 onKeyDown={(event) => {
-                  if (event.key === 'Enter') addChecklistItem();
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    addChecklistItem();
+                  }
                 }}
               />
             </label>
@@ -382,13 +415,23 @@ function MemoCreatePage({ draft, setDraft, onBack, onSave }) {
                   aria-label={`${index + 2}行目を完了`}
                 />
                 <input
+                  ref={(element) => {
+                    if (element) {
+                      checklistInputRefs.current[item.id] = element;
+                    } else {
+                      delete checklistInputRefs.current[item.id];
+                    }
+                  }}
                   type="text"
                   value={item.text}
                   placeholder=""
                   aria-label={`${index + 2}行目のやること`}
                   onChange={(event) => updateChecklistItem(item.id, { text: event.target.value })}
                   onKeyDown={(event) => {
-                    if (event.key === 'Enter') addChecklistItem();
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      addChecklistItem();
+                    }
                   }}
                 />
               </label>

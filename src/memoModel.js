@@ -36,6 +36,7 @@ export const createEmptyMemo = (patch = {}) => {
   const now = nowIso();
   return normalizeMemo({
     id: createId(),
+    title: '',
     type: 'note',
     text: '',
     checklist: [createChecklistItem()],
@@ -54,6 +55,7 @@ export const createEmptyMemo = (patch = {}) => {
 };
 
 export const getMemoPreview = (memo) => {
+  if (memo.title) return memo.title;
   if (memo.type === 'checklist') {
     return memo.checklist.map(item => item.text).filter(Boolean).join(' / ') || 'チェックリスト';
   }
@@ -93,6 +95,7 @@ const migrateLegacyMemo = (memo, index) => {
 
   return {
     id: typeof memo.id === 'string' ? memo.id : createId(),
+    title: '',
     type: checklist.length > 0 ? 'checklist' : 'note',
     text: checklist.length > 0 ? '' : fallbackText,
     checklist,
@@ -115,6 +118,7 @@ export const normalizeMemo = (memo = {}, index = 0) => {
   }
 
   const type = memo.type === 'checklist' ? 'checklist' : 'note';
+  const title = typeof memo.title === 'string' ? memo.title.trim() : '';
   const checklist = normalizeChecklist(memo.checklist);
   const text = typeof memo.text === 'string' ? memo.text.trim() : '';
   const position = DEFAULT_POSITIONS[index % DEFAULT_POSITIONS.length];
@@ -124,6 +128,7 @@ export const normalizeMemo = (memo = {}, index = 0) => {
 
   return {
     id: typeof memo.id === 'string' ? memo.id : createId(),
+    title,
     type,
     text: type === 'note' ? text : '',
     checklist: type === 'checklist' ? checklist : [],

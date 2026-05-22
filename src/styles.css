@@ -261,7 +261,8 @@ button {
 .board-memo-body {
   width: 100%;
   min-height: 58px;
-  display: block;
+  display: grid;
+  gap: 6px;
   border: 0;
   background: transparent;
   color: var(--ink);
@@ -270,6 +271,15 @@ button {
   text-align: left;
   cursor: pointer;
   overflow: hidden;
+}
+
+.board-memo-title {
+  display: block;
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .mini-checklist {
@@ -395,9 +405,10 @@ button {
 }
 
 .create-topbar {
-  display: flex;
+  display: grid;
+  grid-template-columns: 44px 1fr 44px;
   align-items: center;
-  justify-content: space-between;
+  gap: 10px;
 }
 
 .create-nav-button {
@@ -415,9 +426,9 @@ button {
 }
 
 .create-title {
-  margin: 16px 0 0;
+  margin: 0;
   color: #8d8781;
-  font-size: 25px;
+  font-size: 23px;
   font-weight: 800;
   line-height: 1.2;
   letter-spacing: 0;
@@ -454,8 +465,8 @@ button {
   max-width: 238px;
   min-height: 198px;
   position: relative;
-  margin: 92px auto 0;
-  padding: 58px 36px 28px;
+  margin: 96px auto 0;
+  padding: 45px 36px 28px;
   border: 1px solid rgba(139, 181, 153, 0.36);
   border-radius: 4px;
   box-shadow: 0 20px 34px rgba(87, 87, 74, 0.12);
@@ -471,6 +482,24 @@ button {
   border-radius: 2px;
   background: rgba(218, 207, 188, 0.58);
   box-shadow: 0 5px 11px rgba(120, 103, 77, 0.08);
+}
+
+.memo-title-input {
+  width: 100%;
+  margin: 0 0 15px;
+  border: 0;
+  border-bottom: 2px solid rgba(83, 92, 84, 0.14);
+  border-radius: 0;
+  background: transparent;
+  color: #8d8781;
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.45;
+  outline: none;
+}
+
+.memo-title-input::placeholder {
+  color: rgba(141, 135, 129, 0.48);
 }
 
 .create-card textarea {
