@@ -1,4 +1,4 @@
-const CACHE_NAME = 'usapon-memo-v1';
+const CACHE_NAME = 'usapon-memo-v2';
 const APP_SHELL = [
   '/usapon-memo/',
   '/usapon-memo/manifest.webmanifest',
@@ -28,14 +28,22 @@ self.addEventListener('fetch', (event) => {
   const request = event.request;
   if (request.method !== 'GET') return;
 
-  event.respondWith(
-    caches.match(request).then((cached) => {
-      if (cached) return cached;
-      return fetch(request).then((response) => {
+  if (request.mode === 'navigate') {
+    event.respondWith(
+      fetch(request).then((response) => {
         const copy = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+        caches.open(CACHE_NAME).then((cache) => cache.put('/usapon-memo/', copy));
         return response;
-      });
-    })
+      }).catch(() => caches.match('/usapon-memo/'))
+    );
+    return;
+  }
+
+  event.respondWith(
+    fetch(request).then((response) => {
+      const copy = response.clone();
+      caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+      return response;
+    }).catch(() => caches.match(request))
   );
 });
