@@ -960,28 +960,6 @@ body {
   overflow: hidden;
 }
 
-.board-message {
-  position: absolute;
-  top: 18px;
-  left: 22px;
-  z-index: 2;
-  display: grid;
-  gap: 2px;
-  color: rgba(95, 65, 37, 0.58);
-  pointer-events: none;
-}
-
-.board-message span {
-  font-size: 12px;
-  font-weight: 900;
-  letter-spacing: 0.08em;
-}
-
-.board-message small {
-  font-size: 11px;
-  font-weight: 700;
-}
-
 .cork-board {
   height: calc(100vh - 210px);
   min-height: 650px;

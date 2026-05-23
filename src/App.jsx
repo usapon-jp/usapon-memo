@@ -42,7 +42,6 @@ const BOARDS = [
 
 const COLOR_ORDER = ['white', 'green', 'yellow', 'blue', 'pink'];
 const COLOR_OPTIONS = COLOR_ORDER.map(id => ({ id, ...MEMO_COLORS[id] }));
-const TODAY_MESSAGES = ['今日のメモがあるよ', '未完了メモがあるよ', 'ひとつずつ片づけよ'];
 
 const toDatetimeLocalValue = (value) => {
   if (!value) return '';
@@ -234,9 +233,6 @@ function HomePage({ activeBoardId, boards, memos, onAdd, onBoardChange, onOpenLi
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const boardRef = useRef(null);
   const swipeStartRef = useRef(null);
-  const todayMemos = memos.filter(memo => memo.isToday && !memo.completed);
-  const hasToday = todayMemos.length > 0;
-  const message = hasToday ? TODAY_MESSAGES[Math.min(todayMemos.length - 1, TODAY_MESSAGES.length - 1)] : 'きょうもゆっくりいこう';
   const activeBoard = boards.find(board => board.id === activeBoardId) || boards[0];
 
   const handlePointerDown = (event, memo) => {
@@ -323,10 +319,6 @@ function HomePage({ activeBoardId, boards, memos, onAdd, onBoardChange, onOpenLi
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
       >
-        <div className="board-message">
-          <span>{activeBoard.label}</span>
-          <small>{message}</small>
-        </div>
         <div className="dry-flower dry-flower-top" aria-hidden="true" />
         <div className="dry-flower dry-flower-bottom" aria-hidden="true" />
         <div ref={boardRef} className="sticky-board cork-board">
