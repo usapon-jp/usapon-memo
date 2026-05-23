@@ -13,6 +13,15 @@ export const CARD_TYPES = {
   schedule: 'schedule'
 };
 
+export const DEFAULT_BOARDS = [
+  { id: 'home', label: 'ホーム', icon: 'home' },
+  { id: 'study', label: '勉強', icon: 'book' },
+  { id: 'places', label: '行きたい場所', icon: 'map' },
+  { id: 'rabbit', label: 'うさぎ', icon: 'camera' }
+];
+
+const BOARD_ICONS = new Set(['home', 'book', 'map', 'camera', 'folder']);
+
 const LEGACY_COLOR_MAP = {
   routine: 'yellow',
   wakuwaku: 'pink',
@@ -31,6 +40,12 @@ const DEFAULT_POSITIONS = [
 export const clamp = (value, min = 0, max = 100) => Math.min(max, Math.max(min, value));
 
 const createId = () => crypto.randomUUID();
+
+export const createBoard = (label = '新しいボード') => ({
+  id: `board-${createId()}`,
+  label: label.trim() || '新しいボード',
+  icon: 'folder'
+});
 
 export const createChecklistItem = (text = '', completed = false, id = null) => ({
   id: id || createId(),
@@ -77,6 +92,31 @@ export const getMemoPreview = (memo) => {
     return memo.checklist.map(item => item.text).filter(Boolean).join(' / ') || 'チェックリスト';
   }
   return memo.text || '自由メモ';
+};
+
+const normalizeBoard = (board = {}, index = 0, usedIds = new Set()) => {
+  const defaultBoard = DEFAULT_BOARDS[index] || {};
+  const rawId = typeof board.id === 'string' && board.id.trim()
+    ? board.id.trim()
+    : defaultBoard.id || `board-${createId()}`;
+  const id = usedIds.has(rawId) ? `board-${createId()}` : rawId;
+  usedIds.add(id);
+
+  const label = typeof board.label === 'string' && board.label.trim()
+    ? board.label.trim()
+    : defaultBoard.label || `ボード${index + 1}`;
+  const icon = typeof board.icon === 'string' && BOARD_ICONS.has(board.icon)
+    ? board.icon
+    : defaultBoard.icon || 'folder';
+
+  return { id, label, icon };
+};
+
+const normalizeBoards = (boards) => {
+  const source = Array.isArray(boards) && boards.length > 0 ? boards : DEFAULT_BOARDS;
+  const usedIds = new Set();
+  const normalized = source.map((board, index) => normalizeBoard(board, index, usedIds));
+  return normalized.length > 0 ? normalized : DEFAULT_BOARDS.map((board, index) => normalizeBoard(board, index, usedIds));
 };
 
 export const isReminderDue = (memo, now = new Date()) => {
@@ -186,9 +226,21 @@ export const normalizeMemo = (memo = {}, index = 0) => {
   };
 };
 
-export const normalizeData = (data = {}) => ({
-  memos: Array.isArray(data.memos) ? data.memos.map(normalizeMemo) : []
-});
+export const normalizeData = (data = {}) => {
+  const boards = normalizeBoards(data.boards);
+  const boardIds = new Set(boards.map(board => board.id));
+  const fallbackBoardId = boardIds.has('home') ? 'home' : boards[0].id;
+  const memos = Array.isArray(data.memos)
+    ? data.memos.map((memo, index) => {
+      const normalized = normalizeMemo(memo, index);
+      return boardIds.has(normalized.boardId)
+        ? normalized
+        : { ...normalized, boardId: fallbackBoardId };
+    })
+    : [];
+
+  return { boards, memos };
+};
 
 export const sortMemos = (memos) => [...memos].sort((a, b) => {
   if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;

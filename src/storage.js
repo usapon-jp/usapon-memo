@@ -2,9 +2,7 @@ import { normalizeData } from './memoModel.js';
 
 const STORAGE_KEY = 'usapon_memo_data';
 
-const createDefaultData = () => ({
-  memos: []
-});
+const createDefaultData = () => normalizeData({});
 
 export const getStorageKey = () => STORAGE_KEY;
 

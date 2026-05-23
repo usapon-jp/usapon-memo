@@ -10,10 +10,10 @@ import {
   Folder,
   Home,
   ImagePlus,
-  List,
   Map,
   Menu,
   MoreHorizontal,
+  Pencil,
   Plus,
   Search,
   StickyNote,
@@ -23,22 +23,23 @@ import {
 import {
   MEMO_COLORS,
   clamp,
+  createBoard,
   createChecklistItem,
   createEmptyMemo,
-  getMemoPreview,
-  getReminderStatus,
+  DEFAULT_BOARDS,
   isMemoVisibleOnBoard,
   normalizeMemo,
   sortMemos
 } from './memoModel.js';
 import { loadMemoData, saveMemoData } from './storage.js';
 
-const BOARDS = [
-  { id: 'home', label: 'ホーム', icon: Home },
-  { id: 'study', label: '勉強', icon: BookOpen },
-  { id: 'places', label: '行きたい場所', icon: Map },
-  { id: 'rabbit', label: 'うさぎ', icon: Camera }
-];
+const BOARD_ICON_MAP = {
+  home: Home,
+  book: BookOpen,
+  map: Map,
+  camera: Camera,
+  folder: Folder
+};
 
 const COLOR_ORDER = ['white', 'green', 'yellow', 'blue', 'pink'];
 const COLOR_OPTIONS = COLOR_ORDER.map(id => ({ id, ...MEMO_COLORS[id] }));
@@ -107,6 +108,7 @@ export default function App() {
   const [now, setNow] = useState(() => new Date());
   const [activeBoardId, setActiveBoardId] = useState('home');
   const [storageError, setStorageError] = useState('');
+  const boards = data.boards?.length ? data.boards : DEFAULT_BOARDS;
 
   useEffect(() => {
     const ok = saveMemoData(data);
@@ -119,6 +121,11 @@ export default function App() {
     }, 60000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (boards.some(board => board.id === activeBoardId)) return;
+    setActiveBoardId(boards[0]?.id || 'home');
+  }, [activeBoardId, boards]);
 
   const visibleMemos = useMemo(
     () => sortMemos(data.memos.filter(memo => (
@@ -146,7 +153,7 @@ export default function App() {
     });
     setActiveBoardId(nextMemo.boardId);
     setPage('home');
-    setDraft(createDraft({ boardId: activeBoardId }));
+    setDraft(createDraft({ boardId: nextMemo.boardId }));
   };
 
   const patchMemo = (id, patch) => {
@@ -160,16 +167,6 @@ export default function App() {
     }));
   };
 
-  const deleteMemo = (id) => {
-    const confirmed = window.confirm('このカードを削除しますか？');
-    if (!confirmed) return;
-    setData(current => ({
-      ...current,
-      memos: current.memos.filter(memo => memo.id !== id)
-    }));
-    setPage('list');
-  };
-
   const openNewCard = (cardType = 'checklist') => {
     setDraft(createDraft({
       boardId: activeBoardId,
@@ -179,6 +176,51 @@ export default function App() {
       color: cardType === 'photo' ? 'white' : 'green'
     }));
     setPage('create');
+  };
+
+  const addBoard = (label) => {
+    const nextBoard = createBoard(label);
+    setData(current => ({
+      ...current,
+      boards: [...current.boards, nextBoard]
+    }));
+    setActiveBoardId(nextBoard.id);
+    return nextBoard.id;
+  };
+
+  const renameBoard = (boardId, label) => {
+    const nextLabel = label.trim();
+    if (!nextLabel) return;
+    setData(current => ({
+      ...current,
+      boards: current.boards.map(board => (
+        board.id === boardId ? { ...board, label: nextLabel } : board
+      ))
+    }));
+  };
+
+  const deleteBoard = (boardId) => {
+    const board = boards.find(item => item.id === boardId);
+    if (!board || boards.length <= 1) {
+      window.alert('ボードは1つ以上必要です。');
+      return;
+    }
+
+    const fallbackBoard = boards.find(item => item.id !== boardId && item.id === 'home')
+      || boards.find(item => item.id !== boardId);
+    const confirmed = window.confirm(`「${board.label}」を削除しますか？カードは「${fallbackBoard.label}」へ移動します。`);
+    if (!confirmed) return;
+
+    setData(current => ({
+      ...current,
+      boards: current.boards.filter(item => item.id !== boardId),
+      memos: current.memos.map(memo => (
+        memo.boardId === boardId ? { ...memo, boardId: fallbackBoard.id } : memo
+      ))
+    }));
+    if (activeBoardId === boardId) {
+      setActiveBoardId(fallbackBoard.id);
+    }
   };
 
   const openEditMemo = (memo) => {
@@ -193,7 +235,7 @@ export default function App() {
       {page === 'home' && (
         <HomePage
           activeBoardId={activeBoardId}
-          boards={BOARDS}
+          boards={boards}
           memos={visibleMemos}
           onAdd={openNewCard}
           onBoardChange={setActiveBoardId}
@@ -206,7 +248,7 @@ export default function App() {
 
       {page === 'create' && (
         <MemoCreatePage
-          boards={BOARDS}
+          boards={boards}
           draft={draft}
           setDraft={setDraft}
           onBack={() => setPage('home')}
@@ -215,14 +257,18 @@ export default function App() {
       )}
 
       {page === 'list' && (
-        <MemoListPage
+        <BoardListPage
+          boards={boards}
           memos={allMemos}
-          now={now}
+          activeBoardId={activeBoardId}
           onBack={() => setPage('home')}
-          onAdd={() => openNewCard('checklist')}
-          onEdit={openEditMemo}
-          onDelete={deleteMemo}
-          onPatch={patchMemo}
+          onSelect={(boardId) => {
+            setActiveBoardId(boardId);
+            setPage('home');
+          }}
+          onAddBoard={addBoard}
+          onRenameBoard={renameBoard}
+          onDeleteBoard={deleteBoard}
         />
       )}
     </main>
@@ -298,7 +344,7 @@ function HomePage({ activeBoardId, boards, memos, onAdd, onBoardChange, onOpenLi
 
       <nav className="board-tabs" aria-label="ボード切替">
         {boards.map(board => {
-          const Icon = board.icon;
+          const Icon = BOARD_ICON_MAP[board.icon] || Folder;
           return (
             <button
               key={board.id}
@@ -468,19 +514,19 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
       : draft.cardType === 'checklist'
         ? draft.title.trim().length > 0 || draft.checklist.some(item => item.text.trim())
         : draft.title.trim().length > 0 || draft.text.trim().length > 0;
-  const firstChecklistItem = draft.checklist[0] || createChecklistItem();
-
-  useEffect(() => {
-    if (draft.cardType === 'checklist' && draft.checklist.length === 0) {
-      setDraft(current => ({ ...current, type: 'checklist', checklist: [createChecklistItem()] }));
-    }
-  }, [draft.cardType, draft.checklist.length, setDraft]);
+  const firstChecklistItem = draft.checklist[0] || null;
 
   useEffect(() => {
     if (!pendingFocusId.current) return;
-    checklistInputRefs.current[pendingFocusId.current]?.focus();
+    if (pendingFocusId.current === 'title') {
+      titleInputRef.current?.focus();
+    } else if (pendingFocusId.current === draft.checklist[0]?.id) {
+      primaryInputRef.current?.focus();
+    } else {
+      checklistInputRefs.current[pendingFocusId.current]?.focus();
+    }
     pendingFocusId.current = null;
-  }, [draft.checklist.length]);
+  }, [draft.checklist]);
 
   const updateCardType = (cardType) => {
     setDraft(current => ({
@@ -510,6 +556,29 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
     }));
   };
 
+  const removeChecklistItem = (id) => {
+    setDraft(current => {
+      const index = current.checklist.findIndex(item => item.id === id);
+      const nextChecklist = current.checklist.filter(item => item.id !== id);
+      const nextFocus = nextChecklist[Math.max(0, index - 1)] || nextChecklist[0];
+      pendingFocusId.current = nextFocus?.id || 'title';
+      return {
+        ...current,
+        checklist: nextChecklist
+      };
+    });
+  };
+
+  const handleChecklistBackspace = (event, item) => {
+    if (event.key !== 'Backspace') return;
+    event.preventDefault();
+    if (item.text.length > 0) {
+      updateChecklistItem(item.id, { text: '' });
+      return;
+    }
+    removeChecklistItem(item.id);
+  };
+
   const handlePhotoChange = async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -525,10 +594,6 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
       setImageBusy(false);
       event.target.value = '';
     }
-  };
-
-  const focusEditor = () => {
-    titleInputRef.current?.focus();
   };
 
   const cleanAndSave = () => {
@@ -633,28 +698,37 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
           />
         ) : (
           <div className="checklist-form">
-            <label className="checklist-form-row">
-              <input
-                type="checkbox"
-                checked={firstChecklistItem.completed}
-                onChange={(event) => updateChecklistItem(firstChecklistItem.id, { completed: event.target.checked })}
-                aria-label="1行目を完了"
-              />
-              <input
-                ref={primaryInputRef}
-                type="text"
-                value={firstChecklistItem.text}
-                placeholder=""
-                aria-label="やること"
-                onChange={(event) => updateChecklistItem(firstChecklistItem.id, { text: event.target.value })}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    event.preventDefault();
-                    addChecklistItem();
-                  }
-                }}
-              />
-            </label>
+            {firstChecklistItem ? (
+              <label className="checklist-form-row">
+                <input
+                  type="checkbox"
+                  checked={firstChecklistItem.completed}
+                  onChange={(event) => updateChecklistItem(firstChecklistItem.id, { completed: event.target.checked })}
+                  aria-label="1行目を完了"
+                />
+                <input
+                  ref={primaryInputRef}
+                  type="text"
+                  value={firstChecklistItem.text}
+                  placeholder=""
+                  aria-label="やること"
+                  onChange={(event) => updateChecklistItem(firstChecklistItem.id, { text: event.target.value })}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      addChecklistItem();
+                      return;
+                    }
+                    handleChecklistBackspace(event, firstChecklistItem);
+                  }}
+                />
+              </label>
+            ) : (
+              <button type="button" className="checklist-add-empty" onClick={addChecklistItem}>
+                <Plus size={18} />
+                項目を追加
+              </button>
+            )}
             {draft.checklist.slice(1).map((item, index) => (
               <label key={item.id} className="checklist-form-row is-secondary">
                 <input
@@ -680,7 +754,9 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
                     if (event.key === 'Enter') {
                       event.preventDefault();
                       addChecklistItem();
+                      return;
                     }
+                    handleChecklistBackspace(event, item);
                   }}
                 />
               </label>
@@ -688,10 +764,6 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
           </div>
         )}
       </section>
-
-      <button type="button" className="edit-pill" onClick={focusEditor}>
-        編集する
-      </button>
 
       <section className="memo-options">
         <div className="color-row" aria-label="メモ色">
@@ -763,59 +835,116 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
   );
 }
 
-function MemoListPage({ memos, now, onBack, onAdd, onEdit, onDelete, onPatch }) {
+function BoardListPage({ boards, memos, activeBoardId, onBack, onSelect, onAddBoard, onRenameBoard, onDeleteBoard }) {
+  const [newBoardName, setNewBoardName] = useState('');
+  const [boardNames, setBoardNames] = useState(() => Object.fromEntries(boards.map(board => [board.id, board.label])));
+  const addInputRef = useRef(null);
+  const memoCounts = useMemo(() => boards.reduce((counts, board) => ({
+    ...counts,
+    [board.id]: memos.filter(memo => memo.boardId === board.id && !memo.archived).length
+  }), {}), [boards, memos]);
+
+  useEffect(() => {
+    setBoardNames(Object.fromEntries(boards.map(board => [board.id, board.label])));
+  }, [boards]);
+
+  const saveBoardName = (boardId) => {
+    const board = boards.find(item => item.id === boardId);
+    const nextLabel = (boardNames[boardId] || '').trim();
+    if (!nextLabel) {
+      setBoardNames(current => ({
+        ...current,
+        [boardId]: board?.label || ''
+      }));
+      return;
+    }
+    onRenameBoard(boardId, nextLabel);
+  };
+
+  const submitNewBoard = (event) => {
+    event.preventDefault();
+    const label = newBoardName.trim() || '新しいボード';
+    onAddBoard(label);
+    setNewBoardName('');
+  };
+
   return (
-    <section className="list-page">
+    <section className="list-page board-list-page">
       <header className="page-header">
         <button type="button" className="icon-button ghost" onClick={onBack} aria-label="ホームへ戻る">
           <ArrowLeft size={22} />
         </button>
         <div>
-          <p className="eyebrow">メモ一覧</p>
-          <h1>貼ったカード</h1>
+          <p className="eyebrow">コルクボード</p>
+          <h1>ボード一覧</h1>
         </div>
-        <button type="button" className="icon-button primary" onClick={onAdd} aria-label="メモ追加">
+        <button type="button" className="icon-button primary" onClick={() => addInputRef.current?.focus()} aria-label="ボード追加">
           <Plus size={21} />
         </button>
       </header>
 
-      {memos.length === 0 ? (
-        <button type="button" className="list-empty" onClick={onAdd}>
-          <StickyNote size={26} />
-          まだカードがありません
-        </button>
-      ) : (
-        <div className="memo-list">
-          {memos.map(memo => (
-            <article key={memo.id} className={`list-memo ${MEMO_COLORS[memo.color].className} ${memo.archived ? 'is-archived' : ''}`}>
-              <button type="button" className="list-memo-main" onClick={() => onEdit(memo)}>
-                <strong>{getMemoPreview(memo)}</strong>
-                <span>{memo.cardType === 'schedule' ? 'スケジュール' : memo.cardType === 'photo' ? '写真' : memo.cardType === 'checklist' ? 'チェックリスト' : 'メモ'}</span>
-                {memo.reminderAt && (
-                  <small className={`reminder-label ${getReminderStatus(memo, now) === 'waiting' ? 'is-waiting' : 'is-due'}`}>
-                    {getReminderStatus(memo, now) === 'waiting' ? '待機中' : 'ホームに表示中'}
-                  </small>
-                )}
+      <form className="board-add-form" onSubmit={submitNewBoard}>
+        <Folder size={22} />
+        <input
+          ref={addInputRef}
+          type="text"
+          value={newBoardName}
+          placeholder="新しいボード名"
+          aria-label="新しいボード名"
+          onChange={(event) => setNewBoardName(event.target.value)}
+        />
+        <button type="submit">追加</button>
+      </form>
+
+      <div className="board-manager-list">
+        {boards.map((board) => {
+          const Icon = BOARD_ICON_MAP[board.icon] || Folder;
+          return (
+            <article key={board.id} className={`board-manager-card ${board.id === activeBoardId ? 'is-active' : ''}`}>
+              <button type="button" className="board-open-button" onClick={() => onSelect(board.id)}>
+                <span className="board-icon-badge"><Icon size={22} /></span>
+                <span>
+                  <strong>{board.label}</strong>
+                  <small>{memoCounts[board.id] || 0}枚のカード</small>
+                </span>
               </button>
-              <div className="list-memo-actions">
-                <button type="button" onClick={() => onPatch(memo.id, { completed: !memo.completed })}>
-                  <Check size={15} />
-                  {memo.completed ? '戻す' : '完了'}
-                </button>
-                <button type="button" onClick={() => onPatch(memo.id, { isToday: !memo.isToday })}>
-                  {memo.isToday ? '今日' : '今日にする'}
-                </button>
-                <button type="button" onClick={() => onPatch(memo.id, { pinned: !memo.pinned })}>
-                  {memo.pinned ? 'ピン中' : 'ピン'}
-                </button>
-                <button type="button" className="danger" onClick={() => onDelete(memo.id)}>
+
+              <label className="board-name-field">
+                <Pencil size={15} />
+                <input
+                  type="text"
+                  value={boardNames[board.id] || ''}
+                  aria-label={`${board.label}の名前`}
+                  onChange={(event) => setBoardNames(current => ({
+                    ...current,
+                    [board.id]: event.target.value
+                  }))}
+                  onBlur={() => saveBoardName(board.id)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      event.currentTarget.blur();
+                    }
+                  }}
+                />
+              </label>
+
+              <div className="board-card-actions">
+                <button type="button" onClick={() => onSelect(board.id)}>開く</button>
+                <button
+                  type="button"
+                  className="danger"
+                  onClick={() => onDeleteBoard(board.id)}
+                  disabled={boards.length <= 1}
+                >
                   <Trash2 size={15} />
+                  削除
                 </button>
               </div>
             </article>
-          ))}
-        </div>
-      )}
+          );
+        })}
+      </div>
     </section>
   );
 }

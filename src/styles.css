@@ -564,6 +564,22 @@ button {
   outline: none;
 }
 
+.checklist-add-empty {
+  width: 100%;
+  min-height: 36px;
+  border: 0;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.46);
+  color: #8d8781;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
 .create-card-character {
   width: 58px;
   height: auto;
@@ -801,6 +817,160 @@ button {
 
 .list-memo-actions button.danger {
   color: #b45c4d;
+}
+
+.board-list-page {
+  min-height: 100dvh;
+  background:
+    radial-gradient(circle at 12% 3%, rgba(255, 238, 206, 0.72), transparent 28%),
+    radial-gradient(circle at 92% 12%, rgba(220, 232, 208, 0.78), transparent 30%),
+    #fffaf2;
+}
+
+.board-add-form {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) 72px;
+  align-items: center;
+  gap: 10px;
+  margin-top: 26px;
+  padding: 12px 13px;
+  border: 1px solid rgba(150, 118, 80, 0.14);
+  border-radius: 18px;
+  background: rgba(255, 253, 248, 0.86);
+  color: #8b6744;
+  box-shadow: 0 14px 30px rgba(113, 77, 38, 0.08);
+}
+
+.board-add-form input,
+.board-name-field input {
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: #69523b;
+  font-weight: 800;
+  outline: none;
+}
+
+.board-add-form input::placeholder {
+  color: rgba(105, 82, 59, 0.46);
+}
+
+.board-add-form button {
+  min-height: 38px;
+  border: 0;
+  border-radius: 999px;
+  background: #efd9bd;
+  color: #6f5033;
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.board-manager-list {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.board-manager-card {
+  display: grid;
+  gap: 12px;
+  padding: 15px;
+  border: 1px solid rgba(150, 118, 80, 0.12);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.86), rgba(255, 246, 231, 0.78)),
+    #fffaf0;
+  box-shadow: 0 16px 28px rgba(103, 69, 35, 0.1);
+}
+
+.board-manager-card.is-active {
+  border-color: rgba(197, 151, 79, 0.5);
+  box-shadow: 0 18px 32px rgba(160, 112, 53, 0.16);
+}
+
+.board-open-button {
+  min-width: 0;
+  border: 0;
+  display: grid;
+  grid-template-columns: 50px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding: 0;
+  background: transparent;
+  color: #5b442e;
+  text-align: left;
+  cursor: pointer;
+}
+
+.board-open-button strong {
+  display: block;
+  overflow: hidden;
+  font-size: 18px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.board-open-button small {
+  display: block;
+  margin-top: 2px;
+  color: #9b8062;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.board-icon-badge {
+  width: 50px;
+  height: 50px;
+  border-radius: 18px;
+  display: grid;
+  place-items: center;
+  background: #f1dfc9;
+  color: #8b6744;
+}
+
+.board-name-field {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 0 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.66);
+  color: #9b8062;
+}
+
+.board-card-actions {
+  display: grid;
+  grid-template-columns: 1fr 96px;
+  gap: 9px;
+}
+
+.board-card-actions button {
+  min-height: 40px;
+  border: 0;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  background: #e7f0df;
+  color: #607050;
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.board-card-actions button.danger {
+  background: #fff1ed;
+  color: #b45c4d;
+}
+
+.board-card-actions button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 @media (max-width: 390px) {
