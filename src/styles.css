@@ -865,8 +865,10 @@ body {
 }
 
 .cork-home {
-  min-height: 100vh;
-  padding: 24px 0 110px;
+  height: 100dvh;
+  min-height: 100dvh;
+  overflow: hidden;
+  padding: 24px 0 0;
   background:
     linear-gradient(180deg, rgba(255, 252, 247, 0.96) 0 138px, transparent 138px),
     #fff8ec;
@@ -954,15 +956,16 @@ body {
 }
 
 .cork-board-wrap {
-  min-height: calc(100vh - 206px);
+  height: calc(100dvh - 140px);
+  min-height: 0;
   position: relative;
   padding: 0;
   overflow: hidden;
 }
 
 .cork-board {
-  height: calc(100vh - 210px);
-  min-height: 650px;
+  height: 100%;
+  min-height: 0;
   border: 0;
   border-radius: 0;
   background:
@@ -1186,9 +1189,9 @@ body {
   min-height: 72px;
   position: fixed;
   left: 50%;
-  bottom: max(16px, env(safe-area-inset-bottom));
+  bottom: calc(env(safe-area-inset-bottom) + 12px);
   transform: translateX(-50%);
-  z-index: 20;
+  z-index: 60;
   border-radius: 999px;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -1217,8 +1220,8 @@ body {
   height: 76px;
   position: fixed;
   right: max(18px, calc((100vw - 560px) / 2 + 18px));
-  bottom: max(96px, calc(env(safe-area-inset-bottom) + 96px));
-  z-index: 24;
+  bottom: calc(env(safe-area-inset-bottom) + 94px);
+  z-index: 64;
   border: 0;
   border-radius: 50%;
   display: grid;
@@ -1233,7 +1236,7 @@ body {
   width: min(calc(100% - 36px), 430px);
   position: fixed;
   left: 50%;
-  bottom: max(102px, calc(env(safe-area-inset-bottom) + 102px));
+  bottom: calc(env(safe-area-inset-bottom) + 102px);
   transform: translateX(-50%);
   z-index: 30;
   display: grid;
