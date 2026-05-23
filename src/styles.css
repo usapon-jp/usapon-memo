@@ -988,14 +988,11 @@ body {
   border: 0;
   border-radius: 0;
   background:
-    radial-gradient(circle at 15% 18%, rgba(111, 72, 35, 0.16) 0 1px, transparent 1.5px),
-    radial-gradient(circle at 80% 28%, rgba(255, 255, 255, 0.17) 0 1px, transparent 1.7px),
-    radial-gradient(circle at 35% 80%, rgba(102, 61, 30, 0.12) 0 1px, transparent 2px),
-    linear-gradient(45deg, rgba(92, 55, 20, 0.09) 25%, transparent 25% 75%, rgba(92, 55, 20, 0.08) 75%),
-    linear-gradient(135deg, rgba(255, 255, 255, 0.12) 25%, transparent 25% 75%, rgba(255, 255, 255, 0.1) 75%),
-    #dca86f;
-  background-size: 18px 18px, 23px 23px, 31px 31px, 36px 36px, 42px 42px, auto;
-  box-shadow: inset 0 20px 34px rgba(100, 62, 28, 0.18), inset 0 -22px 36px rgba(255, 246, 230, 0.34);
+    linear-gradient(rgba(255, 245, 226, 0.12), rgba(184, 116, 57, 0.1)),
+    url("/usapon-memo/assets/cork-board.jpg");
+  background-position: center;
+  background-size: cover;
+  box-shadow: inset 0 20px 34px rgba(100, 62, 28, 0.12), inset 0 -22px 36px rgba(255, 246, 230, 0.26);
   overflow: hidden;
 }
 
