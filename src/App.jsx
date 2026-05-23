@@ -242,7 +242,6 @@ export default function App() {
           onOpenList={() => setPage('list')}
           onEdit={openEditMemo}
           onMove={patchMemo}
-          onToggle={(id, patch) => patchMemo(id, patch)}
         />
       )}
 
@@ -275,14 +274,14 @@ export default function App() {
   );
 }
 
-function HomePage({ activeBoardId, boards, memos, onAdd, onBoardChange, onOpenList, onEdit, onMove, onToggle }) {
+function HomePage({ activeBoardId, boards, memos, onAdd, onBoardChange, onOpenList, onEdit, onMove }) {
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const boardRef = useRef(null);
   const swipeStartRef = useRef(null);
   const activeBoard = boards.find(board => board.id === activeBoardId) || boards[0];
 
   const handlePointerDown = (event, memo) => {
-    if (!boardRef.current || event.target.closest('.memo-pin-row button, .complete-chip, input')) return;
+    if (!boardRef.current || event.target.closest('input')) return;
     event.currentTarget.setPointerCapture(event.pointerId);
     const rect = boardRef.current.getBoundingClientRect();
 
@@ -365,8 +364,6 @@ function HomePage({ activeBoardId, boards, memos, onAdd, onBoardChange, onOpenLi
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
       >
-        <div className="dry-flower dry-flower-top" aria-hidden="true" />
-        <div className="dry-flower dry-flower-bottom" aria-hidden="true" />
         <div ref={boardRef} className="sticky-board cork-board">
           {memos.length === 0 ? (
             <button type="button" className="board-empty cork-empty" onClick={() => onAdd('checklist')}>
@@ -381,7 +378,6 @@ function HomePage({ activeBoardId, boards, memos, onAdd, onBoardChange, onOpenLi
                 memo={memo}
                 onPointerDown={(event) => handlePointerDown(event, memo)}
                 onEdit={() => onEdit(memo)}
-                onToggle={(patch) => onToggle(memo.id, patch)}
               />
             ))
           )}
@@ -429,7 +425,7 @@ function HomePage({ activeBoardId, boards, memos, onAdd, onBoardChange, onOpenLi
   );
 }
 
-function BoardMemo({ memo, onPointerDown, onEdit, onToggle }) {
+function BoardMemo({ memo, onPointerDown, onEdit }) {
   const hasTitle = memo.title.trim().length > 0;
   const cardType = memo.cardType || (memo.type === 'checklist' ? 'checklist' : 'note');
   const style = {
@@ -444,7 +440,6 @@ function BoardMemo({ memo, onPointerDown, onEdit, onToggle }) {
       style={style}
       onPointerDown={onPointerDown}
     >
-      <span className="card-pin" aria-hidden="true" />
       <span className="card-tape" aria-hidden="true" />
 
       {cardType === 'photo' ? (
@@ -460,14 +455,6 @@ function BoardMemo({ memo, onPointerDown, onEdit, onToggle }) {
         </div>
       ) : (
         <>
-          <div className="memo-pin-row">
-            <button type="button" onClick={() => onToggle({ pinned: !memo.pinned })}>
-              {memo.pinned ? 'ピン中' : 'ピン'}
-            </button>
-            <button type="button" onClick={() => onToggle({ isToday: !memo.isToday })}>
-              {memo.isToday ? '今日' : '＋今日'}
-            </button>
-          </div>
           <div className="board-memo-body" role="button" tabIndex={0} onClick={onEdit} onKeyDown={(event) => {
             if (event.key === 'Enter' || event.key === ' ') onEdit();
           }}>
@@ -491,9 +478,6 @@ function BoardMemo({ memo, onPointerDown, onEdit, onToggle }) {
               <span>{memo.text || '自由メモ'}</span>
             )}
           </div>
-          <button type="button" className="complete-chip" onClick={() => onToggle({ completed: !memo.completed })}>
-            {memo.completed ? '完了' : '未完了'}
-          </button>
         </>
       )}
     </article>
