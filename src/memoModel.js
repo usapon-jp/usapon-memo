@@ -1,8 +1,16 @@
 export const MEMO_COLORS = {
+  white: { label: 'しろ', className: 'memo-white' },
   yellow: { label: 'きいろ', className: 'memo-yellow' },
   pink: { label: 'ピンク', className: 'memo-pink' },
   blue: { label: 'みずいろ', className: 'memo-blue' },
   green: { label: 'みどり', className: 'memo-green' }
+};
+
+export const CARD_TYPES = {
+  note: 'note',
+  checklist: 'checklist',
+  photo: 'photo',
+  schedule: 'schedule'
 };
 
 const LEGACY_COLOR_MAP = {
@@ -36,10 +44,17 @@ export const createEmptyMemo = (patch = {}) => {
   const now = nowIso();
   return normalizeMemo({
     id: createId(),
+    boardId: 'home',
+    cardType: 'note',
     title: '',
     type: 'note',
     text: '',
     checklist: [createChecklistItem()],
+    photoDataUrl: '',
+    caption: '',
+    scheduleDate: '',
+    scheduleTime: '',
+    schedulePlace: '',
     color: 'yellow',
     x: 12,
     y: 12,
@@ -56,7 +71,9 @@ export const createEmptyMemo = (patch = {}) => {
 
 export const getMemoPreview = (memo) => {
   if (memo.title) return memo.title;
-  if (memo.type === 'checklist') {
+  if (memo.cardType === 'photo') return memo.caption || '写真';
+  if (memo.cardType === 'schedule') return memo.schedulePlace || memo.scheduleDate || '予定';
+  if (memo.cardType === 'checklist' || memo.type === 'checklist') {
     return memo.checklist.map(item => item.text).filter(Boolean).join(' / ') || 'チェックリスト';
   }
   return memo.text || '自由メモ';
@@ -95,10 +112,17 @@ const migrateLegacyMemo = (memo, index) => {
 
   return {
     id: typeof memo.id === 'string' ? memo.id : createId(),
+    boardId: 'home',
+    cardType: checklist.length > 0 ? 'checklist' : 'note',
     title: '',
     type: checklist.length > 0 ? 'checklist' : 'note',
     text: checklist.length > 0 ? '' : fallbackText,
     checklist,
+    photoDataUrl: '',
+    caption: '',
+    scheduleDate: '',
+    scheduleTime: '',
+    schedulePlace: '',
     color: LEGACY_COLOR_MAP[memo.category] || 'yellow',
     x: position.x,
     y: position.y,
@@ -117,10 +141,20 @@ export const normalizeMemo = (memo = {}, index = 0) => {
     return normalizeMemo(migrateLegacyMemo(memo, index), index);
   }
 
-  const type = memo.type === 'checklist' ? 'checklist' : 'note';
+  const rawCardType = CARD_TYPES[memo.cardType]
+    ? memo.cardType
+    : (memo.type === 'checklist' ? 'checklist' : 'note');
+  const cardType = rawCardType;
+  const type = cardType === 'checklist' ? 'checklist' : 'note';
+  const boardId = typeof memo.boardId === 'string' && memo.boardId.trim() ? memo.boardId.trim() : 'home';
   const title = typeof memo.title === 'string' ? memo.title.trim() : '';
   const checklist = normalizeChecklist(memo.checklist);
   const text = typeof memo.text === 'string' ? memo.text.trim() : '';
+  const photoDataUrl = typeof memo.photoDataUrl === 'string' ? memo.photoDataUrl : '';
+  const caption = typeof memo.caption === 'string' ? memo.caption.trim() : '';
+  const scheduleDate = typeof memo.scheduleDate === 'string' ? memo.scheduleDate.trim() : '';
+  const scheduleTime = typeof memo.scheduleTime === 'string' ? memo.scheduleTime.trim() : '';
+  const schedulePlace = typeof memo.schedulePlace === 'string' ? memo.schedulePlace.trim() : '';
   const position = DEFAULT_POSITIONS[index % DEFAULT_POSITIONS.length];
   const createdAt = typeof memo.createdAt === 'string' ? memo.createdAt : nowIso();
   const updatedAt = typeof memo.updatedAt === 'string' ? memo.updatedAt : createdAt;
@@ -128,10 +162,17 @@ export const normalizeMemo = (memo = {}, index = 0) => {
 
   return {
     id: typeof memo.id === 'string' ? memo.id : createId(),
+    boardId,
+    cardType,
     title,
     type,
     text: type === 'note' ? text : '',
     checklist: type === 'checklist' ? checklist : [],
+    photoDataUrl,
+    caption,
+    scheduleDate,
+    scheduleTime,
+    schedulePlace,
     color: MEMO_COLORS[memo.color] ? memo.color : 'yellow',
     x: Number.isFinite(Number(memo.x)) ? clamp(Number(memo.x)) : position.x,
     y: Number.isFinite(Number(memo.y)) ? clamp(Number(memo.y)) : position.y,

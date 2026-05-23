@@ -22,7 +22,9 @@ export const loadMemoData = () => {
 export const saveMemoData = (data) => {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(normalizeData(data)));
+    return true;
   } catch (error) {
     console.error('Failed to save memo data', error);
+    return false;
   }
 };
