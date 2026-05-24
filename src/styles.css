@@ -689,8 +689,8 @@ button {
 }
 
 .sticker-palette button {
-  width: 46px;
-  height: 46px;
+  width: 52px;
+  height: 52px;
   border: 0;
   border-radius: 16px;
   display: grid;
@@ -705,8 +705,8 @@ button {
 }
 
 .sticker-palette img {
-  max-width: 34px;
-  max-height: 34px;
+  max-width: 42px;
+  max-height: 42px;
   pointer-events: none;
 }
 
