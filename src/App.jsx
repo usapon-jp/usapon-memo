@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import {
   MEMO_COLORS,
+  PHOTO_CROP_RATIOS,
   clamp,
   createBoard,
   createChecklistItem,
@@ -44,6 +45,16 @@ const BOARD_ICON_MAP = {
 
 const COLOR_ORDER = ['white', 'green', 'yellow', 'blue', 'pink'];
 const COLOR_OPTIONS = COLOR_ORDER.map(id => ({ id, ...MEMO_COLORS[id] }));
+const PHOTO_RATIO_OPTIONS = [
+  { id: PHOTO_CROP_RATIOS.square, label: '正方形' },
+  { id: PHOTO_CROP_RATIOS.landscape, label: '横長' },
+  { id: PHOTO_CROP_RATIOS.portrait, label: '縦長' }
+];
+const PHOTO_RATIO_CLASS = {
+  square: 'is-square',
+  landscape: 'is-landscape',
+  portrait: 'is-portrait'
+};
 
 const toDatetimeLocalValue = (value) => {
   if (!value) return '';
@@ -96,6 +107,14 @@ const resizeImageFile = async (file, maxWidth = 1200) => {
   context.drawImage(image, 0, 0, canvas.width, canvas.height);
   return canvas.toDataURL('image/jpeg', 0.82);
 };
+
+const getPhotoCropClass = (ratio) => PHOTO_RATIO_CLASS[ratio] || PHOTO_RATIO_CLASS.landscape;
+
+const getPhotoImageStyle = (memo) => ({
+  '--photo-zoom': memo.photoZoom || 1,
+  '--photo-x': `${memo.photoOffsetX || 0}%`,
+  '--photo-y': `${memo.photoOffsetY || 0}%`
+});
 
 const getCardTilt = (id) => {
   const code = Array.from(id || 'memo').reduce((sum, char) => sum + char.charCodeAt(0), 0);
@@ -608,11 +627,13 @@ function BoardMemo({ memo, onPointerDown, onEdit }) {
           if (event.key === 'Enter' || event.key === ' ') onEdit();
         }}>
           {memo.photoDataUrl ? (
-            <img src={memo.photoDataUrl} alt={memo.caption || memo.title || '写真'} />
+            <span className={`photo-crop-frame ${getPhotoCropClass(memo.photoCropRatio)}`}>
+              <img src={memo.photoDataUrl} alt={memo.caption || memo.title || '写真'} style={getPhotoImageStyle(memo)} />
+            </span>
           ) : (
             <span className="photo-placeholder"><Camera size={27} />写真</span>
           )}
-          <strong>{memo.caption || memo.title || '写真のメモ'}</strong>
+          {memo.caption && <strong>{memo.caption}</strong>}
         </div>
       ) : (
         <>
@@ -650,6 +671,8 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
   const [imageBusy, setImageBusy] = useState(false);
   const primaryInputRef = useRef(null);
   const titleInputRef = useRef(null);
+  const photoInputRef = useRef(null);
+  const cropDragRef = useRef(null);
   const checklistInputRefs = useRef({});
   const pendingFocusId = useRef(null);
   const canSave = draft.cardType === 'photo'
@@ -724,6 +747,15 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
     removeChecklistItem(item.id);
   };
 
+  const handleChecklistEnter = (event) => {
+    const nativeEvent = event.nativeEvent || {};
+    if (nativeEvent.isComposing || nativeEvent.keyCode === 229) return false;
+    if (event.key !== 'Enter') return false;
+    event.preventDefault();
+    addChecklistItem();
+    return true;
+  };
+
   const handlePhotoChange = async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -733,12 +765,59 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
       setDraft(current => ({
         ...current,
         photoDataUrl,
-        caption: current.caption || current.title
+        caption: current.caption || current.title,
+        photoCropRatio: 'landscape',
+        photoZoom: 1,
+        photoOffsetX: 0,
+        photoOffsetY: 0
       }));
     } finally {
       setImageBusy(false);
       event.target.value = '';
     }
+  };
+
+  const removePhoto = () => {
+    setDraft(current => ({
+      ...current,
+      photoDataUrl: '',
+      photoZoom: 1,
+      photoOffsetX: 0,
+      photoOffsetY: 0
+    }));
+  };
+
+  const updatePhotoCrop = (patch) => {
+    setDraft(current => ({
+      ...current,
+      ...patch
+    }));
+  };
+
+  const startPhotoDrag = (event) => {
+    if (!draft.photoDataUrl) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    cropDragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      offsetX: draft.photoOffsetX,
+      offsetY: draft.photoOffsetY
+    };
+  };
+
+  const movePhotoDrag = (event) => {
+    const drag = cropDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const nextX = clamp(drag.offsetX + (event.clientX - drag.startX) / 2.4, -80, 80);
+    const nextY = clamp(drag.offsetY + (event.clientY - drag.startY) / 2.4, -80, 80);
+    updatePhotoCrop({ photoOffsetX: nextX, photoOffsetY: nextY });
+  };
+
+  const stopPhotoDrag = (event) => {
+    if (cropDragRef.current?.pointerId !== event.pointerId) return;
+    cropDragRef.current = null;
   };
 
   const cleanAndSave = () => {
@@ -789,14 +868,64 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
 
         {draft.cardType === 'photo' ? (
           <div className="photo-editor">
-            <label className="photo-picker">
-              <input type="file" accept="image/*" onChange={handlePhotoChange} />
+            <div
+              className={`photo-picker photo-crop-frame ${getPhotoCropClass(draft.photoCropRatio)}`}
+              role="button"
+              tabIndex={0}
+              aria-label={draft.photoDataUrl ? '写真の切り抜き位置を調整' : '写真を選ぶ'}
+              onClick={() => !draft.photoDataUrl && photoInputRef.current?.click()}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  if (!draft.photoDataUrl) photoInputRef.current?.click();
+                }
+              }}
+              onPointerDown={startPhotoDrag}
+              onPointerMove={movePhotoDrag}
+              onPointerUp={stopPhotoDrag}
+              onPointerCancel={stopPhotoDrag}
+            >
+              <input ref={photoInputRef} type="file" accept="image/*" onChange={handlePhotoChange} />
               {draft.photoDataUrl ? (
-                <img src={draft.photoDataUrl} alt="選択した写真" />
+                <>
+                  <img src={draft.photoDataUrl} alt="選択した写真" style={getPhotoImageStyle(draft)} draggable="false" />
+                  <span className="crop-hint">ドラッグで位置調整</span>
+                </>
               ) : (
                 <span><ImagePlus size={28} />{imageBusy ? '読み込み中' : '写真を選ぶ'}</span>
               )}
-            </label>
+            </div>
+            {draft.photoDataUrl && (
+              <div className="photo-tools" aria-label="写真操作">
+                <div className="photo-tool-actions">
+                  <button type="button" onClick={() => photoInputRef.current?.click()}>差し替え</button>
+                  <button type="button" onClick={removePhoto}>削除</button>
+                </div>
+                <div className="photo-ratio-row" aria-label="切り抜き比率">
+                  {PHOTO_RATIO_OPTIONS.map(option => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      className={draft.photoCropRatio === option.id ? 'active' : ''}
+                      onClick={() => updatePhotoCrop({ photoCropRatio: option.id })}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+                <label className="photo-slider">
+                  <span>ズーム</span>
+                  <input
+                    type="range"
+                    min="1"
+                    max="3"
+                    step="0.05"
+                    value={draft.photoZoom}
+                    onChange={(event) => updatePhotoCrop({ photoZoom: Number(event.target.value) })}
+                  />
+                </label>
+              </div>
+            )}
             <input
               ref={primaryInputRef}
               type="text"
@@ -861,11 +990,7 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
                   aria-label="やること"
                   onChange={(event) => updateChecklistItem(firstChecklistItem.id, { text: event.target.value })}
                   onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
-                      event.preventDefault();
-                      addChecklistItem();
-                      return;
-                    }
+                    if (handleChecklistEnter(event)) return;
                     handleChecklistBackspace(event, firstChecklistItem);
                   }}
                 />
@@ -898,11 +1023,7 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
                   aria-label={`${index + 2}行目のやること`}
                   onChange={(event) => updateChecklistItem(item.id, { text: event.target.value })}
                   onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
-                      event.preventDefault();
-                      addChecklistItem();
-                      return;
-                    }
+                    if (handleChecklistEnter(event)) return;
                     handleChecklistBackspace(event, item);
                   }}
                 />

@@ -13,6 +13,12 @@ export const CARD_TYPES = {
   schedule: 'schedule'
 };
 
+export const PHOTO_CROP_RATIOS = {
+  landscape: 'landscape',
+  square: 'square',
+  portrait: 'portrait'
+};
+
 export const DEFAULT_BOARDS = [
   { id: 'home', label: 'ホーム', icon: 'home' },
   { id: 'study', label: '勉強', icon: 'book' },
@@ -67,6 +73,10 @@ export const createEmptyMemo = (patch = {}) => {
     checklist: [createChecklistItem()],
     photoDataUrl: '',
     caption: '',
+    photoCropRatio: 'landscape',
+    photoZoom: 1,
+    photoOffsetX: 0,
+    photoOffsetY: 0,
     scheduleDate: '',
     scheduleTime: '',
     schedulePlace: '',
@@ -160,6 +170,10 @@ const migrateLegacyMemo = (memo, index) => {
     checklist,
     photoDataUrl: '',
     caption: '',
+    photoCropRatio: 'landscape',
+    photoZoom: 1,
+    photoOffsetX: 0,
+    photoOffsetY: 0,
     scheduleDate: '',
     scheduleTime: '',
     schedulePlace: '',
@@ -192,6 +206,10 @@ export const normalizeMemo = (memo = {}, index = 0) => {
   const text = typeof memo.text === 'string' ? memo.text.trim() : '';
   const photoDataUrl = typeof memo.photoDataUrl === 'string' ? memo.photoDataUrl : '';
   const caption = typeof memo.caption === 'string' ? memo.caption.trim() : '';
+  const photoCropRatio = PHOTO_CROP_RATIOS[memo.photoCropRatio] ? memo.photoCropRatio : 'landscape';
+  const photoZoom = Number.isFinite(Number(memo.photoZoom)) ? clamp(Number(memo.photoZoom), 1, 3) : 1;
+  const photoOffsetX = Number.isFinite(Number(memo.photoOffsetX)) ? clamp(Number(memo.photoOffsetX), -80, 80) : 0;
+  const photoOffsetY = Number.isFinite(Number(memo.photoOffsetY)) ? clamp(Number(memo.photoOffsetY), -80, 80) : 0;
   const scheduleDate = typeof memo.scheduleDate === 'string' ? memo.scheduleDate.trim() : '';
   const scheduleTime = typeof memo.scheduleTime === 'string' ? memo.scheduleTime.trim() : '';
   const schedulePlace = typeof memo.schedulePlace === 'string' ? memo.schedulePlace.trim() : '';
@@ -210,6 +228,10 @@ export const normalizeMemo = (memo = {}, index = 0) => {
     checklist: type === 'checklist' ? checklist : [],
     photoDataUrl,
     caption,
+    photoCropRatio,
+    photoZoom,
+    photoOffsetX,
+    photoOffsetY,
     scheduleDate,
     scheduleTime,
     schedulePlace,
