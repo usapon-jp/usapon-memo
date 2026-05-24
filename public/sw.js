@@ -1,8 +1,9 @@
-const CACHE_NAME = 'usapon-memo-v3';
+const CACHE_NAME = 'usapon-memo-v4';
 const APP_SHELL = [
   '/usapon-memo/',
   '/usapon-memo/manifest.webmanifest',
   '/usapon-memo/assets/cork-board.jpg',
+  '/usapon-memo/assets/fonts/HuiFontP29.ttf',
   '/usapon-memo/assets/usa.png',
   '/usapon-memo/assets/piyo.png',
   '/usapon-memo/assets/pon.png',

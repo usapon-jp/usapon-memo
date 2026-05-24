@@ -13,6 +13,12 @@
   background: var(--paper);
 }
 
+@font-face {
+  font-family: "HuiFontP";
+  src: url("/usapon-memo/assets/fonts/HuiFontP29.ttf") format("truetype");
+  font-display: swap;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -1028,9 +1034,10 @@ body {
 .cork-header h1 {
   margin: 0;
   color: #7b5e3f;
-  font-size: 30px;
-  font-weight: 500;
-  letter-spacing: 0.18em;
+  font-family: "HuiFontP", "ふい字Ｐ", "ふい字P", "Klee One", "Hiragino Sans", sans-serif;
+  font-size: 34px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
   text-align: center;
 }
 
@@ -1436,8 +1443,8 @@ body {
   }
 
   .cork-header h1 {
-    font-size: 25px;
-    letter-spacing: 0.14em;
+    font-size: 30px;
+    letter-spacing: 0.03em;
   }
 
   .board-tabs {
