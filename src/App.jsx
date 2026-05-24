@@ -68,10 +68,6 @@ const TAPE_COLOR_MAP = {
   pink: 'rgba(231, 178, 184, 0.76)'
 };
 const getTapeColor = (color = 'yellow') => TAPE_COLOR_MAP[color] || TAPE_COLOR_MAP.yellow;
-const PHOTO_RATIO_OPTIONS = [
-  { id: PHOTO_CROP_RATIOS.square, label: '正方形' },
-  { id: PHOTO_CROP_RATIOS.custom, label: 'カスタム' }
-];
 const PHOTO_RATIO_CLASS = {
   square: 'is-square',
   custom: 'is-custom',
@@ -1113,7 +1109,7 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
         photoAspectRatio: aspectRatio,
         photoFrameRatio: aspectRatio
       }));
-      setPhotoToolsOpen(true);
+      setPhotoToolsOpen(false);
     } finally {
       setImageBusy(false);
       event.target.value = '';
@@ -1137,54 +1133,6 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
       ...current,
       ...patch
     }));
-  };
-
-  const updatePhotoRatio = (ratio) => {
-    updatePhotoCrop({
-      photoCropRatio: ratio,
-      photoFrameRatio: ratio === 'square' ? 1 : (draft.photoFrameRatio || draft.photoAspectRatio || 1)
-    });
-  };
-
-  const startFrameResize = (event, corner) => {
-    event.preventDefault();
-    event.stopPropagation();
-    setPhotoToolsOpen(true);
-    const rect = event.currentTarget.closest('.photo-crop-frame')?.getBoundingClientRect();
-    if (!rect) return;
-    const start = {
-      x: event.clientX,
-      y: event.clientY,
-      width: rect.width,
-      height: rect.height,
-      ratio: draft.photoFrameRatio || draft.photoAspectRatio || 1
-    };
-    event.currentTarget.setPointerCapture(event.pointerId);
-
-    const resizeFrame = (moveEvent) => {
-      const horizontal = corner.includes('right')
-        ? moveEvent.clientX - start.x
-        : start.x - moveEvent.clientX;
-      const vertical = corner.includes('bottom')
-        ? moveEvent.clientY - start.y
-        : start.y - moveEvent.clientY;
-      const nextWidth = clamp(start.width + horizontal, 90, 360);
-      const nextHeight = clamp(start.height + vertical, 90, 360);
-      updatePhotoCrop({
-        photoCropRatio: 'custom',
-        photoFrameRatio: clamp(nextWidth / nextHeight, 0.35, 2.2)
-      });
-    };
-
-    const stopResize = () => {
-      window.removeEventListener('pointermove', resizeFrame);
-      window.removeEventListener('pointerup', stopResize);
-      window.removeEventListener('pointercancel', stopResize);
-    };
-
-    window.addEventListener('pointermove', resizeFrame);
-    window.addEventListener('pointerup', stopResize);
-    window.addEventListener('pointercancel', stopResize);
   };
 
   const resetPhotoGesture = () => {
@@ -1222,7 +1170,6 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
   const startPhotoDrag = (event) => {
     if (!draft.photoDataUrl) return;
     event.preventDefault();
-    setPhotoToolsOpen(true);
     event.currentTarget.setPointerCapture(event.pointerId);
     photoPointersRef.current.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
     resetPhotoGesture();
@@ -1424,14 +1371,6 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
               {draft.photoDataUrl ? (
                 <>
                   <img src={draft.photoDataUrl} alt="選択した写真" style={getPhotoImageStyle(draft)} draggable="false" />
-                  {draft.photoCropRatio === 'custom' && photoToolsOpen && (
-                    <>
-                      <span className="crop-corner is-top-left" onPointerDown={(event) => startFrameResize(event, 'top-left')} />
-                      <span className="crop-corner is-top-right" onPointerDown={(event) => startFrameResize(event, 'top-right')} />
-                      <span className="crop-corner is-bottom-left" onPointerDown={(event) => startFrameResize(event, 'bottom-left')} />
-                      <span className="crop-corner is-bottom-right" onPointerDown={(event) => startFrameResize(event, 'bottom-right')} />
-                    </>
-                  )}
                 </>
               ) : (
                 <span><ImagePlus size={28} />{imageBusy ? '読み込み中' : '写真を選ぶ'}</span>
@@ -1443,40 +1382,6 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
                   <button type="button" onClick={() => photoInputRef.current?.click()}>差し替え</button>
                   <button type="button" onClick={removePhoto}>削除</button>
                 </div>
-                <div className="photo-ratio-row" aria-label="切り抜き比率">
-                  {PHOTO_RATIO_OPTIONS.map(option => (
-                    <button
-                      key={option.id}
-                      type="button"
-                      className={draft.photoCropRatio === option.id ? 'active' : ''}
-                      onClick={() => updatePhotoRatio(option.id)}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-                <label className="photo-slider">
-                  <span>ズーム</span>
-                  <input
-                    type="range"
-                    min="1"
-                    max="4"
-                    step="0.05"
-                    value={draft.photoZoom}
-                    onChange={(event) => updatePhotoCrop({ photoZoom: Number(event.target.value) })}
-                  />
-                </label>
-                <label className="photo-slider">
-                  <span>傾き</span>
-                  <input
-                    type="range"
-                    min="-35"
-                    max="35"
-                    step="1"
-                    value={draft.photoRotation}
-                    onChange={(event) => updatePhotoCrop({ photoRotation: Number(event.target.value) })}
-                  />
-                </label>
               </div>
             )}
             <input
