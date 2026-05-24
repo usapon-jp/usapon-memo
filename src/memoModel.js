@@ -14,8 +14,9 @@ export const CARD_TYPES = {
 };
 
 export const PHOTO_CROP_RATIOS = {
-  landscape: 'landscape',
   square: 'square',
+  custom: 'custom',
+  landscape: 'landscape',
   portrait: 'portrait'
 };
 
@@ -82,11 +83,13 @@ export const createEmptyMemo = (patch = {}) => {
     checklist: [createChecklistItem()],
     photoDataUrl: '',
     caption: '',
-    photoCropRatio: 'landscape',
+    photoCropRatio: 'custom',
     photoZoom: 1,
     photoOffsetX: 0,
     photoOffsetY: 0,
     photoRotation: 0,
+    photoAspectRatio: 1,
+    photoFrameRatio: 1,
     scheduleDate: '',
     scheduleTime: '',
     schedulePlace: '',
@@ -181,11 +184,13 @@ const migrateLegacyMemo = (memo, index) => {
     checklist,
     photoDataUrl: '',
     caption: '',
-    photoCropRatio: 'landscape',
+    photoCropRatio: 'custom',
     photoZoom: 1,
     photoOffsetX: 0,
     photoOffsetY: 0,
     photoRotation: 0,
+    photoAspectRatio: 1,
+    photoFrameRatio: 1,
     scheduleDate: '',
     scheduleTime: '',
     schedulePlace: '',
@@ -219,11 +224,17 @@ export const normalizeMemo = (memo = {}, index = 0) => {
   const text = typeof memo.text === 'string' ? memo.text.trim() : '';
   const photoDataUrl = typeof memo.photoDataUrl === 'string' ? memo.photoDataUrl : '';
   const caption = typeof memo.caption === 'string' ? memo.caption.trim() : '';
-  const photoCropRatio = PHOTO_CROP_RATIOS[memo.photoCropRatio] ? memo.photoCropRatio : 'landscape';
+  const photoCropRatio = PHOTO_CROP_RATIOS[memo.photoCropRatio] ? memo.photoCropRatio : 'custom';
   const photoZoom = Number.isFinite(Number(memo.photoZoom)) ? clamp(Number(memo.photoZoom), 1, 4) : 1;
   const photoOffsetX = Number.isFinite(Number(memo.photoOffsetX)) ? clamp(Number(memo.photoOffsetX), -160, 160) : 0;
   const photoOffsetY = Number.isFinite(Number(memo.photoOffsetY)) ? clamp(Number(memo.photoOffsetY), -160, 160) : 0;
   const photoRotation = Number.isFinite(Number(memo.photoRotation)) ? clamp(Number(memo.photoRotation), -35, 35) : 0;
+  const photoAspectRatio = Number.isFinite(Number(memo.photoAspectRatio)) && Number(memo.photoAspectRatio) > 0
+    ? clamp(Number(memo.photoAspectRatio), 0.1, 10)
+    : 1;
+  const photoFrameRatio = Number.isFinite(Number(memo.photoFrameRatio)) && Number(memo.photoFrameRatio) > 0
+    ? clamp(Number(memo.photoFrameRatio), 0.35, 2.2)
+    : (photoCropRatio === 'custom' ? photoAspectRatio : 1);
   const scheduleDate = typeof memo.scheduleDate === 'string' ? memo.scheduleDate.trim() : '';
   const scheduleTime = typeof memo.scheduleTime === 'string' ? memo.scheduleTime.trim() : '';
   const schedulePlace = typeof memo.schedulePlace === 'string' ? memo.schedulePlace.trim() : '';
@@ -252,6 +263,8 @@ export const normalizeMemo = (memo = {}, index = 0) => {
     photoOffsetX,
     photoOffsetY,
     photoRotation,
+    photoAspectRatio,
+    photoFrameRatio,
     scheduleDate,
     scheduleTime,
     schedulePlace,

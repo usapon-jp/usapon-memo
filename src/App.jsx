@@ -62,11 +62,11 @@ const COLOR_ORDER = ['white', 'green', 'yellow', 'blue', 'pink'];
 const COLOR_OPTIONS = COLOR_ORDER.map(id => ({ id, ...MEMO_COLORS[id] }));
 const PHOTO_RATIO_OPTIONS = [
   { id: PHOTO_CROP_RATIOS.square, label: '正方形' },
-  { id: PHOTO_CROP_RATIOS.landscape, label: '横長' },
-  { id: PHOTO_CROP_RATIOS.portrait, label: '縦長' }
+  { id: PHOTO_CROP_RATIOS.custom, label: 'カスタム' }
 ];
 const PHOTO_RATIO_CLASS = {
   square: 'is-square',
+  custom: 'is-custom',
   landscape: 'is-landscape',
   portrait: 'is-portrait'
 };
@@ -120,17 +120,33 @@ const resizeImageFile = async (file, maxWidth = 1200) => {
   canvas.height = Math.round(image.height * scale);
   const context = canvas.getContext('2d');
   context.drawImage(image, 0, 0, canvas.width, canvas.height);
-  return canvas.toDataURL('image/jpeg', 0.82);
+  return {
+    dataUrl: canvas.toDataURL('image/jpeg', 0.82),
+    aspectRatio: canvas.width / canvas.height
+  };
 };
 
 const getPhotoCropClass = (ratio) => PHOTO_RATIO_CLASS[ratio] || PHOTO_RATIO_CLASS.landscape;
+const getPhotoFrameRatio = (memo) => {
+  if (memo.photoCropRatio === 'square') return 1;
+  if (memo.photoCropRatio === 'portrait') return 0.78;
+  if (memo.photoCropRatio === 'landscape') return 1 / 0.78;
+  return memo.photoFrameRatio || memo.photoAspectRatio || 1;
+};
 
-const getPhotoImageStyle = (memo) => ({
-  '--photo-zoom': memo.photoZoom || 1,
-  '--photo-x': `${memo.photoOffsetX || 0}px`,
-  '--photo-y': `${memo.photoOffsetY || 0}px`,
-  '--photo-rotation': `${memo.photoRotation || 0}deg`
-});
+const getPhotoImageStyle = (memo) => {
+  const imageRatio = memo.photoAspectRatio || 1;
+  const frameRatio = getPhotoFrameRatio(memo);
+  return {
+    '--photo-zoom': memo.photoZoom || 1,
+    '--photo-x': `${memo.photoOffsetX || 0}px`,
+    '--photo-y': `${memo.photoOffsetY || 0}px`,
+    '--photo-rotation': `${memo.photoRotation || 0}deg`,
+    '--photo-frame-ratio': frameRatio,
+    '--photo-fit-width': imageRatio >= frameRatio ? '100%' : 'auto',
+    '--photo-fit-height': imageRatio >= frameRatio ? 'auto' : '100%'
+  };
+};
 
 const getPointerDistance = (first, second) => Math.hypot(second.clientX - first.clientX, second.clientY - first.clientY);
 const getPointerAngle = (first, second) => Math.atan2(second.clientY - first.clientY, second.clientX - first.clientX) * 180 / Math.PI;
@@ -756,7 +772,7 @@ function BoardMemo({ memo, onPointerDown, onEdit }) {
           if (event.key === 'Enter' || event.key === ' ') onEdit();
         }}>
           {memo.photoDataUrl ? (
-            <span className={`photo-crop-frame ${getPhotoCropClass(memo.photoCropRatio)}`}>
+            <span className={`photo-crop-frame ${getPhotoCropClass(memo.photoCropRatio)}`} style={{ '--photo-frame-ratio': getPhotoFrameRatio(memo) }}>
               <img src={memo.photoDataUrl} alt={memo.caption || memo.title || '写真'} style={getPhotoImageStyle(memo)} />
             </span>
           ) : (
@@ -799,6 +815,7 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [imageBusy, setImageBusy] = useState(false);
   const [selectedStickerId, setSelectedStickerId] = useState('');
+  const [photoToolsOpen, setPhotoToolsOpen] = useState(true);
   const primaryInputRef = useRef(null);
   const titleInputRef = useRef(null);
   const photoInputRef = useRef(null);
@@ -893,17 +910,20 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
     if (!file) return;
     setImageBusy(true);
     try {
-      const photoDataUrl = await resizeImageFile(file);
+      const { dataUrl: photoDataUrl, aspectRatio } = await resizeImageFile(file);
       setDraft(current => ({
         ...current,
         photoDataUrl,
         caption: current.caption || current.title,
-        photoCropRatio: 'landscape',
+        photoCropRatio: 'custom',
         photoZoom: 1,
         photoOffsetX: 0,
         photoOffsetY: 0,
-        photoRotation: 0
+        photoRotation: 0,
+        photoAspectRatio: aspectRatio,
+        photoFrameRatio: aspectRatio
       }));
+      setPhotoToolsOpen(true);
     } finally {
       setImageBusy(false);
       event.target.value = '';
@@ -917,7 +937,8 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
       photoZoom: 1,
       photoOffsetX: 0,
       photoOffsetY: 0,
-      photoRotation: 0
+      photoRotation: 0,
+      photoFrameRatio: current.photoAspectRatio || 1
     }));
   };
 
@@ -926,6 +947,54 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
       ...current,
       ...patch
     }));
+  };
+
+  const updatePhotoRatio = (ratio) => {
+    updatePhotoCrop({
+      photoCropRatio: ratio,
+      photoFrameRatio: ratio === 'square' ? 1 : (draft.photoFrameRatio || draft.photoAspectRatio || 1)
+    });
+  };
+
+  const startFrameResize = (event, corner) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setPhotoToolsOpen(true);
+    const rect = event.currentTarget.closest('.photo-crop-frame')?.getBoundingClientRect();
+    if (!rect) return;
+    const start = {
+      x: event.clientX,
+      y: event.clientY,
+      width: rect.width,
+      height: rect.height,
+      ratio: draft.photoFrameRatio || draft.photoAspectRatio || 1
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+
+    const resizeFrame = (moveEvent) => {
+      const horizontal = corner.includes('right')
+        ? moveEvent.clientX - start.x
+        : start.x - moveEvent.clientX;
+      const vertical = corner.includes('bottom')
+        ? moveEvent.clientY - start.y
+        : start.y - moveEvent.clientY;
+      const nextWidth = clamp(start.width + horizontal, 90, 360);
+      const nextHeight = clamp(start.height + vertical, 90, 360);
+      updatePhotoCrop({
+        photoCropRatio: 'custom',
+        photoFrameRatio: clamp(nextWidth / nextHeight, 0.35, 2.2)
+      });
+    };
+
+    const stopResize = () => {
+      window.removeEventListener('pointermove', resizeFrame);
+      window.removeEventListener('pointerup', stopResize);
+      window.removeEventListener('pointercancel', stopResize);
+    };
+
+    window.addEventListener('pointermove', resizeFrame);
+    window.addEventListener('pointerup', stopResize);
+    window.addEventListener('pointercancel', stopResize);
   };
 
   const resetPhotoGesture = () => {
@@ -963,6 +1032,7 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
   const startPhotoDrag = (event) => {
     if (!draft.photoDataUrl) return;
     event.preventDefault();
+    setPhotoToolsOpen(true);
     event.currentTarget.setPointerCapture(event.pointerId);
     photoPointersRef.current.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
     resetPhotoGesture();
@@ -1071,7 +1141,19 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
   };
 
   return (
-    <section className="create-page">
+    <section
+      className="create-page"
+      onPointerDown={(event) => {
+        if (
+          draft.cardType === 'photo'
+          && draft.photoDataUrl
+          && !event.target.closest('.photo-picker')
+          && !event.target.closest('.photo-tools')
+        ) {
+          setPhotoToolsOpen(false);
+        }
+      }}
+    >
       <header className="create-topbar">
         <button type="button" className="create-nav-button" onClick={onBack} aria-label="ホームへ戻る">
           <ArrowLeft size={34} strokeWidth={2.4} />
@@ -1125,10 +1207,17 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
           <div className="photo-editor">
             <div
               className={`photo-picker photo-crop-frame ${getPhotoCropClass(draft.photoCropRatio)}`}
+              style={{ '--photo-frame-ratio': getPhotoFrameRatio(draft) }}
               role="button"
               tabIndex={0}
               aria-label={draft.photoDataUrl ? '写真の切り抜き位置を調整' : '写真を選ぶ'}
-              onClick={() => !draft.photoDataUrl && photoInputRef.current?.click()}
+              onClick={() => {
+                if (draft.photoDataUrl) {
+                  setPhotoToolsOpen(true);
+                } else {
+                  photoInputRef.current?.click();
+                }
+              }}
               onKeyDown={(event) => {
                 if (event.key === 'Enter' || event.key === ' ') {
                   event.preventDefault();
@@ -1144,13 +1233,20 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
               {draft.photoDataUrl ? (
                 <>
                   <img src={draft.photoDataUrl} alt="選択した写真" style={getPhotoImageStyle(draft)} draggable="false" />
-                  <span className="crop-hint">ドラッグで位置調整</span>
+                  {draft.photoCropRatio === 'custom' && photoToolsOpen && (
+                    <>
+                      <span className="crop-corner is-top-left" onPointerDown={(event) => startFrameResize(event, 'top-left')} />
+                      <span className="crop-corner is-top-right" onPointerDown={(event) => startFrameResize(event, 'top-right')} />
+                      <span className="crop-corner is-bottom-left" onPointerDown={(event) => startFrameResize(event, 'bottom-left')} />
+                      <span className="crop-corner is-bottom-right" onPointerDown={(event) => startFrameResize(event, 'bottom-right')} />
+                    </>
+                  )}
                 </>
               ) : (
                 <span><ImagePlus size={28} />{imageBusy ? '読み込み中' : '写真を選ぶ'}</span>
               )}
             </div>
-            {draft.photoDataUrl && (
+            {draft.photoDataUrl && photoToolsOpen && (
               <div className="photo-tools" aria-label="写真操作">
                 <div className="photo-tool-actions">
                   <button type="button" onClick={() => photoInputRef.current?.click()}>差し替え</button>
@@ -1162,7 +1258,7 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
                       key={option.id}
                       type="button"
                       className={draft.photoCropRatio === option.id ? 'active' : ''}
-                      onClick={() => updatePhotoCrop({ photoCropRatio: option.id })}
+                      onClick={() => updatePhotoRatio(option.id)}
                     >
                       {option.label}
                     </button>
