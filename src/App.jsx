@@ -396,6 +396,7 @@ function HomePage({
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [boardMenu, setBoardMenu] = useState(null);
   const [editingBoard, setEditingBoard] = useState(null);
+  const [draggingMemoId, setDraggingMemoId] = useState(null);
   const boardRef = useRef(null);
   const swipeStartRef = useRef(null);
   const longPressTimerRef = useRef(null);
@@ -406,6 +407,7 @@ function HomePage({
 
   const handlePointerDown = (event, memo) => {
     if (!boardRef.current || event.target.closest('input, textarea, button')) return;
+    setDraggingMemoId(memo.id);
     event.currentTarget.setPointerCapture(event.pointerId);
     const boardRect = boardRef.current.getBoundingClientRect();
     const cardRect = event.currentTarget.getBoundingClientRect();
@@ -419,6 +421,7 @@ function HomePage({
     };
 
     const stopMove = () => {
+      setDraggingMemoId(null);
       window.removeEventListener('pointermove', moveMemo);
       window.removeEventListener('pointerup', stopMove);
       window.removeEventListener('pointercancel', stopMove);
@@ -614,6 +617,7 @@ function HomePage({
               <BoardMemo
                 key={memo.id}
                 memo={memo}
+                isDragging={draggingMemoId === memo.id}
                 onPointerDown={(event) => handlePointerDown(event, memo)}
                 onEdit={() => onEdit(memo)}
               />
@@ -752,7 +756,7 @@ function StickerLayer({ stickers = [], onStickerPointerDown = null, selectedStic
   );
 }
 
-function BoardMemo({ memo, onPointerDown, onEdit }) {
+function BoardMemo({ memo, isDragging, onPointerDown, onEdit }) {
   const hasTitle = memo.title.trim().length > 0;
   const cardType = memo.cardType || (memo.type === 'checklist' ? 'checklist' : 'note');
   const style = {
@@ -763,7 +767,7 @@ function BoardMemo({ memo, onPointerDown, onEdit }) {
 
   return (
     <article
-      className={`board-card board-memo ${MEMO_COLORS[memo.color].className} card-${cardType} ${memo.pinned ? 'is-pinned' : ''} ${memo.completed ? 'is-completed' : ''}`}
+      className={`board-card board-memo ${MEMO_COLORS[memo.color].className} card-${cardType} ${memo.pinned ? 'is-pinned' : ''} ${memo.completed ? 'is-completed' : ''} ${isDragging ? 'is-dragging' : ''}`}
       style={style}
       onPointerDown={onPointerDown}
     >

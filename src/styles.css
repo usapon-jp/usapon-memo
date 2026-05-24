@@ -1371,12 +1371,20 @@ body {
   position: absolute;
   transform: rotate(var(--tilt));
   transition: transform 160ms ease, box-shadow 160ms ease;
+  touch-action: none;
 }
 
 .board-card:active {
   transform: rotate(var(--tilt)) scale(1.03);
   z-index: 8;
   box-shadow: 0 24px 34px rgba(74, 46, 24, 0.22);
+}
+
+.board-card.is-dragging,
+.board-card.is-dragging:active {
+  z-index: 1000;
+  transform: rotate(var(--tilt));
+  transition: none;
 }
 
 .board-card::before {
