@@ -764,56 +764,63 @@ function BoardMemo({ memo, isDragging, onPointerDown, onEdit }) {
     top: `${memo.y}%`,
     '--tilt': `${getCardTilt(memo.id)}deg`
   };
+  const dragClassName = isDragging ? 'is-dragging' : '';
+
+  if (cardType === 'photo') {
+    return (
+      <article
+        className={`board-card photo-card ${dragClassName}`}
+        style={style}
+        onPointerDown={onPointerDown}
+      >
+        <span className="photo-tape" aria-hidden="true" />
+        <div className="photo-card-inner" role="button" tabIndex={0} onClick={onEdit} onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') onEdit();
+        }}>
+          {memo.photoDataUrl ? (
+            <span className={`photo-card-frame photo-crop-frame ${getPhotoCropClass(memo.photoCropRatio)}`} style={{ '--photo-frame-ratio': getPhotoFrameRatio(memo) }}>
+              <img className="photo-card-image" src={memo.photoDataUrl} alt={memo.caption || memo.title || '写真'} style={getPhotoImageStyle(memo)} />
+            </span>
+          ) : (
+            <span className="photo-card-frame photo-placeholder"><Camera size={27} />写真</span>
+          )}
+          {memo.caption && <div className="photo-card-caption">{memo.caption}</div>}
+        </div>
+      </article>
+    );
+  }
 
   return (
     <article
-      className={`board-card board-memo ${MEMO_COLORS[memo.color].className} card-${cardType} ${memo.pinned ? 'is-pinned' : ''} ${memo.completed ? 'is-completed' : ''} ${isDragging ? 'is-dragging' : ''}`}
+      className={`board-card board-memo ${MEMO_COLORS[memo.color].className} card-${cardType} ${memo.pinned ? 'is-pinned' : ''} ${memo.completed ? 'is-completed' : ''} ${dragClassName}`}
       style={style}
       onPointerDown={onPointerDown}
     >
       <span className="card-tape" aria-hidden="true" />
       {cardType !== 'photo' && <StickerLayer stickers={memo.stickers} />}
-
-      {cardType === 'photo' ? (
-        <div className="photo-card-body" role="button" tabIndex={0} onClick={onEdit} onKeyDown={(event) => {
-          if (event.key === 'Enter' || event.key === ' ') onEdit();
-        }}>
-          {memo.photoDataUrl ? (
-            <span className={`photo-crop-frame ${getPhotoCropClass(memo.photoCropRatio)}`} style={{ '--photo-frame-ratio': getPhotoFrameRatio(memo) }}>
-              <img src={memo.photoDataUrl} alt={memo.caption || memo.title || '写真'} style={getPhotoImageStyle(memo)} />
-            </span>
-          ) : (
-            <span className="photo-placeholder"><Camera size={27} />写真</span>
-          )}
-          {memo.caption && <strong>{memo.caption}</strong>}
-        </div>
-      ) : (
-        <>
-          <div className="board-memo-body" role="button" tabIndex={0} onClick={onEdit} onKeyDown={(event) => {
-            if (event.key === 'Enter' || event.key === ' ') onEdit();
-          }}>
-            {hasTitle && <strong className="board-memo-title">{memo.title}</strong>}
-            {cardType === 'schedule' ? (
-              <span className="schedule-preview">
-                <small>{memo.scheduleDate || '日付未定'}</small>
-                <span>{memo.scheduleTime || '時間未定'}</span>
-                <em>{memo.schedulePlace || '場所未定'}</em>
+      <div className="board-memo-body" role="button" tabIndex={0} onClick={onEdit} onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') onEdit();
+      }}>
+        {hasTitle && <strong className="board-memo-title">{memo.title}</strong>}
+        {cardType === 'schedule' ? (
+          <span className="schedule-preview">
+            <small>{memo.scheduleDate || '日付未定'}</small>
+            <span>{memo.scheduleTime || '時間未定'}</span>
+            <em>{memo.schedulePlace || '場所未定'}</em>
+          </span>
+        ) : cardType === 'checklist' ? (
+          <span className="mini-checklist">
+            {memo.checklist.slice(0, 4).map(item => (
+              <span key={item.id} className={item.completed ? 'done' : ''}>
+                <i aria-hidden="true" />
+                {item.text}
               </span>
-            ) : cardType === 'checklist' ? (
-              <span className="mini-checklist">
-                {memo.checklist.slice(0, 4).map(item => (
-                  <span key={item.id} className={item.completed ? 'done' : ''}>
-                    <i aria-hidden="true" />
-                    {item.text}
-                  </span>
-                ))}
-              </span>
-            ) : (
-              <span>{memo.text || '自由メモ'}</span>
-            )}
-          </div>
-        </>
-      )}
+            ))}
+          </span>
+        ) : (
+          <span>{memo.text || '自由メモ'}</span>
+        )}
+      </div>
     </article>
   );
 }
