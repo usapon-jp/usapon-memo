@@ -115,7 +115,9 @@ const fileToDataUrl = (file) => new Promise((resolve, reject) => {
   reader.readAsDataURL(file);
 });
 
-const resizeImageFile = async (file, maxWidth = 1200) => {
+const MAX_PHOTO_DATA_URL_LENGTH = 620000;
+
+const resizeImageFile = async (file, maxWidth = 900) => {
   const dataUrl = await fileToDataUrl(file);
   const image = await new Promise((resolve, reject) => {
     const img = new Image();
@@ -123,14 +125,28 @@ const resizeImageFile = async (file, maxWidth = 1200) => {
     img.onerror = reject;
     img.src = dataUrl;
   });
-  const scale = Math.min(1, maxWidth / image.width);
+  let scale = Math.min(1, maxWidth / image.width);
+  let quality = 0.72;
+  let output = '';
   const canvas = document.createElement('canvas');
-  canvas.width = Math.round(image.width * scale);
-  canvas.height = Math.round(image.height * scale);
   const context = canvas.getContext('2d');
-  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    canvas.width = Math.max(1, Math.round(image.width * scale));
+    canvas.height = Math.max(1, Math.round(image.height * scale));
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    output = canvas.toDataURL('image/jpeg', quality);
+    if (output.length <= MAX_PHOTO_DATA_URL_LENGTH) break;
+    if (quality > 0.54) {
+      quality -= 0.08;
+    } else {
+      scale *= 0.82;
+    }
+  }
+
   return {
-    dataUrl: canvas.toDataURL('image/jpeg', 0.82),
+    dataUrl: output,
     aspectRatio: canvas.width / canvas.height
   };
 };
@@ -192,7 +208,7 @@ export default function App() {
 
   useEffect(() => {
     const ok = saveMemoData(data);
-    setStorageError(ok ? '' : '写真が大きくて保存できませんでした。画像を小さくしてもう一度試してください。');
+    setStorageError(ok ? '' : '保存容量がいっぱいです。写真カードを減らすか、小さめの写真に差し替えてください。');
   }, [data]);
 
   useEffect(() => {
