@@ -571,13 +571,13 @@ function HomePage({
           </button>
           <p>なにを貼る？</p>
           <div>
-            <button type="button" onClick={() => chooseAddType('photo')}>
-              <ImagePlus size={24} />
-              写真
-            </button>
             <button type="button" onClick={() => chooseAddType('checklist')}>
               <StickyNote size={24} />
               メモ
+            </button>
+            <button type="button" onClick={() => chooseAddType('photo')}>
+              <ImagePlus size={24} />
+              写真
             </button>
           </div>
         </div>
