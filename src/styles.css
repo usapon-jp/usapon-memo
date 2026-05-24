@@ -514,7 +514,7 @@ button {
   height: 30px;
   transform: translateX(-50%) rotate(-1deg);
   border-radius: 2px;
-  background: rgba(218, 207, 188, 0.58);
+  background: var(--memo-tape-color, rgba(218, 207, 188, 0.58));
   box-shadow: 0 5px 11px rgba(120, 103, 77, 0.08);
 }
 
@@ -1427,7 +1427,7 @@ body {
   border-radius: 2px;
   background:
     linear-gradient(45deg, rgba(255, 255, 255, 0.28) 25%, transparent 25% 50%, rgba(255, 255, 255, 0.28) 50% 75%, transparent 75%),
-    rgba(250, 226, 179, 0.72);
+    var(--memo-tape-color, rgba(250, 226, 179, 0.72));
   background-size: 12px 12px;
 }
 
@@ -1435,7 +1435,6 @@ body {
   left: 50%;
   right: auto;
   transform: translateX(-50%) rotate(-2deg);
-  background-color: rgba(245, 188, 189, 0.68);
 }
 
 .board-memo {
@@ -1513,7 +1512,7 @@ body {
   border-radius: 2px;
   background:
     repeating-linear-gradient(45deg, rgba(244, 211, 136, 0.28) 0 6px, rgba(255, 248, 220, 0.5) 6px 12px),
-    rgba(236, 218, 179, 0.78);
+    var(--photo-tape-color, rgba(236, 218, 179, 0.78));
   box-shadow: 0 2px 5px rgba(88, 62, 36, 0.08);
   pointer-events: none;
 }
@@ -1748,7 +1747,7 @@ body {
   top: -12px;
   width: 72px;
   height: 27px;
-  background: rgba(221, 211, 194, 0.62);
+  background: var(--photo-tape-color, rgba(221, 211, 194, 0.62));
 }
 
 .photo-editor {

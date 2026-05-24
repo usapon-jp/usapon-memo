@@ -94,6 +94,7 @@ export const createEmptyMemo = (patch = {}) => {
     scheduleTime: '',
     schedulePlace: '',
     color: 'yellow',
+    tapeColor: patch.tapeColor || patch.color || 'yellow',
     x: 12,
     y: 12,
     scale: 1,
@@ -197,6 +198,7 @@ const migrateLegacyMemo = (memo, index) => {
     scheduleTime: '',
     schedulePlace: '',
     color: LEGACY_COLOR_MAP[memo.category] || 'yellow',
+    tapeColor: LEGACY_COLOR_MAP[memo.category] || 'yellow',
     x: position.x,
     y: position.y,
     scale: 1,
@@ -242,6 +244,9 @@ export const normalizeMemo = (memo = {}, index = 0) => {
   const scheduleDate = typeof memo.scheduleDate === 'string' ? memo.scheduleDate.trim() : '';
   const scheduleTime = typeof memo.scheduleTime === 'string' ? memo.scheduleTime.trim() : '';
   const schedulePlace = typeof memo.schedulePlace === 'string' ? memo.schedulePlace.trim() : '';
+  const tapeColor = MEMO_COLORS[memo.tapeColor]
+    ? memo.tapeColor
+    : (MEMO_COLORS[memo.color] ? memo.color : 'yellow');
   const position = DEFAULT_POSITIONS[index % DEFAULT_POSITIONS.length];
   const createdAt = typeof memo.createdAt === 'string' ? memo.createdAt : nowIso();
   const updatedAt = typeof memo.updatedAt === 'string' ? memo.updatedAt : createdAt;
@@ -273,6 +278,7 @@ export const normalizeMemo = (memo = {}, index = 0) => {
     scheduleTime,
     schedulePlace,
     color: MEMO_COLORS[memo.color] ? memo.color : 'yellow',
+    tapeColor,
     x: Number.isFinite(Number(memo.x)) ? clamp(Number(memo.x)) : position.x,
     y: Number.isFinite(Number(memo.y)) ? clamp(Number(memo.y)) : position.y,
     scale: Number.isFinite(Number(memo.scale)) ? clamp(Number(memo.scale), 0.55, 2.4) : 1,

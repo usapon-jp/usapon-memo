@@ -60,6 +60,14 @@ const STICKER_MAP = Object.fromEntries(STICKER_OPTIONS.map(sticker => [sticker.i
 
 const COLOR_ORDER = ['white', 'green', 'yellow', 'blue', 'pink'];
 const COLOR_OPTIONS = COLOR_ORDER.map(id => ({ id, ...MEMO_COLORS[id] }));
+const TAPE_COLOR_MAP = {
+  white: 'rgba(214, 203, 188, 0.66)',
+  green: 'rgba(178, 204, 170, 0.76)',
+  yellow: 'rgba(238, 204, 111, 0.76)',
+  blue: 'rgba(169, 205, 222, 0.78)',
+  pink: 'rgba(231, 178, 184, 0.76)'
+};
+const getTapeColor = (color = 'yellow') => TAPE_COLOR_MAP[color] || TAPE_COLOR_MAP.yellow;
 const PHOTO_RATIO_OPTIONS = [
   { id: PHOTO_CROP_RATIOS.square, label: '正方形' },
   { id: PHOTO_CROP_RATIOS.custom, label: 'カスタム' }
@@ -92,6 +100,7 @@ const createDraft = (patch = {}) => {
     cardType,
     type: cardType === 'checklist' ? 'checklist' : 'note',
     color: cardType === 'photo' ? 'white' : 'green',
+    tapeColor: cardType === 'photo' ? 'yellow' : 'green',
     checklist: cardType === 'checklist' ? [createChecklistItem()] : [],
     x: 10 + Math.floor(Math.random() * 46),
     y: 10 + Math.floor(Math.random() * 48),
@@ -251,7 +260,8 @@ export default function App() {
       cardType,
       type: cardType === 'checklist' ? 'checklist' : 'note',
       checklist: cardType === 'checklist' ? [createChecklistItem()] : [],
-      color: cardType === 'photo' ? 'white' : 'green'
+      color: cardType === 'photo' ? 'white' : 'green',
+      tapeColor: cardType === 'photo' ? 'yellow' : 'green'
     }));
     setPage('create');
   };
@@ -903,7 +913,9 @@ function BoardMemo({ memo, isDragging, onPointerDown, onEdit }) {
     left: `${memo.x}%`,
     top: `${memo.y}%`,
     '--rotation': `${memo.rotation || 0}deg`,
-    '--scale': memo.scale || 1
+    '--scale': memo.scale || 1,
+    '--memo-tape-color': getTapeColor(memo.color),
+    '--photo-tape-color': getTapeColor(memo.tapeColor || memo.color)
   };
   const dragClassName = isDragging ? 'is-dragging' : '';
 
@@ -987,6 +999,12 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
         ? draft.title.trim().length > 0 || draft.checklist.some(item => item.text.trim()) || draft.stickers.length > 0
         : draft.title.trim().length > 0 || draft.text.trim().length > 0 || draft.stickers.length > 0;
   const firstChecklistItem = draft.checklist[0] || null;
+  const selectedPaletteColor = draft.cardType === 'photo' ? draft.tapeColor : draft.color;
+  const paletteLabel = draft.cardType === 'photo' ? 'マステ色' : 'メモ色';
+  const createCardStyle = {
+    '--memo-tape-color': getTapeColor(draft.cardType === 'photo' ? draft.tapeColor : draft.color),
+    '--photo-tape-color': getTapeColor(draft.tapeColor || draft.color)
+  };
 
   useEffect(() => {
     if (!pendingFocusId.current) return;
@@ -1008,7 +1026,8 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
       checklist: cardType === 'checklist'
         ? (current.checklist.length ? current.checklist : [createChecklistItem()])
         : current.checklist,
-      color: cardType === 'photo' ? 'white' : current.color
+      color: cardType === 'photo' ? 'white' : (current.color === 'white' ? 'green' : current.color),
+      tapeColor: cardType === 'photo' ? (current.tapeColor || current.color || 'yellow') : current.tapeColor
     }));
   };
 
@@ -1328,6 +1347,7 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
       <section
         ref={createCardRef}
         className={`create-card ${MEMO_COLORS[draft.color].className} create-${draft.cardType}`}
+        style={createCardStyle}
         onDragOver={(event) => draft.cardType !== 'photo' && event.preventDefault()}
         onDrop={(event) => draft.cardType !== 'photo' && dropSticker(event)}
       >
@@ -1551,14 +1571,18 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
       </section>
 
       <section className="memo-options">
-        <div className="color-row" aria-label="メモ色">
+        <div className="color-row" aria-label={paletteLabel}>
           {COLOR_OPTIONS.map(color => (
             <button
               key={color.id}
               type="button"
-              className={`${color.className} ${draft.color === color.id ? 'selected' : ''}`}
-              onClick={() => setDraft(current => ({ ...current, color: color.id }))}
-              aria-label={color.label}
+              className={`${color.className} ${selectedPaletteColor === color.id ? 'selected' : ''}`}
+              onClick={() => setDraft(current => (
+                current.cardType === 'photo'
+                  ? { ...current, tapeColor: color.id }
+                  : { ...current, color: color.id }
+              ))}
+              aria-label={draft.cardType === 'photo' ? `${color.label}のマステ` : color.label}
             />
           ))}
         </div>
