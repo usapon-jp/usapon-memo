@@ -333,7 +333,7 @@ button {
   gap: 9px;
   background: #dce7d2;
   color: #aaa4a0;
-  font-size: 15px;
+  font-size: 14px;
   white-space: nowrap;
   box-shadow: 0 13px 20px rgba(117, 132, 106, 0.12);
 }
@@ -407,7 +407,7 @@ button {
 .create-title {
   margin: 0;
   color: #8d8781;
-  font-size: 23px;
+  font-size: 21px;
   font-weight: 800;
   line-height: 1.2;
   letter-spacing: 0;
@@ -471,7 +471,7 @@ button {
   border-radius: 0;
   background: transparent;
   color: #8d8781;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 800;
   line-height: 1.45;
   outline: none;
@@ -490,7 +490,7 @@ button {
   border-radius: 0;
   background: transparent;
   color: #8d8781;
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 800;
   line-height: 1.55;
   outline: none;
@@ -537,7 +537,7 @@ button {
   border-radius: 0;
   background: transparent;
   color: #8d8781;
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 800;
   line-height: 1.4;
   outline: none;
