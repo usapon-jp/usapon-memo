@@ -280,12 +280,11 @@ button {
 
 .mini-checklist span {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 5px;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .mini-checklist span.done {
@@ -566,8 +565,8 @@ button {
 .checklist-form-row {
   display: grid;
   grid-template-columns: 25px 1fr;
-  align-items: center;
-  gap: 20px;
+  align-items: start;
+  gap: 12px;
 }
 
 .checklist-form-row.is-secondary {
@@ -591,9 +590,14 @@ button {
     rgba(255, 255, 255, 0.62);
 }
 
-.checklist-form-row input[type="text"] {
-  width: 134px;
+.checklist-form-row textarea {
+  width: 100%;
   min-width: 0;
+  min-height: 24px;
+  max-height: 68px;
+  resize: none;
+  overflow: hidden;
+  field-sizing: content;
   border: 0;
   border-bottom: 2px solid rgba(83, 92, 84, 0.18);
   border-radius: 0;
@@ -603,6 +607,8 @@ button {
   font-weight: 800;
   line-height: 1.4;
   outline: none;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .checklist-add-empty {

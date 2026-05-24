@@ -1248,9 +1248,9 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
                   onChange={(event) => updateChecklistItem(firstChecklistItem.id, { completed: event.target.checked })}
                   aria-label="1行目を完了"
                 />
-                <input
+                <textarea
                   ref={primaryInputRef}
-                  type="text"
+                  rows={1}
                   value={firstChecklistItem.text}
                   placeholder=""
                   aria-label="やること"
@@ -1275,7 +1275,7 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
                   onChange={(event) => updateChecklistItem(item.id, { completed: event.target.checked })}
                   aria-label={`${index + 2}行目を完了`}
                 />
-                <input
+                <textarea
                   ref={(element) => {
                     if (element) {
                       checklistInputRefs.current[item.id] = element;
@@ -1283,7 +1283,7 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
                       delete checklistInputRefs.current[item.id];
                     }
                   }}
-                  type="text"
+                  rows={1}
                   value={item.text}
                   placeholder=""
                   aria-label={`${index + 2}行目のやること`}
