@@ -405,13 +405,16 @@ function HomePage({
   useEffect(() => () => window.clearTimeout(longPressTimerRef.current), []);
 
   const handlePointerDown = (event, memo) => {
-    if (!boardRef.current || event.target.closest('input')) return;
+    if (!boardRef.current || event.target.closest('input, textarea, button')) return;
     event.currentTarget.setPointerCapture(event.pointerId);
-    const rect = boardRef.current.getBoundingClientRect();
+    const boardRect = boardRef.current.getBoundingClientRect();
+    const cardRect = event.currentTarget.getBoundingClientRect();
+    const grabOffsetX = event.clientX - cardRect.left;
+    const grabOffsetY = event.clientY - cardRect.top;
 
     const moveMemo = (moveEvent) => {
-      const x = clamp(((moveEvent.clientX - rect.left) / rect.width) * 100, 1, 70);
-      const y = clamp(((moveEvent.clientY - rect.top) / rect.height) * 100, 1, 80);
+      const x = clamp(((moveEvent.clientX - grabOffsetX - boardRect.left) / boardRect.width) * 100, 1, 70);
+      const y = clamp(((moveEvent.clientY - grabOffsetY - boardRect.top) / boardRect.height) * 100, 1, 80);
       onMove(memo.id, { x, y });
     };
 
