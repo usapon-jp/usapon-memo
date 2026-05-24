@@ -112,6 +112,9 @@ const fileToDataUrl = (file) => new Promise((resolve, reject) => {
 });
 
 const MAX_PHOTO_DATA_URL_LENGTH = 620000;
+const PHOTO_CANVAS_BACKGROUND = '#f3eadc';
+const BOARD_EDGE_HOTZONE = 34;
+const BOARD_EDGE_SWITCH_DELAY = 600;
 
 const resizeImageFile = async (file, maxWidth = 900) => {
   const dataUrl = await fileToDataUrl(file);
@@ -131,6 +134,8 @@ const resizeImageFile = async (file, maxWidth = 900) => {
     canvas.width = Math.max(1, Math.round(image.width * scale));
     canvas.height = Math.max(1, Math.round(image.height * scale));
     context.clearRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = PHOTO_CANVAS_BACKGROUND;
+    context.fillRect(0, 0, canvas.width, canvas.height);
     context.drawImage(image, 0, 0, canvas.width, canvas.height);
     output = canvas.toDataURL('image/jpeg', quality);
     if (output.length <= MAX_PHOTO_DATA_URL_LENGTH) break;
@@ -434,23 +439,119 @@ function HomePage({
   const activeCardRef = useRef(null);
   const cardPointersRef = useRef(new globalThis.Map());
   const cardGestureRef = useRef(null);
+  const activeBoardIdRef = useRef(activeBoardId);
+  const boardsRef = useRef(boards);
+  const dragMemoRef = useRef(null);
+  const edgeSwitchRef = useRef({ direction: null, timer: null, lastSwitchAt: 0 });
   const trashActiveRef = useRef(false);
   const swipeStartRef = useRef(null);
   const longPressTimerRef = useRef(null);
   const longPressFiredRef = useRef(false);
   const activeBoard = boards.find(board => board.id === activeBoardId) || boards[0];
 
-  useEffect(() => () => window.clearTimeout(longPressTimerRef.current), []);
+  activeBoardIdRef.current = activeBoardId;
+  boardsRef.current = boards;
+
+  useEffect(() => () => {
+    window.clearTimeout(longPressTimerRef.current);
+    window.clearTimeout(edgeSwitchRef.current.timer);
+  }, []);
 
   const setTrashHover = (isActive) => {
     trashActiveRef.current = isActive;
     setTrashActive(isActive);
   };
 
+  const clearEdgeSwitch = () => {
+    window.clearTimeout(edgeSwitchRef.current.timer);
+    edgeSwitchRef.current.timer = null;
+    edgeSwitchRef.current.direction = null;
+  };
+
+  const updateDragMemo = (patch) => {
+    dragMemoRef.current = {
+      ...(dragMemoRef.current || {}),
+      ...patch
+    };
+  };
+
+  const patchDraggedMemo = (id, patch) => {
+    updateDragMemo(patch);
+    onMove(id, patch);
+  };
+
   const getMemoPointPatch = (clientX, clientY, gesture) => ({
     x: clamp(((clientX - gesture.grabOffsetX - gesture.boardRect.left) / gesture.boardRect.width) * 100, 1, 70),
     y: clamp(((clientY - gesture.grabOffsetY - gesture.boardRect.top) / gesture.boardRect.height) * 100, 1, 80)
   });
+
+  const refreshDragGestureAfterBoardSwitch = () => {
+    const memo = dragMemoRef.current;
+    if (!memo || !boardRef.current || cardPointersRef.current.size !== 1) return;
+    window.requestAnimationFrame(() => {
+      const nextCard = document.querySelector(`[data-memo-id="${memo.id}"]`);
+      const point = Array.from(cardPointersRef.current.values())[0];
+      if (!nextCard || !point || !boardRef.current) return;
+      activeCardRef.current = nextCard;
+      const cardRect = nextCard.getBoundingClientRect();
+      cardGestureRef.current = {
+        type: 'drag',
+        memoId: memo.id,
+        boardRect: boardRef.current.getBoundingClientRect(),
+        grabOffsetX: point.clientX - cardRect.left,
+        grabOffsetY: point.clientY - cardRect.top
+      };
+      window.requestAnimationFrame(updateTrashHover);
+    });
+  };
+
+  const switchBoardDuringDrag = (direction) => {
+    const memo = dragMemoRef.current;
+    const currentBoards = boardsRef.current;
+    const currentIndex = currentBoards.findIndex(board => board.id === activeBoardIdRef.current);
+    const nextIndex = direction === 'next' ? currentIndex + 1 : currentIndex - 1;
+    const nextBoard = currentBoards[nextIndex];
+    if (!memo || !nextBoard) return;
+
+    const nextX = direction === 'next' ? 4 : 82;
+    clearEdgeSwitch();
+    edgeSwitchRef.current.lastSwitchAt = Date.now();
+    patchDraggedMemo(memo.id, {
+      boardId: nextBoard.id,
+      x: nextX,
+      y: clamp(memo.y ?? 12, 1, 80)
+    });
+    activeBoardIdRef.current = nextBoard.id;
+    onBoardChange(nextBoard.id);
+    setTrashHover(false);
+    refreshDragGestureAfterBoardSwitch();
+  };
+
+  const updateBoardEdgeHover = (clientX) => {
+    if (!boardRef.current || !dragMemoRef.current) return;
+    const boardRect = boardRef.current.getBoundingClientRect();
+    const currentBoards = boardsRef.current;
+    const currentIndex = currentBoards.findIndex(board => board.id === activeBoardIdRef.current);
+    let direction = null;
+    if (clientX <= boardRect.left + BOARD_EDGE_HOTZONE && currentIndex > 0) {
+      direction = 'prev';
+    } else if (clientX >= boardRect.right - BOARD_EDGE_HOTZONE && currentIndex < currentBoards.length - 1) {
+      direction = 'next';
+    }
+
+    if (!direction) {
+      clearEdgeSwitch();
+      return;
+    }
+
+    if (edgeSwitchRef.current.direction === direction && edgeSwitchRef.current.timer) return;
+    if (Date.now() - edgeSwitchRef.current.lastSwitchAt < 700) return;
+    clearEdgeSwitch();
+    edgeSwitchRef.current.direction = direction;
+    edgeSwitchRef.current.timer = window.setTimeout(() => {
+      switchBoardDuringDrag(direction);
+    }, BOARD_EDGE_SWITCH_DELAY);
+  };
 
   const updateTrashHover = () => {
     const trashRect = trashRef.current?.getBoundingClientRect();
@@ -485,17 +586,18 @@ function HomePage({
     if (!boardRef.current || cardPointersRef.current.size < 2) return null;
     const points = Array.from(cardPointersRef.current.values()).slice(0, 2);
     const center = getPointerCenter(points[0], points[1]);
+    const currentMemo = dragMemoRef.current || memo;
     return {
       type: 'pinch',
-      memoId: memo.id,
+      memoId: currentMemo.id,
       boardRect: boardRef.current.getBoundingClientRect(),
       center,
       distance: Math.max(getPointerDistance(points[0], points[1]), 1),
       angle: getPointerAngle(points[0], points[1]),
-      x: memo.x,
-      y: memo.y,
-      scale: memo.scale || 1,
-      rotation: memo.rotation || 0
+      x: currentMemo.x,
+      y: currentMemo.y,
+      scale: currentMemo.scale || 1,
+      rotation: currentMemo.rotation || 0
     };
   };
 
@@ -503,6 +605,7 @@ function HomePage({
     if (!boardRef.current || event.target.closest('input, textarea, button')) return;
     event.preventDefault();
     setDraggingMemoId(memo.id);
+    dragMemoRef.current = { ...memo };
     activeCardRef.current = event.currentTarget;
     cardPointersRef.current.set(event.pointerId, {
       pointerId: event.pointerId,
@@ -539,14 +642,17 @@ function HomePage({
         const center = getPointerCenter(points[0], points[1]);
         const nextScale = clamp(gesture.scale * (getPointerDistance(points[0], points[1]) / gesture.distance), 0.55, 2.4);
         const nextRotation = clamp(gesture.rotation + getPointerAngle(points[0], points[1]) - gesture.angle, -180, 180);
-        onMove(memo.id, {
+        const patch = {
           x: clamp(gesture.x + ((center.x - gesture.center.x) / gesture.boardRect.width) * 100, -8, 88),
           y: clamp(gesture.y + ((center.y - gesture.center.y) / gesture.boardRect.height) * 100, -8, 88),
           scale: nextScale,
           rotation: nextRotation
-        });
+        };
+        patchDraggedMemo(memo.id, patch);
+        updateBoardEdgeHover(center.x);
       } else if (cardGestureRef.current?.type === 'drag') {
-        onMove(memo.id, getMemoPointPatch(moveEvent.clientX, moveEvent.clientY, cardGestureRef.current));
+        patchDraggedMemo(memo.id, getMemoPointPatch(moveEvent.clientX, moveEvent.clientY, cardGestureRef.current));
+        updateBoardEdgeHover(moveEvent.clientX);
       }
       window.requestAnimationFrame(updateTrashHover);
     };
@@ -573,10 +679,12 @@ function HomePage({
       }
 
       const shouldDelete = trashActiveRef.current;
+      clearEdgeSwitch();
       setDraggingMemoId(null);
       setTrashHover(false);
       activeCardRef.current = null;
       cardGestureRef.current = null;
+      dragMemoRef.current = null;
       window.removeEventListener('pointermove', moveMemo);
       window.removeEventListener('pointerup', stopMove);
       window.removeEventListener('pointercancel', stopMove);
@@ -935,6 +1043,7 @@ function BoardMemo({ memo, isDragging, onPointerDown, onEdit }) {
     return (
       <article
         className={`board-card photo-card ${dragClassName}`}
+        data-memo-id={memo.id}
         style={style}
         onPointerDown={onPointerDown}
       >
@@ -958,6 +1067,7 @@ function BoardMemo({ memo, isDragging, onPointerDown, onEdit }) {
   return (
     <article
       className={`board-card board-memo ${MEMO_COLORS[memo.color].className} card-${cardType} ${memo.pinned ? 'is-pinned' : ''} ${memo.completed ? 'is-completed' : ''} ${dragClassName}`}
+      data-memo-id={memo.id}
       style={style}
       onPointerDown={onPointerDown}
     >
