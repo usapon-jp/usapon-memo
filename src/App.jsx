@@ -608,21 +608,23 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
 
       <section className={`create-card ${MEMO_COLORS[draft.color].className} create-${draft.cardType}`}>
         <span className="memo-tape" aria-hidden="true" />
-        <input
-          ref={titleInputRef}
-          className="memo-title-input"
-          type="text"
-          value={draft.title}
-          placeholder="見出し"
-          aria-label="メモの見出し"
-          onChange={(event) => setDraft(current => ({ ...current, title: event.target.value }))}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') {
-              event.preventDefault();
-              primaryInputRef.current?.focus();
-            }
-          }}
-        />
+        {draft.cardType !== 'photo' && (
+          <input
+            ref={titleInputRef}
+            className="memo-title-input"
+            type="text"
+            value={draft.title}
+            placeholder="見出し"
+            aria-label="メモの見出し"
+            onChange={(event) => setDraft(current => ({ ...current, title: event.target.value }))}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                primaryInputRef.current?.focus();
+              }
+            }}
+          />
+        )}
 
         {draft.cardType === 'photo' ? (
           <div className="photo-editor">
