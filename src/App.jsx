@@ -7,6 +7,7 @@ import {
   Camera,
   Check,
   Clock,
+  Copy,
   Folder,
   Home,
   ImagePlus,
@@ -101,6 +102,18 @@ const getCardTilt = (id) => {
   return (code % 9) - 4;
 };
 
+const getNextBoardName = (boards) => {
+  const usedNumbers = new Set(
+    boards
+      .map(board => /^ボード(\d+)$/.exec(board.label.trim())?.[1])
+      .filter(Boolean)
+      .map(Number)
+  );
+  let index = 1;
+  while (usedNumbers.has(index)) index += 1;
+  return `ボード${index}`;
+};
+
 export default function App() {
   const [data, setData] = useState(loadMemoData);
   const [page, setPage] = useState('home');
@@ -178,8 +191,8 @@ export default function App() {
     setPage('create');
   };
 
-  const addBoard = (label) => {
-    const nextBoard = createBoard(label);
+  const addBoard = (label = '') => {
+    const nextBoard = createBoard(label.trim() || getNextBoardName(boards));
     setData(current => ({
       ...current,
       boards: [...current.boards, nextBoard]
@@ -197,6 +210,31 @@ export default function App() {
         board.id === boardId ? { ...board, label: nextLabel } : board
       ))
     }));
+  };
+
+  const duplicateBoard = (boardId) => {
+    const sourceBoard = boards.find(item => item.id === boardId);
+    if (!sourceBoard) return;
+
+    const nextBoard = createBoard(`${sourceBoard.label} コピー`);
+    setData(current => ({
+      ...current,
+      boards: [...current.boards, nextBoard],
+      memos: [
+        ...current.memos,
+        ...current.memos
+          .filter(memo => memo.boardId === boardId)
+          .map(memo => normalizeMemo({
+            ...memo,
+            id: crypto.randomUUID(),
+            boardId: nextBoard.id,
+            checklist: memo.checklist.map(item => ({ ...item, id: crypto.randomUUID() })),
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          }))
+      ]
+    }));
+    setActiveBoardId(nextBoard.id);
   };
 
   const deleteBoard = (boardId) => {
@@ -242,6 +280,10 @@ export default function App() {
           onOpenList={() => setPage('list')}
           onEdit={openEditMemo}
           onMove={patchMemo}
+          onAddBoard={addBoard}
+          onRenameBoard={renameBoard}
+          onDuplicateBoard={duplicateBoard}
+          onDeleteBoard={deleteBoard}
         />
       )}
 
@@ -267,6 +309,7 @@ export default function App() {
           }}
           onAddBoard={addBoard}
           onRenameBoard={renameBoard}
+          onDuplicateBoard={duplicateBoard}
           onDeleteBoard={deleteBoard}
         />
       )}
@@ -274,11 +317,29 @@ export default function App() {
   );
 }
 
-function HomePage({ activeBoardId, boards, memos, onAdd, onBoardChange, onOpenList, onEdit, onMove }) {
+function HomePage({
+  activeBoardId,
+  boards,
+  memos,
+  onAdd,
+  onBoardChange,
+  onOpenList,
+  onEdit,
+  onMove,
+  onAddBoard,
+  onRenameBoard,
+  onDuplicateBoard,
+  onDeleteBoard
+}) {
   const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [boardMenu, setBoardMenu] = useState(null);
   const boardRef = useRef(null);
   const swipeStartRef = useRef(null);
+  const longPressTimerRef = useRef(null);
+  const longPressFiredRef = useRef(false);
   const activeBoard = boards.find(board => board.id === activeBoardId) || boards[0];
+
+  useEffect(() => () => window.clearTimeout(longPressTimerRef.current), []);
 
   const handlePointerDown = (event, memo) => {
     if (!boardRef.current || event.target.closest('input')) return;
@@ -324,8 +385,66 @@ function HomePage({ activeBoardId, boards, memos, onAdd, onBoardChange, onOpenLi
     onAdd(cardType);
   };
 
+  const clearBoardLongPress = () => {
+    window.clearTimeout(longPressTimerRef.current);
+    longPressTimerRef.current = null;
+  };
+
+  const openBoardMenu = (event, board) => {
+    event.preventDefault();
+    clearBoardLongPress();
+    longPressFiredRef.current = true;
+    setBoardMenu({
+      id: board.id,
+      label: board.label,
+      x: event.clientX || 0,
+      y: event.clientY || 0
+    });
+  };
+
+  const startBoardLongPress = (event, board) => {
+    clearBoardLongPress();
+    longPressFiredRef.current = false;
+    const point = {
+      preventDefault: () => event.preventDefault(),
+      clientX: event.clientX,
+      clientY: event.clientY
+    };
+    longPressTimerRef.current = window.setTimeout(() => {
+      openBoardMenu(point, board);
+    }, 560);
+  };
+
+  const handleBoardClick = (boardId) => {
+    if (longPressFiredRef.current) {
+      longPressFiredRef.current = false;
+      return;
+    }
+    setBoardMenu(null);
+    onBoardChange(boardId);
+  };
+
+  const renameFromMenu = () => {
+    if (!boardMenu) return;
+    const nextLabel = window.prompt('ボード名を変更', boardMenu.label);
+    if (nextLabel !== null) onRenameBoard(boardMenu.id, nextLabel);
+    setBoardMenu(null);
+  };
+
+  const duplicateFromMenu = () => {
+    if (!boardMenu) return;
+    onDuplicateBoard(boardMenu.id);
+    setBoardMenu(null);
+  };
+
+  const deleteFromMenu = () => {
+    if (!boardMenu) return;
+    onDeleteBoard(boardMenu.id);
+    setBoardMenu(null);
+  };
+
   return (
-    <section className="home-page cork-home">
+    <section className="home-page cork-home" onClick={() => boardMenu && setBoardMenu(null)}>
       <header className="cork-header">
         <button type="button" className="plain-icon" aria-label="メニュー">
           <Menu size={27} />
@@ -349,14 +468,56 @@ function HomePage({ activeBoardId, boards, memos, onAdd, onBoardChange, onOpenLi
               key={board.id}
               type="button"
               className={board.id === activeBoardId ? 'active' : ''}
-              onClick={() => onBoardChange(board.id)}
+              onPointerDown={(event) => startBoardLongPress(event, board)}
+              onPointerUp={clearBoardLongPress}
+              onPointerLeave={clearBoardLongPress}
+              onPointerCancel={clearBoardLongPress}
+              onContextMenu={(event) => openBoardMenu(event, board)}
+              onClick={(event) => {
+                event.stopPropagation();
+                handleBoardClick(board.id);
+              }}
             >
               <Icon size={18} />
               {board.label}
             </button>
           );
         })}
+        <button
+          type="button"
+          className="board-add-tab"
+          onClick={(event) => {
+            event.stopPropagation();
+            setBoardMenu(null);
+            onAddBoard();
+          }}
+          aria-label="ボード追加"
+        >
+          <Plus size={20} />
+        </button>
       </nav>
+
+      {boardMenu && (
+        <div
+          className="board-tab-menu"
+          role="menu"
+          style={{ '--menu-x': `${boardMenu.x}px`, '--menu-y': `${boardMenu.y}px` }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <button type="button" role="menuitem" onClick={renameFromMenu}>
+            <Pencil size={16} />
+            名前の変更
+          </button>
+          <button type="button" role="menuitem" onClick={duplicateFromMenu}>
+            <Copy size={16} />
+            複製
+          </button>
+          <button type="button" role="menuitem" className="danger" onClick={deleteFromMenu} disabled={boards.length <= 1}>
+            <Trash2 size={16} />
+            削除
+          </button>
+        </div>
+      )}
 
       <section
         className="cork-board-wrap"
@@ -821,7 +982,7 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
   );
 }
 
-function BoardListPage({ boards, memos, activeBoardId, onBack, onSelect, onAddBoard, onRenameBoard, onDeleteBoard }) {
+function BoardListPage({ boards, memos, activeBoardId, onBack, onSelect, onAddBoard, onRenameBoard, onDuplicateBoard, onDeleteBoard }) {
   const [newBoardName, setNewBoardName] = useState('');
   const [boardNames, setBoardNames] = useState(() => Object.fromEntries(boards.map(board => [board.id, board.label])));
   const addInputRef = useRef(null);
@@ -849,7 +1010,7 @@ function BoardListPage({ boards, memos, activeBoardId, onBack, onSelect, onAddBo
 
   const submitNewBoard = (event) => {
     event.preventDefault();
-    const label = newBoardName.trim() || '新しいボード';
+    const label = newBoardName.trim() || getNextBoardName(boards);
     onAddBoard(label);
     setNewBoardName('');
   };
@@ -917,6 +1078,10 @@ function BoardListPage({ boards, memos, activeBoardId, onBack, onSelect, onAddBo
 
               <div className="board-card-actions">
                 <button type="button" onClick={() => onSelect(board.id)}>開く</button>
+                <button type="button" onClick={() => onDuplicateBoard(board.id)}>
+                  <Copy size={15} />
+                  複製
+                </button>
                 <button
                   type="button"
                   className="danger"

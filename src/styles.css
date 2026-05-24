@@ -923,7 +923,7 @@ button {
 
 .board-card-actions {
   display: grid;
-  grid-template-columns: 1fr 96px;
+  grid-template-columns: 1fr 86px 86px;
   gap: 9px;
 }
 
@@ -1103,6 +1103,58 @@ body {
 .board-tabs button.active {
   background: #f2dfc9;
   color: #4d3928;
+}
+
+.board-tabs .board-add-tab {
+  width: 46px;
+  min-width: 46px;
+  justify-content: center;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.74);
+}
+
+.board-tab-menu {
+  position: fixed;
+  top: min(calc(var(--menu-y) + 12px), calc(100dvh - 164px));
+  left: min(max(14px, calc(var(--menu-x) - 72px)), calc(100vw - 172px));
+  z-index: 90;
+  width: 158px;
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid rgba(145, 108, 73, 0.12);
+  border-radius: 16px;
+  background: rgba(255, 252, 246, 0.98);
+  box-shadow: 0 18px 38px rgba(92, 59, 28, 0.18);
+  backdrop-filter: blur(12px);
+}
+
+.board-tab-menu button {
+  min-height: 38px;
+  border: 0;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  background: transparent;
+  color: #72563b;
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.board-tab-menu button:hover {
+  background: rgba(242, 223, 201, 0.58);
+}
+
+.board-tab-menu button.danger {
+  color: #b45c4d;
+}
+
+.board-tab-menu button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .cork-board-wrap {
