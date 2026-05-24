@@ -238,6 +238,13 @@ export default function App() {
     }));
   };
 
+  const deleteMemo = (id) => {
+    setData(current => ({
+      ...current,
+      memos: current.memos.filter(memo => memo.id !== id)
+    }));
+  };
+
   const openNewCard = (cardType = 'checklist') => {
     setDraft(createDraft({
       boardId: activeBoardId,
@@ -342,6 +349,7 @@ export default function App() {
           onOpenList={() => setPage('list')}
           onEdit={openEditMemo}
           onMove={patchMemo}
+          onDeleteMemo={deleteMemo}
           onAddBoard={addBoard}
           onUpdateBoard={updateBoard}
           onDuplicateBoard={duplicateBoard}
@@ -388,6 +396,7 @@ function HomePage({
   onOpenList,
   onEdit,
   onMove,
+  onDeleteMemo,
   onAddBoard,
   onUpdateBoard,
   onDuplicateBoard,
@@ -397,7 +406,13 @@ function HomePage({
   const [boardMenu, setBoardMenu] = useState(null);
   const [editingBoard, setEditingBoard] = useState(null);
   const [draggingMemoId, setDraggingMemoId] = useState(null);
+  const [trashActive, setTrashActive] = useState(false);
   const boardRef = useRef(null);
+  const trashRef = useRef(null);
+  const activeCardRef = useRef(null);
+  const cardPointersRef = useRef(new globalThis.Map());
+  const cardGestureRef = useRef(null);
+  const trashActiveRef = useRef(false);
   const swipeStartRef = useRef(null);
   const longPressTimerRef = useRef(null);
   const longPressFiredRef = useRef(false);
@@ -405,26 +420,145 @@ function HomePage({
 
   useEffect(() => () => window.clearTimeout(longPressTimerRef.current), []);
 
-  const handlePointerDown = (event, memo) => {
-    if (!boardRef.current || event.target.closest('input, textarea, button')) return;
-    setDraggingMemoId(memo.id);
-    event.currentTarget.setPointerCapture(event.pointerId);
+  const setTrashHover = (isActive) => {
+    trashActiveRef.current = isActive;
+    setTrashActive(isActive);
+  };
+
+  const getMemoPointPatch = (clientX, clientY, gesture) => ({
+    x: clamp(((clientX - gesture.grabOffsetX - gesture.boardRect.left) / gesture.boardRect.width) * 100, 1, 70),
+    y: clamp(((clientY - gesture.grabOffsetY - gesture.boardRect.top) / gesture.boardRect.height) * 100, 1, 80)
+  });
+
+  const updateTrashHover = () => {
+    const trashRect = trashRef.current?.getBoundingClientRect();
+    const cardRect = activeCardRef.current?.getBoundingClientRect();
+    if (!trashRect || !cardRect) {
+      setTrashHover(false);
+      return;
+    }
+
+    setTrashHover(
+      cardRect.left < trashRect.right
+      && cardRect.right > trashRect.left
+      && cardRect.top < trashRect.bottom
+      && cardRect.bottom > trashRect.top
+    );
+  };
+
+  const createDragGesture = (event, memo) => {
+    if (!boardRef.current) return null;
     const boardRect = boardRef.current.getBoundingClientRect();
     const cardRect = event.currentTarget.getBoundingClientRect();
-    const grabOffsetX = event.clientX - cardRect.left;
-    const grabOffsetY = event.clientY - cardRect.top;
+    return {
+      type: 'drag',
+      memoId: memo.id,
+      boardRect,
+      grabOffsetX: event.clientX - cardRect.left,
+      grabOffsetY: event.clientY - cardRect.top
+    };
+  };
+
+  const createPinchGesture = (memo) => {
+    if (!boardRef.current || cardPointersRef.current.size < 2) return null;
+    const points = Array.from(cardPointersRef.current.values()).slice(0, 2);
+    const center = getPointerCenter(points[0], points[1]);
+    return {
+      type: 'pinch',
+      memoId: memo.id,
+      boardRect: boardRef.current.getBoundingClientRect(),
+      center,
+      distance: Math.max(getPointerDistance(points[0], points[1]), 1),
+      angle: getPointerAngle(points[0], points[1]),
+      x: memo.x,
+      y: memo.y,
+      scale: memo.scale || 1,
+      rotation: memo.rotation || 0
+    };
+  };
+
+  const handlePointerDown = (event, memo) => {
+    if (!boardRef.current || event.target.closest('input, textarea, button')) return;
+    event.preventDefault();
+    setDraggingMemoId(memo.id);
+    activeCardRef.current = event.currentTarget;
+    cardPointersRef.current.set(event.pointerId, {
+      pointerId: event.pointerId,
+      clientX: event.clientX,
+      clientY: event.clientY
+    });
+    event.currentTarget.setPointerCapture(event.pointerId);
+
+    if (cardGestureRef.current?.memoId === memo.id) {
+      if (cardPointersRef.current.size >= 2) {
+        cardGestureRef.current = createPinchGesture(memo);
+      }
+      return;
+    }
+
+    cardGestureRef.current = cardPointersRef.current.size >= 2
+      ? createPinchGesture(memo)
+      : createDragGesture(event, memo);
 
     const moveMemo = (moveEvent) => {
-      const x = clamp(((moveEvent.clientX - grabOffsetX - boardRect.left) / boardRect.width) * 100, 1, 70);
-      const y = clamp(((moveEvent.clientY - grabOffsetY - boardRect.top) / boardRect.height) * 100, 1, 80);
-      onMove(memo.id, { x, y });
+      if (!cardPointersRef.current.has(moveEvent.pointerId)) return;
+      cardPointersRef.current.set(moveEvent.pointerId, {
+        pointerId: moveEvent.pointerId,
+        clientX: moveEvent.clientX,
+        clientY: moveEvent.clientY
+      });
+
+      if (cardPointersRef.current.size >= 2) {
+        if (cardGestureRef.current?.type !== 'pinch') {
+          cardGestureRef.current = createPinchGesture(memo);
+        }
+        const gesture = cardGestureRef.current;
+        const points = Array.from(cardPointersRef.current.values()).slice(0, 2);
+        const center = getPointerCenter(points[0], points[1]);
+        const nextScale = clamp(gesture.scale * (getPointerDistance(points[0], points[1]) / gesture.distance), 0.55, 2.4);
+        const nextRotation = clamp(gesture.rotation + getPointerAngle(points[0], points[1]) - gesture.angle, -180, 180);
+        onMove(memo.id, {
+          x: clamp(gesture.x + ((center.x - gesture.center.x) / gesture.boardRect.width) * 100, -8, 88),
+          y: clamp(gesture.y + ((center.y - gesture.center.y) / gesture.boardRect.height) * 100, -8, 88),
+          scale: nextScale,
+          rotation: nextRotation
+        });
+      } else if (cardGestureRef.current?.type === 'drag') {
+        onMove(memo.id, getMemoPointPatch(moveEvent.clientX, moveEvent.clientY, cardGestureRef.current));
+      }
+      window.requestAnimationFrame(updateTrashHover);
     };
 
-    const stopMove = () => {
+    const stopMove = (stopEvent) => {
+      cardPointersRef.current.delete(stopEvent.pointerId);
+      if (cardPointersRef.current.size >= 2) {
+        cardGestureRef.current = createPinchGesture(memo);
+        return;
+      }
+      if (cardPointersRef.current.size === 1) {
+        const point = Array.from(cardPointersRef.current.values())[0];
+        const cardRect = activeCardRef.current?.getBoundingClientRect();
+        if (boardRef.current && cardRect) {
+          cardGestureRef.current = {
+            type: 'drag',
+            memoId: memo.id,
+            boardRect: boardRef.current.getBoundingClientRect(),
+            grabOffsetX: point.clientX - cardRect.left,
+            grabOffsetY: point.clientY - cardRect.top
+          };
+        }
+        return;
+      }
+
+      const shouldDelete = trashActiveRef.current;
       setDraggingMemoId(null);
+      setTrashHover(false);
+      activeCardRef.current = null;
+      cardGestureRef.current = null;
       window.removeEventListener('pointermove', moveMemo);
       window.removeEventListener('pointerup', stopMove);
       window.removeEventListener('pointercancel', stopMove);
+      if (shouldDelete) onDeleteMemo(memo.id);
     };
 
     window.addEventListener('pointermove', moveMemo);
@@ -626,6 +760,12 @@ function HomePage({
         </div>
       </section>
 
+      {draggingMemoId && (
+        <div ref={trashRef} className={`memo-trash ${trashActive ? 'is-active' : ''}`} aria-hidden="true">
+          <Trash2 size={26} />
+        </div>
+      )}
+
       <footer className="cork-footer" aria-label="主要操作">
         <button type="button" onClick={onOpenList}>
           <Folder size={22} />
@@ -762,7 +902,8 @@ function BoardMemo({ memo, isDragging, onPointerDown, onEdit }) {
   const style = {
     left: `${memo.x}%`,
     top: `${memo.y}%`,
-    '--tilt': `${getCardTilt(memo.id)}deg`
+    '--rotation': `${memo.rotation || 0}deg`,
+    '--scale': memo.scale || 1
   };
   const dragClassName = isDragging ? 'is-dragging' : '';
 
