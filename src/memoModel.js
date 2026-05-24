@@ -27,6 +27,7 @@ export const DEFAULT_BOARDS = [
 ];
 
 const BOARD_ICONS = new Set(['home', 'book', 'map', 'camera', 'folder']);
+const STICKER_ASSETS = new Set(['usa', 'piyo', 'pon', 'lemon']);
 
 const LEGACY_COLOR_MAP = {
   routine: 'yellow',
@@ -59,6 +60,14 @@ export const createChecklistItem = (text = '', completed = false, id = null) => 
   completed
 });
 
+export const createSticker = (assetId = 'usa', patch = {}) => ({
+  id: patch.id || createId(),
+  assetId: STICKER_ASSETS.has(assetId) ? assetId : 'usa',
+  x: Number.isFinite(Number(patch.x)) ? clamp(Number(patch.x)) : 50,
+  y: Number.isFinite(Number(patch.y)) ? clamp(Number(patch.y)) : 62,
+  size: Number.isFinite(Number(patch.size)) ? clamp(Number(patch.size), 28, 72) : 42
+});
+
 const nowIso = () => new Date().toISOString();
 
 export const createEmptyMemo = (patch = {}) => {
@@ -77,6 +86,7 @@ export const createEmptyMemo = (patch = {}) => {
     photoZoom: 1,
     photoOffsetX: 0,
     photoOffsetY: 0,
+    photoRotation: 0,
     scheduleDate: '',
     scheduleTime: '',
     schedulePlace: '',
@@ -88,6 +98,7 @@ export const createEmptyMemo = (patch = {}) => {
     completed: false,
     archived: false,
     reminderAt: null,
+    stickers: [],
     createdAt: now,
     updatedAt: now,
     ...patch
@@ -174,6 +185,7 @@ const migrateLegacyMemo = (memo, index) => {
     photoZoom: 1,
     photoOffsetX: 0,
     photoOffsetY: 0,
+    photoRotation: 0,
     scheduleDate: '',
     scheduleTime: '',
     schedulePlace: '',
@@ -185,6 +197,7 @@ const migrateLegacyMemo = (memo, index) => {
     completed: memo.status === 'completed',
     archived: memo.status === 'archived',
     reminderAt: null,
+    stickers: [],
     createdAt: typeof memo.createdAt === 'string' ? memo.createdAt : nowIso(),
     updatedAt: typeof memo.updatedAt === 'string' ? memo.updatedAt : nowIso()
   };
@@ -207,9 +220,10 @@ export const normalizeMemo = (memo = {}, index = 0) => {
   const photoDataUrl = typeof memo.photoDataUrl === 'string' ? memo.photoDataUrl : '';
   const caption = typeof memo.caption === 'string' ? memo.caption.trim() : '';
   const photoCropRatio = PHOTO_CROP_RATIOS[memo.photoCropRatio] ? memo.photoCropRatio : 'landscape';
-  const photoZoom = Number.isFinite(Number(memo.photoZoom)) ? clamp(Number(memo.photoZoom), 1, 3) : 1;
-  const photoOffsetX = Number.isFinite(Number(memo.photoOffsetX)) ? clamp(Number(memo.photoOffsetX), -80, 80) : 0;
-  const photoOffsetY = Number.isFinite(Number(memo.photoOffsetY)) ? clamp(Number(memo.photoOffsetY), -80, 80) : 0;
+  const photoZoom = Number.isFinite(Number(memo.photoZoom)) ? clamp(Number(memo.photoZoom), 1, 4) : 1;
+  const photoOffsetX = Number.isFinite(Number(memo.photoOffsetX)) ? clamp(Number(memo.photoOffsetX), -160, 160) : 0;
+  const photoOffsetY = Number.isFinite(Number(memo.photoOffsetY)) ? clamp(Number(memo.photoOffsetY), -160, 160) : 0;
+  const photoRotation = Number.isFinite(Number(memo.photoRotation)) ? clamp(Number(memo.photoRotation), -35, 35) : 0;
   const scheduleDate = typeof memo.scheduleDate === 'string' ? memo.scheduleDate.trim() : '';
   const scheduleTime = typeof memo.scheduleTime === 'string' ? memo.scheduleTime.trim() : '';
   const schedulePlace = typeof memo.schedulePlace === 'string' ? memo.schedulePlace.trim() : '';
@@ -217,6 +231,11 @@ export const normalizeMemo = (memo = {}, index = 0) => {
   const createdAt = typeof memo.createdAt === 'string' ? memo.createdAt : nowIso();
   const updatedAt = typeof memo.updatedAt === 'string' ? memo.updatedAt : createdAt;
   const reminderDate = memo.reminderAt ? new Date(memo.reminderAt) : null;
+  const stickers = Array.isArray(memo.stickers)
+    ? memo.stickers
+      .map(sticker => createSticker(sticker.assetId, sticker))
+      .filter(sticker => STICKER_ASSETS.has(sticker.assetId))
+    : [];
 
   return {
     id: typeof memo.id === 'string' ? memo.id : createId(),
@@ -232,6 +251,7 @@ export const normalizeMemo = (memo = {}, index = 0) => {
     photoZoom,
     photoOffsetX,
     photoOffsetY,
+    photoRotation,
     scheduleDate,
     scheduleTime,
     schedulePlace,
@@ -243,6 +263,7 @@ export const normalizeMemo = (memo = {}, index = 0) => {
     completed: Boolean(memo.completed),
     archived: Boolean(memo.archived),
     reminderAt: reminderDate && !Number.isNaN(reminderDate.getTime()) ? reminderDate.toISOString() : null,
+    stickers,
     createdAt,
     updatedAt
   };

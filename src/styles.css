@@ -188,10 +188,16 @@ button {
 
 .board-empty strong {
   color: var(--ink);
+  opacity: 0.55;
 }
 
 .board-empty span {
   font-size: 12px;
+  opacity: 0.64;
+}
+
+.board-empty svg {
+  opacity: 0.55;
 }
 
 .board-memo {
@@ -451,6 +457,31 @@ button {
   box-shadow: 0 20px 34px rgba(87, 87, 74, 0.12);
 }
 
+.sticker-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.memo-sticker {
+  position: absolute;
+  height: auto;
+  transform: translate(-50%, -50%);
+  filter: drop-shadow(0 5px 6px rgba(74, 60, 42, 0.12));
+  user-select: none;
+}
+
+.memo-sticker.is-editable {
+  pointer-events: auto;
+  cursor: grab;
+  touch-action: none;
+}
+
+.memo-sticker.is-editable:active {
+  cursor: grabbing;
+}
+
 .memo-tape {
   position: absolute;
   top: -13px;
@@ -464,6 +495,8 @@ button {
 }
 
 .memo-title-input {
+  position: relative;
+  z-index: 3;
   width: 100%;
   margin: 0 0 15px;
   border: 0;
@@ -482,6 +515,8 @@ button {
 }
 
 .create-card textarea {
+  position: relative;
+  z-index: 3;
   width: 100%;
   min-height: 96px;
   resize: none;
@@ -497,6 +532,8 @@ button {
 }
 
 .checklist-form {
+  position: relative;
+  z-index: 3;
   display: grid;
   gap: 12px;
 }
@@ -611,6 +648,35 @@ button {
 .color-row button.selected {
   outline: 3px solid rgba(83, 83, 84, 0.22);
   outline-offset: 6px;
+}
+
+.sticker-palette {
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+  margin-top: -6px;
+}
+
+.sticker-palette button {
+  width: 46px;
+  height: 46px;
+  border: 0;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 250, 242, 0.86);
+  box-shadow: 0 10px 18px rgba(97, 89, 72, 0.08);
+  cursor: grab;
+}
+
+.sticker-palette button:active {
+  cursor: grabbing;
+}
+
+.sticker-palette img {
+  max-width: 34px;
+  max-height: 34px;
+  pointer-events: none;
 }
 
 .create-settings {
@@ -921,6 +987,32 @@ button {
   color: #9b8062;
 }
 
+.board-icon-row,
+.board-icon-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.board-icon-row button,
+.board-icon-picker button {
+  width: 38px;
+  height: 38px;
+  border: 0;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.68);
+  color: #8b6744;
+  cursor: pointer;
+}
+
+.board-icon-row button.active,
+.board-icon-picker button.active {
+  background: #f1dfc9;
+  box-shadow: inset 0 0 0 2px rgba(139, 103, 68, 0.2);
+}
+
 .board-card-actions {
   display: grid;
   grid-template-columns: 1fr 86px 86px;
@@ -1157,6 +1249,62 @@ body {
   cursor: not-allowed;
 }
 
+.board-edit-sheet {
+  width: min(calc(100% - 36px), 390px);
+  position: fixed;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom) + 102px);
+  transform: translateX(-50%);
+  z-index: 80;
+  padding: 20px;
+  border-radius: 24px;
+  background: rgba(255, 251, 244, 0.98);
+  box-shadow: 0 24px 48px rgba(83, 50, 24, 0.18);
+  backdrop-filter: blur(12px);
+}
+
+.board-edit-sheet form {
+  display: grid;
+  gap: 14px;
+}
+
+.board-edit-sheet p {
+  margin: 0;
+  color: #6d5137;
+  font-size: 16px;
+  font-weight: 900;
+  text-align: center;
+}
+
+.board-edit-name {
+  display: grid;
+  gap: 8px;
+  color: #8b6744;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.board-edit-name input {
+  min-height: 44px;
+  border: 0;
+  border-radius: 14px;
+  padding: 0 14px;
+  background: #f6ecdf;
+  color: #6d5137;
+  font-weight: 900;
+  outline: none;
+}
+
+.board-edit-save {
+  min-height: 44px;
+  border: 0;
+  border-radius: 999px;
+  background: #dce7d2;
+  color: #68795d;
+  font-weight: 900;
+  cursor: pointer;
+}
+
 .cork-board-wrap {
   height: calc(100dvh - 140px);
   min-height: 0;
@@ -1310,9 +1458,10 @@ body {
   width: 100%;
   height: 100%;
   position: absolute;
-  inset: 0;
+  left: 50%;
+  top: 50%;
   object-fit: cover;
-  transform: translate(var(--photo-x, 0), var(--photo-y, 0)) scale(var(--photo-zoom, 1));
+  transform: translate(-50%, -50%) translate(var(--photo-x, 0), var(--photo-y, 0)) rotate(var(--photo-rotation, 0deg)) scale(var(--photo-zoom, 1));
   transform-origin: center;
   user-select: none;
   pointer-events: none;
@@ -1604,6 +1753,8 @@ body {
 }
 
 .schedule-editor {
+  position: relative;
+  z-index: 3;
   display: grid;
   gap: 13px;
 }

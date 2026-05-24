@@ -28,6 +28,7 @@ import {
   createBoard,
   createChecklistItem,
   createEmptyMemo,
+  createSticker,
   DEFAULT_BOARDS,
   isMemoVisibleOnBoard,
   normalizeMemo,
@@ -42,6 +43,20 @@ const BOARD_ICON_MAP = {
   camera: Camera,
   folder: Folder
 };
+const BOARD_ICON_OPTIONS = [
+  { id: 'home', label: 'ホーム' },
+  { id: 'book', label: '本' },
+  { id: 'map', label: '地図' },
+  { id: 'camera', label: '写真' },
+  { id: 'folder', label: 'フォルダ' }
+];
+const STICKER_OPTIONS = [
+  { id: 'usa', label: 'うさぎ', src: '/usapon-memo/assets/usa.png' },
+  { id: 'piyo', label: 'ひよこ', src: '/usapon-memo/assets/piyo.png' },
+  { id: 'pon', label: 'ぽん', src: '/usapon-memo/assets/pon.png' },
+  { id: 'lemon', label: 'レモン', src: '/usapon-memo/assets/lemon.png' }
+];
+const STICKER_MAP = Object.fromEntries(STICKER_OPTIONS.map(sticker => [sticker.id, sticker]));
 
 const COLOR_ORDER = ['white', 'green', 'yellow', 'blue', 'pink'];
 const COLOR_OPTIONS = COLOR_ORDER.map(id => ({ id, ...MEMO_COLORS[id] }));
@@ -112,8 +127,16 @@ const getPhotoCropClass = (ratio) => PHOTO_RATIO_CLASS[ratio] || PHOTO_RATIO_CLA
 
 const getPhotoImageStyle = (memo) => ({
   '--photo-zoom': memo.photoZoom || 1,
-  '--photo-x': `${memo.photoOffsetX || 0}%`,
-  '--photo-y': `${memo.photoOffsetY || 0}%`
+  '--photo-x': `${memo.photoOffsetX || 0}px`,
+  '--photo-y': `${memo.photoOffsetY || 0}px`,
+  '--photo-rotation': `${memo.photoRotation || 0}deg`
+});
+
+const getPointerDistance = (first, second) => Math.hypot(second.clientX - first.clientX, second.clientY - first.clientY);
+const getPointerAngle = (first, second) => Math.atan2(second.clientY - first.clientY, second.clientX - first.clientX) * 180 / Math.PI;
+const getPointerCenter = (first, second) => ({
+  x: (first.clientX + second.clientX) / 2,
+  y: (first.clientY + second.clientY) / 2
 });
 
 const getCardTilt = (id) => {
@@ -220,13 +243,17 @@ export default function App() {
     return nextBoard.id;
   };
 
-  const renameBoard = (boardId, label) => {
-    const nextLabel = label.trim();
-    if (!nextLabel) return;
+  const updateBoard = (boardId, patch) => {
     setData(current => ({
       ...current,
       boards: current.boards.map(board => (
-        board.id === boardId ? { ...board, label: nextLabel } : board
+        board.id === boardId
+          ? {
+            ...board,
+            ...patch,
+            label: typeof patch.label === 'string' && patch.label.trim() ? patch.label.trim() : board.label
+          }
+          : board
       ))
     }));
   };
@@ -300,7 +327,7 @@ export default function App() {
           onEdit={openEditMemo}
           onMove={patchMemo}
           onAddBoard={addBoard}
-          onRenameBoard={renameBoard}
+          onUpdateBoard={updateBoard}
           onDuplicateBoard={duplicateBoard}
           onDeleteBoard={deleteBoard}
         />
@@ -327,7 +354,7 @@ export default function App() {
             setPage('home');
           }}
           onAddBoard={addBoard}
-          onRenameBoard={renameBoard}
+          onUpdateBoard={updateBoard}
           onDuplicateBoard={duplicateBoard}
           onDeleteBoard={deleteBoard}
         />
@@ -346,12 +373,13 @@ function HomePage({
   onEdit,
   onMove,
   onAddBoard,
-  onRenameBoard,
+  onUpdateBoard,
   onDuplicateBoard,
   onDeleteBoard
 }) {
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [boardMenu, setBoardMenu] = useState(null);
+  const [editingBoard, setEditingBoard] = useState(null);
   const boardRef = useRef(null);
   const swipeStartRef = useRef(null);
   const longPressTimerRef = useRef(null);
@@ -443,10 +471,10 @@ function HomePage({
     onBoardChange(boardId);
   };
 
-  const renameFromMenu = () => {
+  const editFromMenu = () => {
     if (!boardMenu) return;
-    const nextLabel = window.prompt('ボード名を変更', boardMenu.label);
-    if (nextLabel !== null) onRenameBoard(boardMenu.id, nextLabel);
+    const board = boards.find(item => item.id === boardMenu.id);
+    if (board) setEditingBoard(board);
     setBoardMenu(null);
   };
 
@@ -523,7 +551,7 @@ function HomePage({
           style={{ '--menu-x': `${boardMenu.x}px`, '--menu-y': `${boardMenu.y}px` }}
           onClick={(event) => event.stopPropagation()}
         >
-          <button type="button" role="menuitem" onClick={renameFromMenu}>
+          <button type="button" role="menuitem" onClick={editFromMenu}>
             <Pencil size={16} />
             名前の変更
           </button>
@@ -536,6 +564,17 @@ function HomePage({
             削除
           </button>
         </div>
+      )}
+
+      {editingBoard && (
+        <BoardEditSheet
+          board={editingBoard}
+          onClose={() => setEditingBoard(null)}
+          onSave={(patch) => {
+            onUpdateBoard(editingBoard.id, patch);
+            setEditingBoard(null);
+          }}
+        />
       )}
 
       <section
@@ -605,6 +644,76 @@ function HomePage({
   );
 }
 
+function BoardEditSheet({ board, onClose, onSave }) {
+  const [label, setLabel] = useState(board.label);
+  const [icon, setIcon] = useState(board.icon || 'folder');
+
+  const submit = (event) => {
+    event.preventDefault();
+    onSave({ label, icon });
+  };
+
+  return (
+    <div className="board-edit-sheet" role="dialog" aria-label="ボード編集">
+      <button type="button" className="sheet-close" onClick={onClose} aria-label="閉じる">
+        <X size={20} />
+      </button>
+      <form onSubmit={submit}>
+        <p>ボードを編集</p>
+        <label className="board-edit-name">
+          <span>名前</span>
+          <input value={label} onChange={(event) => setLabel(event.target.value)} aria-label="ボード名" />
+        </label>
+        <div className="board-icon-picker" aria-label="ボードアイコン">
+          {BOARD_ICON_OPTIONS.map(option => {
+            const Icon = BOARD_ICON_MAP[option.id] || Folder;
+            return (
+              <button
+                key={option.id}
+                type="button"
+                className={icon === option.id ? 'active' : ''}
+                onClick={() => setIcon(option.id)}
+                aria-label={option.label}
+              >
+                <Icon size={20} />
+              </button>
+            );
+          })}
+        </div>
+        <button type="submit" className="board-edit-save">保存</button>
+      </form>
+    </div>
+  );
+}
+
+function StickerLayer({ stickers = [], onStickerPointerDown = null }) {
+  if (!stickers.length) return null;
+
+  return (
+    <div className="sticker-layer" aria-hidden={!onStickerPointerDown}>
+      {stickers.map(sticker => {
+        const asset = STICKER_MAP[sticker.assetId];
+        if (!asset) return null;
+        return (
+          <img
+            key={sticker.id}
+            className={onStickerPointerDown ? 'memo-sticker is-editable' : 'memo-sticker'}
+            src={asset.src}
+            alt={asset.label}
+            style={{
+              left: `${sticker.x}%`,
+              top: `${sticker.y}%`,
+              width: `${sticker.size}px`
+            }}
+            draggable={false}
+            onPointerDown={onStickerPointerDown ? (event) => onStickerPointerDown(event, sticker) : undefined}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
 function BoardMemo({ memo, onPointerDown, onEdit }) {
   const hasTitle = memo.title.trim().length > 0;
   const cardType = memo.cardType || (memo.type === 'checklist' ? 'checklist' : 'note');
@@ -621,6 +730,7 @@ function BoardMemo({ memo, onPointerDown, onEdit }) {
       onPointerDown={onPointerDown}
     >
       <span className="card-tape" aria-hidden="true" />
+      {cardType !== 'photo' && <StickerLayer stickers={memo.stickers} />}
 
       {cardType === 'photo' ? (
         <div className="photo-card-body" role="button" tabIndex={0} onClick={onEdit} onKeyDown={(event) => {
@@ -672,16 +782,18 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
   const primaryInputRef = useRef(null);
   const titleInputRef = useRef(null);
   const photoInputRef = useRef(null);
-  const cropDragRef = useRef(null);
+  const createCardRef = useRef(null);
+  const photoPointersRef = useRef(new globalThis.Map());
+  const photoGestureRef = useRef(null);
   const checklistInputRefs = useRef({});
   const pendingFocusId = useRef(null);
   const canSave = draft.cardType === 'photo'
     ? Boolean(draft.photoDataUrl || draft.caption.trim() || draft.title.trim())
     : draft.cardType === 'schedule'
-      ? Boolean(draft.title.trim() || draft.scheduleDate || draft.scheduleTime || draft.schedulePlace)
+      ? Boolean(draft.title.trim() || draft.scheduleDate || draft.scheduleTime || draft.schedulePlace || draft.stickers.length)
       : draft.cardType === 'checklist'
-        ? draft.title.trim().length > 0 || draft.checklist.some(item => item.text.trim())
-        : draft.title.trim().length > 0 || draft.text.trim().length > 0;
+        ? draft.title.trim().length > 0 || draft.checklist.some(item => item.text.trim()) || draft.stickers.length > 0
+        : draft.title.trim().length > 0 || draft.text.trim().length > 0 || draft.stickers.length > 0;
   const firstChecklistItem = draft.checklist[0] || null;
 
   useEffect(() => {
@@ -769,7 +881,8 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
         photoCropRatio: 'landscape',
         photoZoom: 1,
         photoOffsetX: 0,
-        photoOffsetY: 0
+        photoOffsetY: 0,
+        photoRotation: 0
       }));
     } finally {
       setImageBusy(false);
@@ -783,7 +896,8 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
       photoDataUrl: '',
       photoZoom: 1,
       photoOffsetX: 0,
-      photoOffsetY: 0
+      photoOffsetY: 0,
+      photoRotation: 0
     }));
   };
 
@@ -794,30 +908,127 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
     }));
   };
 
+  const resetPhotoGesture = () => {
+    const pointers = [...photoPointersRef.current.values()];
+    if (pointers.length === 1) {
+      const [pointer] = pointers;
+      photoGestureRef.current = {
+        mode: 'drag',
+        startX: pointer.clientX,
+        startY: pointer.clientY,
+        offsetX: draft.photoOffsetX,
+        offsetY: draft.photoOffsetY
+      };
+      return;
+    }
+
+    if (pointers.length >= 2) {
+      const [first, second] = pointers;
+      photoGestureRef.current = {
+        mode: 'pinch',
+        distance: getPointerDistance(first, second),
+        angle: getPointerAngle(first, second),
+        center: getPointerCenter(first, second),
+        zoom: draft.photoZoom,
+        rotation: draft.photoRotation,
+        offsetX: draft.photoOffsetX,
+        offsetY: draft.photoOffsetY
+      };
+      return;
+    }
+
+    photoGestureRef.current = null;
+  };
+
   const startPhotoDrag = (event) => {
     if (!draft.photoDataUrl) return;
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
-    cropDragRef.current = {
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      offsetX: draft.photoOffsetX,
-      offsetY: draft.photoOffsetY
-    };
+    photoPointersRef.current.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
+    resetPhotoGesture();
   };
 
   const movePhotoDrag = (event) => {
-    const drag = cropDragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId) return;
-    const nextX = clamp(drag.offsetX + (event.clientX - drag.startX) / 2.4, -80, 80);
-    const nextY = clamp(drag.offsetY + (event.clientY - drag.startY) / 2.4, -80, 80);
-    updatePhotoCrop({ photoOffsetX: nextX, photoOffsetY: nextY });
+    if (!photoPointersRef.current.has(event.pointerId)) return;
+    photoPointersRef.current.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
+    const gesture = photoGestureRef.current;
+    if (!gesture) return;
+
+    const pointers = [...photoPointersRef.current.values()];
+    if (gesture.mode === 'drag' && pointers.length === 1) {
+      const [pointer] = pointers;
+      updatePhotoCrop({
+        photoOffsetX: clamp(gesture.offsetX + pointer.clientX - gesture.startX, -160, 160),
+        photoOffsetY: clamp(gesture.offsetY + pointer.clientY - gesture.startY, -160, 160)
+      });
+      return;
+    }
+
+    if (gesture.mode === 'pinch' && pointers.length >= 2) {
+      const [first, second] = pointers;
+      const distance = getPointerDistance(first, second);
+      const center = getPointerCenter(first, second);
+      updatePhotoCrop({
+        photoZoom: clamp(gesture.zoom * (distance / Math.max(gesture.distance, 1)), 1, 4),
+        photoRotation: clamp(gesture.rotation + getPointerAngle(first, second) - gesture.angle, -35, 35),
+        photoOffsetX: clamp(gesture.offsetX + center.x - gesture.center.x, -160, 160),
+        photoOffsetY: clamp(gesture.offsetY + center.y - gesture.center.y, -160, 160)
+      });
+    }
   };
 
   const stopPhotoDrag = (event) => {
-    if (cropDragRef.current?.pointerId !== event.pointerId) return;
-    cropDragRef.current = null;
+    photoPointersRef.current.delete(event.pointerId);
+    resetPhotoGesture();
+  };
+
+  const addSticker = (assetId, position = {}) => {
+    setDraft(current => ({
+      ...current,
+      stickers: [...current.stickers, createSticker(assetId, position)]
+    }));
+  };
+
+  const getStickerPositionFromEvent = (event) => {
+    if (!createCardRef.current) return { x: 50, y: 62 };
+    const rect = createCardRef.current.getBoundingClientRect();
+    return {
+      x: clamp(((event.clientX - rect.left) / rect.width) * 100, 6, 94),
+      y: clamp(((event.clientY - rect.top) / rect.height) * 100, 10, 92)
+    };
+  };
+
+  const startStickerMove = (event, sticker) => {
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+
+    const moveSticker = (moveEvent) => {
+      const position = getStickerPositionFromEvent(moveEvent);
+      setDraft(current => ({
+        ...current,
+        stickers: current.stickers.map(item => (
+          item.id === sticker.id ? { ...item, ...position } : item
+        ))
+      }));
+    };
+
+    const stopStickerMove = () => {
+      window.removeEventListener('pointermove', moveSticker);
+      window.removeEventListener('pointerup', stopStickerMove);
+      window.removeEventListener('pointercancel', stopStickerMove);
+    };
+
+    window.addEventListener('pointermove', moveSticker);
+    window.addEventListener('pointerup', stopStickerMove);
+    window.addEventListener('pointercancel', stopStickerMove);
+  };
+
+  const dropSticker = (event) => {
+    const assetId = event.dataTransfer.getData('text/plain');
+    if (!STICKER_MAP[assetId]) return;
+    event.preventDefault();
+    addSticker(assetId, getStickerPositionFromEvent(event));
   };
 
   const cleanAndSave = () => {
@@ -846,8 +1057,16 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
         </button>
       </header>
 
-      <section className={`create-card ${MEMO_COLORS[draft.color].className} create-${draft.cardType}`}>
+      <section
+        ref={createCardRef}
+        className={`create-card ${MEMO_COLORS[draft.color].className} create-${draft.cardType}`}
+        onDragOver={(event) => draft.cardType !== 'photo' && event.preventDefault()}
+        onDrop={(event) => draft.cardType !== 'photo' && dropSticker(event)}
+      >
         <span className="memo-tape" aria-hidden="true" />
+        {draft.cardType !== 'photo' && (
+          <StickerLayer stickers={draft.stickers} onStickerPointerDown={startStickerMove} />
+        )}
         {draft.cardType !== 'photo' && (
           <input
             ref={titleInputRef}
@@ -918,10 +1137,21 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
                   <input
                     type="range"
                     min="1"
-                    max="3"
+                    max="4"
                     step="0.05"
                     value={draft.photoZoom}
                     onChange={(event) => updatePhotoCrop({ photoZoom: Number(event.target.value) })}
+                  />
+                </label>
+                <label className="photo-slider">
+                  <span>傾き</span>
+                  <input
+                    type="range"
+                    min="-35"
+                    max="35"
+                    step="1"
+                    value={draft.photoRotation}
+                    onChange={(event) => updatePhotoCrop({ photoRotation: Number(event.target.value) })}
                   />
                 </label>
               </div>
@@ -1046,6 +1276,23 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
           ))}
         </div>
 
+        {draft.cardType !== 'photo' && (
+          <div className="sticker-palette" aria-label="スタンプ">
+            {STICKER_OPTIONS.map(sticker => (
+              <button
+                key={sticker.id}
+                type="button"
+                draggable
+                onClick={() => addSticker(sticker.id)}
+                onDragStart={(event) => event.dataTransfer.setData('text/plain', sticker.id)}
+                aria-label={`${sticker.label}を追加`}
+              >
+                <img src={sticker.src} alt="" draggable={false} />
+              </button>
+            ))}
+          </div>
+        )}
+
         {settingsOpen && (
           <div className="create-settings">
             <div className="type-tabs card-type-tabs" aria-label="カードの種類">
@@ -1103,7 +1350,7 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
   );
 }
 
-function BoardListPage({ boards, memos, activeBoardId, onBack, onSelect, onAddBoard, onRenameBoard, onDuplicateBoard, onDeleteBoard }) {
+function BoardListPage({ boards, memos, activeBoardId, onBack, onSelect, onAddBoard, onUpdateBoard, onDuplicateBoard, onDeleteBoard }) {
   const [newBoardName, setNewBoardName] = useState('');
   const [boardNames, setBoardNames] = useState(() => Object.fromEntries(boards.map(board => [board.id, board.label])));
   const addInputRef = useRef(null);
@@ -1126,7 +1373,7 @@ function BoardListPage({ boards, memos, activeBoardId, onBack, onSelect, onAddBo
       }));
       return;
     }
-    onRenameBoard(boardId, nextLabel);
+    onUpdateBoard(boardId, { label: nextLabel });
   };
 
   const submitNewBoard = (event) => {
@@ -1196,6 +1443,23 @@ function BoardListPage({ boards, memos, activeBoardId, onBack, onSelect, onAddBo
                   }}
                 />
               </label>
+
+              <div className="board-icon-row" aria-label={`${board.label}のアイコン`}>
+                {BOARD_ICON_OPTIONS.map(option => {
+                  const Icon = BOARD_ICON_MAP[option.id] || Folder;
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      className={board.icon === option.id ? 'active' : ''}
+                      onClick={() => onUpdateBoard(board.id, { icon: option.id })}
+                      aria-label={option.label}
+                    >
+                      <Icon size={17} />
+                    </button>
+                  );
+                })}
+              </div>
 
               <div className="board-card-actions">
                 <button type="button" onClick={() => onSelect(board.id)}>開く</button>
