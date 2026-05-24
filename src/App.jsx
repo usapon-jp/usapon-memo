@@ -686,7 +686,7 @@ function BoardEditSheet({ board, onClose, onSave }) {
   );
 }
 
-function StickerLayer({ stickers = [], onStickerPointerDown = null }) {
+function StickerLayer({ stickers = [], onStickerPointerDown = null, selectedStickerId = '', onDeleteSticker = null }) {
   if (!stickers.length) return null;
 
   return (
@@ -694,20 +694,39 @@ function StickerLayer({ stickers = [], onStickerPointerDown = null }) {
       {stickers.map(sticker => {
         const asset = STICKER_MAP[sticker.assetId];
         if (!asset) return null;
+        const isSelected = selectedStickerId === sticker.id;
         return (
-          <img
+          <span
             key={sticker.id}
-            className={onStickerPointerDown ? 'memo-sticker is-editable' : 'memo-sticker'}
-            src={asset.src}
-            alt={asset.label}
+            className={onStickerPointerDown ? 'memo-sticker-wrap is-editable' : 'memo-sticker-wrap'}
             style={{
               left: `${sticker.x}%`,
               top: `${sticker.y}%`,
               width: `${sticker.size}px`
             }}
-            draggable={false}
             onPointerDown={onStickerPointerDown ? (event) => onStickerPointerDown(event, sticker) : undefined}
-          />
+          >
+            <img
+              className="memo-sticker"
+              src={asset.src}
+              alt={asset.label}
+              draggable={false}
+            />
+            {isSelected && onDeleteSticker && (
+              <button
+                type="button"
+                className="sticker-delete"
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onDeleteSticker(sticker.id);
+                }}
+                aria-label={`${asset.label}を削除`}
+              >
+                <X size={12} />
+              </button>
+            )}
+          </span>
         );
       })}
     </div>
@@ -779,6 +798,7 @@ function BoardMemo({ memo, onPointerDown, onEdit }) {
 function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [imageBusy, setImageBusy] = useState(false);
+  const [selectedStickerId, setSelectedStickerId] = useState('');
   const primaryInputRef = useRef(null);
   const titleInputRef = useRef(null);
   const photoInputRef = useRef(null);
@@ -983,10 +1003,12 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
   };
 
   const addSticker = (assetId, position = {}) => {
+    const sticker = createSticker(assetId, position);
     setDraft(current => ({
       ...current,
-      stickers: [...current.stickers, createSticker(assetId, position)]
+      stickers: [...current.stickers, sticker]
     }));
+    setSelectedStickerId(sticker.id);
   };
 
   const getStickerPositionFromEvent = (event) => {
@@ -1001,6 +1023,7 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
   const startStickerMove = (event, sticker) => {
     event.preventDefault();
     event.stopPropagation();
+    setSelectedStickerId(sticker.id);
     event.currentTarget.setPointerCapture(event.pointerId);
 
     const moveSticker = (moveEvent) => {
@@ -1029,6 +1052,14 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
     if (!STICKER_MAP[assetId]) return;
     event.preventDefault();
     addSticker(assetId, getStickerPositionFromEvent(event));
+  };
+
+  const deleteSticker = (id) => {
+    setDraft(current => ({
+      ...current,
+      stickers: current.stickers.filter(sticker => sticker.id !== id)
+    }));
+    setSelectedStickerId(current => current === id ? '' : current);
   };
 
   const cleanAndSave = () => {
@@ -1065,7 +1096,12 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
       >
         <span className="memo-tape" aria-hidden="true" />
         {draft.cardType !== 'photo' && (
-          <StickerLayer stickers={draft.stickers} onStickerPointerDown={startStickerMove} />
+          <StickerLayer
+            stickers={draft.stickers}
+            onStickerPointerDown={startStickerMove}
+            selectedStickerId={selectedStickerId}
+            onDeleteSticker={deleteSticker}
+          />
         )}
         {draft.cardType !== 'photo' && (
           <input

@@ -464,22 +464,47 @@ button {
   pointer-events: none;
 }
 
-.memo-sticker {
+.memo-sticker-wrap {
   position: absolute;
+  display: block;
   height: auto;
   transform: translate(-50%, -50%);
-  filter: drop-shadow(0 5px 6px rgba(74, 60, 42, 0.12));
   user-select: none;
 }
 
-.memo-sticker.is-editable {
+.memo-sticker-wrap.is-editable {
   pointer-events: auto;
   cursor: grab;
   touch-action: none;
 }
 
-.memo-sticker.is-editable:active {
+.memo-sticker-wrap.is-editable:active {
   cursor: grabbing;
+}
+
+.memo-sticker {
+  width: 100%;
+  height: auto;
+  display: block;
+  filter: drop-shadow(0 5px 6px rgba(74, 60, 42, 0.12));
+  pointer-events: none;
+}
+
+.sticker-delete {
+  width: 22px;
+  height: 22px;
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  z-index: 4;
+  border: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 250, 245, 0.96);
+  color: #9a7350;
+  box-shadow: 0 6px 12px rgba(74, 60, 42, 0.16);
+  cursor: pointer;
 }
 
 .memo-tape {
