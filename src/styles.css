@@ -1063,7 +1063,7 @@ button {
 
 .board-card-actions {
   display: grid;
-  grid-template-columns: 1fr 86px 86px;
+  grid-template-columns: 1fr 42px 42px 78px 78px;
   gap: 9px;
 }
 
@@ -1085,6 +1085,12 @@ button {
 .board-card-actions button.danger {
   background: #fff1ed;
   color: #b45c4d;
+}
+
+.board-card-actions .board-order-button {
+  padding: 0;
+  background: #f5eadb;
+  color: #8b6744;
 }
 
 .board-card-actions button:disabled {
@@ -1245,6 +1251,47 @@ body {
   color: #4d3928;
 }
 
+.board-tabs button.is-wiggling {
+  animation: board-wiggle 0.28s ease-in-out infinite alternate;
+}
+
+.board-reorder-done {
+  background: #e7f0df !important;
+  color: #607050 !important;
+}
+
+.board-chip-move {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: -8px;
+}
+
+.board-chip-move span {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 252, 246, 0.82);
+  color: #7a6248;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.board-chip-move span.disabled {
+  opacity: 0.32;
+}
+
+@keyframes board-wiggle {
+  from {
+    transform: rotate(-1.2deg) translateY(-1px);
+  }
+
+  to {
+    transform: rotate(1.2deg) translateY(1px);
+  }
+}
+
 .board-tabs .board-add-tab {
   width: 46px;
   min-width: 46px;
@@ -1256,9 +1303,9 @@ body {
 .board-tab-menu {
   position: fixed;
   top: min(calc(var(--menu-y) + 12px), calc(100dvh - 164px));
-  left: min(max(14px, calc(var(--menu-x) - 72px)), calc(100vw - 172px));
+  left: min(max(14px, calc(var(--menu-x) - 72px)), calc(100vw - 192px));
   z-index: 90;
-  width: 158px;
+  width: 178px;
   display: grid;
   gap: 4px;
   padding: 8px;

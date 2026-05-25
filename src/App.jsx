@@ -19,6 +19,8 @@ import {
   Search,
   StickyNote,
   Trash2,
+  ArrowUp,
+  ArrowDown,
   X
 } from 'lucide-react';
 import {
@@ -345,6 +347,22 @@ export default function App() {
     setActiveBoardId(nextBoard.id);
   };
 
+  const moveBoard = (boardId, direction) => {
+    setData(current => {
+      const index = current.boards.findIndex(board => board.id === boardId);
+      const offset = direction === 'prev' || direction === 'up' ? -1 : 1;
+      const nextIndex = index + offset;
+      if (index < 0 || nextIndex < 0 || nextIndex >= current.boards.length) return current;
+      const nextBoards = [...current.boards];
+      const [board] = nextBoards.splice(index, 1);
+      nextBoards.splice(nextIndex, 0, board);
+      return {
+        ...current,
+        boards: nextBoards
+      };
+    });
+  };
+
   const deleteBoard = (boardId) => {
     const board = boards.find(item => item.id === boardId);
     if (!board || boards.length <= 1) {
@@ -394,6 +412,7 @@ export default function App() {
           onUpdateBoard={updateBoard}
           onDuplicateBoard={duplicateBoard}
           onDeleteBoard={deleteBoard}
+          onMoveBoard={moveBoard}
         />
       )}
 
@@ -421,6 +440,7 @@ export default function App() {
           onUpdateBoard={updateBoard}
           onDuplicateBoard={duplicateBoard}
           onDeleteBoard={deleteBoard}
+          onMoveBoard={moveBoard}
         />
       )}
     </main>
@@ -441,12 +461,14 @@ function HomePage({
   onAddBoard,
   onUpdateBoard,
   onDuplicateBoard,
-  onDeleteBoard
+  onDeleteBoard,
+  onMoveBoard
 }) {
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [boardMenu, setBoardMenu] = useState(null);
   const [editingBoard, setEditingBoard] = useState(null);
   const [draggingMemoId, setDraggingMemoId] = useState(null);
+  const [boardReorderMode, setBoardReorderMode] = useState(false);
   const [trashActive, setTrashActive] = useState(false);
   const boardRef = useRef(null);
   const trashRef = useRef(null);
@@ -740,7 +762,6 @@ function HomePage({
   const openBoardMenu = (event, board) => {
     event.preventDefault();
     clearBoardLongPress();
-    longPressFiredRef.current = true;
     setBoardMenu({
       id: board.id,
       label: board.label,
@@ -752,23 +773,30 @@ function HomePage({
   const startBoardLongPress = (event, board) => {
     clearBoardLongPress();
     longPressFiredRef.current = false;
-    const point = {
-      preventDefault: () => event.preventDefault(),
-      clientX: event.clientX,
-      clientY: event.clientY
-    };
     longPressTimerRef.current = window.setTimeout(() => {
-      openBoardMenu(point, board);
+      longPressFiredRef.current = true;
+      setBoardMenu(null);
+      setBoardReorderMode(true);
     }, 560);
   };
 
-  const handleBoardClick = (boardId) => {
+  const handleBoardClick = (event, board) => {
     if (longPressFiredRef.current) {
       longPressFiredRef.current = false;
       return;
     }
+    openBoardMenu(event, board);
+  };
+
+  const openFromMenu = () => {
+    if (!boardMenu) return;
+    onBoardChange(boardMenu.id);
     setBoardMenu(null);
-    onBoardChange(boardId);
+  };
+
+  const reorderFromMenu = () => {
+    setBoardReorderMode(true);
+    setBoardMenu(null);
   };
 
   const editFromMenu = () => {
@@ -808,13 +836,18 @@ function HomePage({
       </header>
 
       <nav className="board-tabs" aria-label="ボード切替">
-        {boards.map(board => {
+        {boardReorderMode && (
+          <button type="button" className="board-reorder-done" onClick={() => setBoardReorderMode(false)}>
+            完了
+          </button>
+        )}
+        {boards.map((board, index) => {
           const Icon = BOARD_ICON_MAP[board.icon] || Folder;
           return (
             <button
               key={board.id}
               type="button"
-              className={board.id === activeBoardId ? 'active' : ''}
+              className={`${board.id === activeBoardId ? 'active' : ''} ${boardReorderMode ? 'is-wiggling' : ''}`}
               onPointerDown={(event) => startBoardLongPress(event, board)}
               onPointerUp={clearBoardLongPress}
               onPointerLeave={clearBoardLongPress}
@@ -822,11 +855,39 @@ function HomePage({
               onContextMenu={(event) => openBoardMenu(event, board)}
               onClick={(event) => {
                 event.stopPropagation();
-                handleBoardClick(board.id);
+                handleBoardClick(event, board);
               }}
             >
+              {boardReorderMode && (
+                <span className="board-chip-move" aria-hidden="true">
+                  <span
+                    role="button"
+                    tabIndex={-1}
+                    className={index === 0 ? 'disabled' : ''}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      if (index > 0) onMoveBoard(board.id, 'prev');
+                    }}
+                  >
+                    ‹
+                  </span>
+                  <span
+                    role="button"
+                    tabIndex={-1}
+                    className={index === boards.length - 1 ? 'disabled' : ''}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      if (index < boards.length - 1) onMoveBoard(board.id, 'next');
+                    }}
+                  >
+                    ›
+                  </span>
+                </span>
+              )}
               <Icon size={18} />
-              {board.label}
+              <span>{board.label}</span>
             </button>
           );
         })}
@@ -836,6 +897,7 @@ function HomePage({
           onClick={(event) => {
             event.stopPropagation();
             setBoardMenu(null);
+            setBoardReorderMode(false);
             onAddBoard();
           }}
           aria-label="ボード追加"
@@ -851,6 +913,14 @@ function HomePage({
           style={{ '--menu-x': `${boardMenu.x}px`, '--menu-y': `${boardMenu.y}px` }}
           onClick={(event) => event.stopPropagation()}
         >
+          <button type="button" role="menuitem" onClick={openFromMenu}>
+            <Folder size={16} />
+            このボードを開く
+          </button>
+          <button type="button" role="menuitem" onClick={reorderFromMenu}>
+            <Menu size={16} />
+            並び替え
+          </button>
           <button type="button" role="menuitem" onClick={editFromMenu}>
             <Pencil size={16} />
             名前の変更
@@ -1725,7 +1795,7 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
   );
 }
 
-function BoardListPage({ boards, memos, activeBoardId, onBack, onSelect, onAddBoard, onUpdateBoard, onDuplicateBoard, onDeleteBoard }) {
+function BoardListPage({ boards, memos, activeBoardId, onBack, onSelect, onAddBoard, onUpdateBoard, onDuplicateBoard, onDeleteBoard, onMoveBoard }) {
   const [newBoardName, setNewBoardName] = useState('');
   const [boardNames, setBoardNames] = useState(() => Object.fromEntries(boards.map(board => [board.id, board.label])));
   const addInputRef = useRef(null);
@@ -1787,7 +1857,7 @@ function BoardListPage({ boards, memos, activeBoardId, onBack, onSelect, onAddBo
       </form>
 
       <div className="board-manager-list">
-        {boards.map((board) => {
+        {boards.map((board, index) => {
           const Icon = BOARD_ICON_MAP[board.icon] || Folder;
           return (
             <article key={board.id} className={`board-manager-card ${board.id === activeBoardId ? 'is-active' : ''}`}>
@@ -1838,6 +1908,24 @@ function BoardListPage({ boards, memos, activeBoardId, onBack, onSelect, onAddBo
 
               <div className="board-card-actions">
                 <button type="button" onClick={() => onSelect(board.id)}>開く</button>
+                <button
+                  type="button"
+                  className="board-order-button"
+                  onClick={() => onMoveBoard(board.id, 'up')}
+                  disabled={index === 0}
+                  aria-label={`${board.label}を上へ移動`}
+                >
+                  <ArrowUp size={15} />
+                </button>
+                <button
+                  type="button"
+                  className="board-order-button"
+                  onClick={() => onMoveBoard(board.id, 'down')}
+                  disabled={index === boards.length - 1}
+                  aria-label={`${board.label}を下へ移動`}
+                >
+                  <ArrowDown size={15} />
+                </button>
                 <button type="button" onClick={() => onDuplicateBoard(board.id)}>
                   <Copy size={15} />
                   複製
