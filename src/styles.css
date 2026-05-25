@@ -268,6 +268,7 @@ button {
   overflow: hidden;
   font-size: 13px;
   line-height: 1.35;
+  text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -292,12 +293,28 @@ button {
   text-decoration: line-through;
 }
 
-.mini-checklist i {
+.mini-check-toggle {
   width: 9px;
   height: 9px;
+  margin: 3px 0 0;
+  padding: 0;
   flex: 0 0 9px;
   border: 1px solid #8c897f;
   border-radius: 2px;
+  background: rgba(255, 255, 255, 0.34);
+  cursor: pointer;
+}
+
+.mini-checklist span.done .mini-check-toggle {
+  background:
+    linear-gradient(135deg, transparent 43%, #6f8567 44% 56%, transparent 57%),
+    linear-gradient(45deg, transparent 49%, #6f8567 50% 62%, transparent 63%),
+    rgba(255, 255, 255, 0.62);
+}
+
+.mini-checklist-spacer {
+  min-height: 20px;
+  display: block;
 }
 
 .home-footer,
@@ -1453,6 +1470,7 @@ body {
   color: #4f3d2b;
   font-size: 16px;
   font-weight: 800;
+  text-align: center;
 }
 
 .board-memo-body {
@@ -1465,7 +1483,7 @@ body {
   font-size: 12px;
 }
 
-.mini-checklist i {
+.mini-check-toggle {
   border-color: #9a856d;
 }
 

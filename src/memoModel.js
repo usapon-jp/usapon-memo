@@ -166,7 +166,7 @@ const normalizeChecklist = (checklist) => (
       typeof item.text === 'string' ? item.text.trim() : '',
       Boolean(item.completed ?? item.done),
       typeof item.id === 'string' ? item.id : null
-    )).filter(item => item.text)
+    ))
     : []
 );
 

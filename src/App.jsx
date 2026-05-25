@@ -264,6 +264,18 @@ export default function App() {
     }));
   };
 
+  const toggleChecklistItem = (memoId, itemId) => {
+    const memo = data.memos.find(item => item.id === memoId);
+    const item = memo?.checklist.find(check => check.id === itemId);
+    if (!memo || !item) return;
+
+    patchMemo(memoId, {
+      checklist: memo.checklist.map(check => (
+        check.id === itemId ? { ...check, completed: !check.completed } : check
+      ))
+    });
+  };
+
   const deleteMemo = (id) => {
     setData(current => ({
       ...current,
@@ -377,6 +389,7 @@ export default function App() {
           onEdit={openEditMemo}
           onMove={patchMemo}
           onDeleteMemo={deleteMemo}
+          onToggleChecklistItem={toggleChecklistItem}
           onAddBoard={addBoard}
           onUpdateBoard={updateBoard}
           onDuplicateBoard={duplicateBoard}
@@ -424,6 +437,7 @@ function HomePage({
   onEdit,
   onMove,
   onDeleteMemo,
+  onToggleChecklistItem,
   onAddBoard,
   onUpdateBoard,
   onDuplicateBoard,
@@ -884,6 +898,7 @@ function HomePage({
                 isDragging={draggingMemoId === memo.id}
                 onPointerDown={(event) => handlePointerDown(event, memo)}
                 onEdit={() => onEdit(memo)}
+                onToggleChecklistItem={onToggleChecklistItem}
               />
             ))
           )}
@@ -1026,7 +1041,7 @@ function StickerLayer({ stickers = [], onStickerPointerDown = null, selectedStic
   );
 }
 
-function BoardMemo({ memo, isDragging, onPointerDown, onEdit }) {
+function BoardMemo({ memo, isDragging, onPointerDown, onEdit, onToggleChecklistItem }) {
   const hasTitle = memo.title.trim().length > 0;
   const cardType = memo.cardType || (memo.type === 'checklist' ? 'checklist' : 'note');
   const style = {
@@ -1085,12 +1100,28 @@ function BoardMemo({ memo, isDragging, onPointerDown, onEdit }) {
           </span>
         ) : cardType === 'checklist' ? (
           <span className="mini-checklist">
-            {memo.checklist.slice(0, 4).map(item => (
-              <span key={item.id} className={item.completed ? 'done' : ''}>
-                <i aria-hidden="true" />
-                {item.text}
-              </span>
-            ))}
+            {memo.checklist.slice(0, 4).map(item => {
+              const hasText = item.text.trim().length > 0;
+              if (!hasText) {
+                return <span key={item.id} className="mini-checklist-spacer" aria-hidden="true" />;
+              }
+              return (
+                <span key={item.id} className={item.completed ? 'done' : ''}>
+                  <button
+                    type="button"
+                    className="mini-check-toggle"
+                    aria-label={item.completed ? `${item.text}を未完了にする` : `${item.text}を完了にする`}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onToggleChecklistItem(memo.id, item.id);
+                    }}
+                    onKeyDown={(event) => event.stopPropagation()}
+                  />
+                  {item.text}
+                </span>
+              );
+            })}
           </span>
         ) : (
           <span>{memo.text || '自由メモ'}</span>
@@ -1382,7 +1413,9 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
   const cleanAndSave = () => {
     const nextDraft = normalizeMemo({
       ...draft,
-      checklist: draft.checklist.filter(item => item.text.trim())
+      checklist: draft.cardType === 'checklist'
+        ? draft.checklist
+        : draft.checklist.filter(item => item.text.trim())
     });
     onSave(nextDraft);
   };
