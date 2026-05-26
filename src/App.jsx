@@ -1064,7 +1064,13 @@ function BoardEditSheet({ board, onClose, onSave }) {
   );
 }
 
-function StickerLayer({ stickers = [], onStickerPointerDown = null, selectedStickerId = '', onDeleteSticker = null }) {
+function StickerLayer({
+  stickers = [],
+  onStickerPointerDown = null,
+  selectedStickerId = '',
+  movingStickerId = '',
+  onDeleteSticker = null
+}) {
   if (!stickers.length) return null;
 
   return (
@@ -1076,7 +1082,10 @@ function StickerLayer({ stickers = [], onStickerPointerDown = null, selectedStic
         return (
           <span
             key={sticker.id}
-            className={onStickerPointerDown ? 'memo-sticker-wrap is-editable' : 'memo-sticker-wrap'}
+            className={[
+              onStickerPointerDown ? 'memo-sticker-wrap is-editable' : 'memo-sticker-wrap',
+              movingStickerId === sticker.id ? 'is-moving' : ''
+            ].filter(Boolean).join(' ')}
             style={{
               left: `${sticker.x}%`,
               top: `${sticker.y}%`,
@@ -1205,6 +1214,8 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [imageBusy, setImageBusy] = useState(false);
   const [selectedStickerId, setSelectedStickerId] = useState('');
+  const [movingStickerId, setMovingStickerId] = useState('');
+  const [draggingSticker, setDraggingSticker] = useState(null);
   const [photoToolsOpen, setPhotoToolsOpen] = useState(true);
   const primaryInputRef = useRef(null);
   const titleInputRef = useRef(null);
@@ -1285,11 +1296,15 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
 
   const handleChecklistBackspace = (event, item) => {
     if (event.key !== 'Backspace') return;
+
+    const nativeEvent = event.nativeEvent || {};
+    if (nativeEvent.isComposing || nativeEvent.keyCode === 229) return;
+
+    const target = event.currentTarget;
+    const hasSelection = target.selectionStart !== target.selectionEnd;
+    if (hasSelection || target.value.length > 0) return;
+
     event.preventDefault();
-    if (item.text.length > 0) {
-      updateChecklistItem(item.id, { text: '' });
-      return;
-    }
     removeChecklistItem(item.id);
   };
 
@@ -1429,23 +1444,46 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
     setSelectedStickerId(sticker.id);
   };
 
-  const getStickerPositionFromEvent = (event) => {
+  const getStickerPositionFromPoint = (clientX, clientY) => {
     if (!createCardRef.current) return { x: 50, y: 62 };
     const rect = createCardRef.current.getBoundingClientRect();
     return {
-      x: clamp(((event.clientX - rect.left) / rect.width) * 100, 6, 94),
-      y: clamp(((event.clientY - rect.top) / rect.height) * 100, 10, 92)
+      x: clamp(((clientX - rect.left) / rect.width) * 100, 6, 94),
+      y: clamp(((clientY - rect.top) / rect.height) * 100, 10, 92)
     };
+  };
+
+  const getStickerPositionFromEvent = (event) => getStickerPositionFromPoint(event.clientX, event.clientY);
+
+  const isPointInsideCreateCard = (clientX, clientY) => {
+    if (!createCardRef.current) return false;
+    const rect = createCardRef.current.getBoundingClientRect();
+    return clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
   };
 
   const startStickerMove = (event, sticker) => {
     event.preventDefault();
     event.stopPropagation();
     setSelectedStickerId(sticker.id);
+    setMovingStickerId(sticker.id);
     event.currentTarget.setPointerCapture(event.pointerId);
+    const rect = createCardRef.current?.getBoundingClientRect();
+    const stickerCenter = rect
+      ? {
+        x: rect.left + (sticker.x / 100) * rect.width,
+        y: rect.top + (sticker.y / 100) * rect.height
+      }
+      : { x: event.clientX, y: event.clientY };
+    const grabOffset = {
+      x: event.clientX - stickerCenter.x,
+      y: event.clientY - stickerCenter.y
+    };
 
     const moveSticker = (moveEvent) => {
-      const position = getStickerPositionFromEvent(moveEvent);
+      const position = getStickerPositionFromPoint(
+        moveEvent.clientX - grabOffset.x,
+        moveEvent.clientY - grabOffset.y
+      );
       setDraft(current => ({
         ...current,
         stickers: current.stickers.map(item => (
@@ -1455,6 +1493,7 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
     };
 
     const stopStickerMove = () => {
+      setMovingStickerId('');
       window.removeEventListener('pointermove', moveSticker);
       window.removeEventListener('pointerup', stopStickerMove);
       window.removeEventListener('pointercancel', stopStickerMove);
@@ -1463,6 +1502,33 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
     window.addEventListener('pointermove', moveSticker);
     window.addEventListener('pointerup', stopStickerMove);
     window.addEventListener('pointercancel', stopStickerMove);
+  };
+
+  const startStickerAdd = (event, assetId) => {
+    if (draft.cardType === 'photo' || !STICKER_MAP[assetId]) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setSelectedStickerId('');
+    setDraggingSticker({ assetId, x: event.clientX, y: event.clientY });
+
+    const moveStickerPreview = (moveEvent) => {
+      setDraggingSticker({ assetId, x: moveEvent.clientX, y: moveEvent.clientY });
+    };
+
+    const stopStickerAdd = (upEvent) => {
+      if (isPointInsideCreateCard(upEvent.clientX, upEvent.clientY)) {
+        addSticker(assetId, getStickerPositionFromPoint(upEvent.clientX, upEvent.clientY));
+      }
+      setDraggingSticker(null);
+      window.removeEventListener('pointermove', moveStickerPreview);
+      window.removeEventListener('pointerup', stopStickerAdd);
+      window.removeEventListener('pointercancel', stopStickerAdd);
+    };
+
+    window.addEventListener('pointermove', moveStickerPreview);
+    window.addEventListener('pointerup', stopStickerAdd);
+    window.addEventListener('pointercancel', stopStickerAdd);
   };
 
   const dropSticker = (event) => {
@@ -1533,6 +1599,7 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
             stickers={draft.stickers}
             onStickerPointerDown={startStickerMove}
             selectedStickerId={selectedStickerId}
+            movingStickerId={movingStickerId}
             onDeleteSticker={deleteSticker}
           />
         )}
@@ -1727,9 +1794,8 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
               <button
                 key={sticker.id}
                 type="button"
-                draggable
-                onClick={() => addSticker(sticker.id)}
-                onDragStart={(event) => event.dataTransfer.setData('text/plain', sticker.id)}
+                draggable={false}
+                onPointerDown={(event) => startStickerAdd(event, sticker.id)}
                 aria-label={`${sticker.label}を追加`}
               >
                 <img src={sticker.src} alt="" draggable={false} />
@@ -1784,6 +1850,16 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
           </div>
         )}
       </section>
+
+      {draggingSticker && STICKER_MAP[draggingSticker.assetId] && (
+        <div
+          className="sticker-drag-preview"
+          style={{ left: `${draggingSticker.x}px`, top: `${draggingSticker.y}px` }}
+          aria-hidden="true"
+        >
+          <img src={STICKER_MAP[draggingSticker.assetId].src} alt="" />
+        </div>
+      )}
 
       <footer className="create-actions">
         <button type="button" onClick={cleanAndSave} disabled={!canSave || imageBusy}>
