@@ -32,6 +32,7 @@ import {
   createEmptyMemo,
   createSticker,
   DEFAULT_BOARDS,
+  DEFAULT_APP_TITLE,
   isMemoVisibleOnBoard,
   normalizeMemo,
   sortMemos
@@ -117,6 +118,7 @@ const MAX_PHOTO_DATA_URL_LENGTH = 620000;
 const PHOTO_CANVAS_BACKGROUND = '#f3eadc';
 const BOARD_EDGE_HOTZONE = 34;
 const BOARD_EDGE_SWITCH_DELAY = 600;
+const ENABLE_CREATE_SETTINGS_PANEL = false;
 
 const resizeImageFile = async (file, maxWidth = 900) => {
   const dataUrl = await fileToDataUrl(file);
@@ -207,6 +209,7 @@ export default function App() {
   const [now, setNow] = useState(() => new Date());
   const [activeBoardId, setActiveBoardId] = useState('home');
   const [storageError, setStorageError] = useState('');
+  const appTitle = data.appTitle || DEFAULT_APP_TITLE;
   const boards = data.boards?.length ? data.boards : DEFAULT_BOARDS;
 
   useEffect(() => {
@@ -282,6 +285,14 @@ export default function App() {
     setData(current => ({
       ...current,
       memos: current.memos.filter(memo => memo.id !== id)
+    }));
+  };
+
+  const updateAppTitle = (nextTitle) => {
+    const appTitle = nextTitle.trim() || DEFAULT_APP_TITLE;
+    setData(current => ({
+      ...current,
+      appTitle
     }));
   };
 
@@ -398,6 +409,7 @@ export default function App() {
 
       {page === 'home' && (
         <HomePage
+          appTitle={appTitle}
           activeBoardId={activeBoardId}
           boards={boards}
           memos={visibleMemos}
@@ -413,6 +425,7 @@ export default function App() {
           onDuplicateBoard={duplicateBoard}
           onDeleteBoard={deleteBoard}
           onMoveBoard={moveBoard}
+          onUpdateAppTitle={updateAppTitle}
         />
       )}
 
@@ -448,6 +461,7 @@ export default function App() {
 }
 
 function HomePage({
+  appTitle,
   activeBoardId,
   boards,
   memos,
@@ -462,11 +476,14 @@ function HomePage({
   onUpdateBoard,
   onDuplicateBoard,
   onDeleteBoard,
-  onMoveBoard
+  onMoveBoard,
+  onUpdateAppTitle
 }) {
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [boardMenu, setBoardMenu] = useState(null);
   const [editingBoard, setEditingBoard] = useState(null);
+  const [titleEditing, setTitleEditing] = useState(false);
+  const [titleDraft, setTitleDraft] = useState(appTitle);
   const [draggingMemoId, setDraggingMemoId] = useState(null);
   const [boardReorderMode, setBoardReorderMode] = useState(false);
   const [trashActive, setTrashActive] = useState(false);
@@ -488,10 +505,21 @@ function HomePage({
   activeBoardIdRef.current = activeBoardId;
   boardsRef.current = boards;
 
+  useEffect(() => {
+    if (!titleEditing) setTitleDraft(appTitle);
+  }, [appTitle, titleEditing]);
+
   useEffect(() => () => {
     window.clearTimeout(longPressTimerRef.current);
     window.clearTimeout(edgeSwitchRef.current.timer);
   }, []);
+
+  const commitAppTitle = () => {
+    const nextTitle = titleDraft.trim() || DEFAULT_APP_TITLE;
+    setTitleDraft(nextTitle);
+    setTitleEditing(false);
+    onUpdateAppTitle(nextTitle);
+  };
 
   const setTrashHover = (isActive) => {
     trashActiveRef.current = isActive;
@@ -824,7 +852,39 @@ function HomePage({
         <button type="button" className="plain-icon" aria-label="メニュー">
           <Menu size={27} />
         </button>
-        <h1>うさぽんメモ</h1>
+        {titleEditing ? (
+          <input
+            className="app-title-input"
+            value={titleDraft}
+            aria-label="アプリタイトル"
+            autoFocus
+            onChange={(event) => setTitleDraft(event.target.value)}
+            onBlur={commitAppTitle}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                event.currentTarget.blur();
+              }
+              if (event.key === 'Escape') {
+                setTitleDraft(appTitle);
+                setTitleEditing(false);
+              }
+            }}
+          />
+        ) : (
+          <button
+            type="button"
+            className="app-title-button"
+            onClick={(event) => {
+              event.stopPropagation();
+              setTitleDraft(appTitle);
+              setTitleEditing(true);
+            }}
+            aria-label="アプリタイトルを編集"
+          >
+            {appTitle}
+          </button>
+        )}
         <div className="header-tools">
           <button type="button" className="plain-icon" aria-label="検索">
             <Search size={27} />
@@ -1210,6 +1270,54 @@ function BoardMemo({ memo, isDragging, onPointerDown, onEdit, onToggleChecklistI
   );
 }
 
+function SettingsPanel({ boards, draft, setDraft, updateCardType }) {
+  return (
+    <div className="create-settings">
+      <div className="type-tabs card-type-tabs" aria-label="カードの種類">
+        <button type="button" className={draft.cardType === 'note' ? 'active' : ''} onClick={() => updateCardType('note')}>メモ</button>
+        <button type="button" className={draft.cardType === 'checklist' ? 'active' : ''} onClick={() => updateCardType('checklist')}>リスト</button>
+        <button type="button" className={draft.cardType === 'schedule' ? 'active' : ''} onClick={() => updateCardType('schedule')}>予定</button>
+      </div>
+
+      <label className="board-select">
+        <span>貼るボード</span>
+        <select value={draft.boardId} onChange={(event) => setDraft(current => ({ ...current, boardId: event.target.value }))}>
+          {boards.map(board => (
+            <option key={board.id} value={board.id}>{board.label}</option>
+          ))}
+        </select>
+      </label>
+
+      <div className="flag-grid">
+        <ToggleButton label="ピン留め" active={draft.pinned} onClick={() => setDraft(current => ({ ...current, pinned: !current.pinned }))} />
+        <ToggleButton label="今日のメモ" active={draft.isToday} onClick={() => setDraft(current => ({ ...current, isToday: !current.isToday }))} />
+        <ToggleButton label="完了" active={draft.completed} onClick={() => setDraft(current => ({ ...current, completed: !current.completed }))} />
+      </div>
+
+      <div className="reminder-field">
+        <label>
+          <span>
+            <Clock size={16} />
+            リマインダー
+          </span>
+          <input
+            type="datetime-local"
+            value={toDatetimeLocalValue(draft.reminderAt)}
+            onChange={(event) => setDraft(current => ({ ...current, reminderAt: fromDatetimeLocalValue(event.target.value) }))}
+          />
+        </label>
+        <button
+          type="button"
+          onClick={() => setDraft(current => ({ ...current, reminderAt: null }))}
+          disabled={!draft.reminderAt}
+        >
+          解除
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [imageBusy, setImageBusy] = useState(false);
@@ -1575,15 +1683,19 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
           <ArrowLeft size={34} strokeWidth={2.4} />
         </button>
         <h1 className="create-title">{draft.cardType === 'photo' ? '写真カード' : draft.cardType === 'schedule' ? '予定カード' : 'やることリスト'}</h1>
-        <button
-          type="button"
-          className="create-nav-button"
-          onClick={() => setSettingsOpen(current => !current)}
-          aria-label="詳細設定"
-          aria-expanded={settingsOpen}
-        >
-          <MoreHorizontal size={32} strokeWidth={3} />
-        </button>
+        {ENABLE_CREATE_SETTINGS_PANEL ? (
+          <button
+            type="button"
+            className="create-nav-button"
+            onClick={() => setSettingsOpen(current => !current)}
+            aria-label="詳細設定"
+            aria-expanded={settingsOpen}
+          >
+            <MoreHorizontal size={32} strokeWidth={3} />
+          </button>
+        ) : (
+          <span className="create-nav-spacer" aria-hidden="true" />
+        )}
       </header>
 
       <section
@@ -1804,50 +1916,13 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
           </div>
         )}
 
-        {settingsOpen && (
-          <div className="create-settings">
-            <div className="type-tabs card-type-tabs" aria-label="カードの種類">
-              <button type="button" className={draft.cardType === 'note' ? 'active' : ''} onClick={() => updateCardType('note')}>メモ</button>
-              <button type="button" className={draft.cardType === 'checklist' ? 'active' : ''} onClick={() => updateCardType('checklist')}>リスト</button>
-              <button type="button" className={draft.cardType === 'schedule' ? 'active' : ''} onClick={() => updateCardType('schedule')}>予定</button>
-            </div>
-
-            <label className="board-select">
-              <span>貼るボード</span>
-              <select value={draft.boardId} onChange={(event) => setDraft(current => ({ ...current, boardId: event.target.value }))}>
-                {boards.map(board => (
-                  <option key={board.id} value={board.id}>{board.label}</option>
-                ))}
-              </select>
-            </label>
-
-            <div className="flag-grid">
-              <ToggleButton label="ピン留め" active={draft.pinned} onClick={() => setDraft(current => ({ ...current, pinned: !current.pinned }))} />
-              <ToggleButton label="今日のメモ" active={draft.isToday} onClick={() => setDraft(current => ({ ...current, isToday: !current.isToday }))} />
-              <ToggleButton label="完了" active={draft.completed} onClick={() => setDraft(current => ({ ...current, completed: !current.completed }))} />
-            </div>
-
-            <div className="reminder-field">
-              <label>
-                <span>
-                  <Clock size={16} />
-                  リマインダー
-                </span>
-                <input
-                  type="datetime-local"
-                  value={toDatetimeLocalValue(draft.reminderAt)}
-                  onChange={(event) => setDraft(current => ({ ...current, reminderAt: fromDatetimeLocalValue(event.target.value) }))}
-                />
-              </label>
-              <button
-                type="button"
-                onClick={() => setDraft(current => ({ ...current, reminderAt: null }))}
-                disabled={!draft.reminderAt}
-              >
-                解除
-              </button>
-            </div>
-          </div>
+        {ENABLE_CREATE_SETTINGS_PANEL && settingsOpen && (
+          <SettingsPanel
+            boards={boards}
+            draft={draft}
+            setDraft={setDraft}
+            updateCardType={updateCardType}
+          />
         )}
       </section>
 

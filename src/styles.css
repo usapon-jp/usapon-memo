@@ -426,6 +426,11 @@ button {
   cursor: pointer;
 }
 
+.create-nav-spacer {
+  width: 44px;
+  height: 44px;
+}
+
 .create-title {
   margin: 0;
   color: #8d8781;
@@ -681,7 +686,7 @@ button {
 
 .memo-options {
   display: grid;
-  gap: 22px;
+  gap: 24px;
   margin-top: 32px;
 }
 
@@ -1207,7 +1212,9 @@ body {
   padding: 0 18px 14px;
 }
 
-.cork-header h1 {
+.cork-header h1,
+.app-title-button,
+.app-title-input {
   margin: 0;
   color: #7b5e3f;
   font-family: "HuiFontP", "ふい字Ｐ", "ふい字P", "Klee One", "Hiragino Sans", sans-serif;
@@ -1215,6 +1222,27 @@ body {
   font-weight: 400;
   letter-spacing: 0.04em;
   text-align: center;
+}
+
+.app-title-button,
+.app-title-input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  line-height: 1.18;
+}
+
+.app-title-button {
+  padding: 0 6px 4px;
+  cursor: text;
+}
+
+.app-title-input {
+  padding: 0 6px 4px;
+  outline: 2px solid rgba(123, 94, 63, 0.16);
+  outline-offset: 4px;
 }
 
 .plain-icon {
@@ -1940,7 +1968,9 @@ body {
     padding-inline: 12px;
   }
 
-  .cork-header h1 {
+  .cork-header h1,
+  .app-title-button,
+  .app-title-input {
     font-size: 30px;
     letter-spacing: 0.03em;
   }

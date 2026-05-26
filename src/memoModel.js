@@ -27,6 +27,8 @@ export const DEFAULT_BOARDS = [
   { id: 'rabbit', label: 'うさぎ', icon: 'camera' }
 ];
 
+export const DEFAULT_APP_TITLE = 'うさぽんメモ';
+
 const BOARD_ICONS = new Set(['home', 'book', 'map', 'camera', 'folder']);
 const STICKER_ASSETS = new Set(['usa', 'piyo', 'pon', 'lemon']);
 
@@ -295,6 +297,9 @@ export const normalizeMemo = (memo = {}, index = 0) => {
 };
 
 export const normalizeData = (data = {}) => {
+  const appTitle = typeof data.appTitle === 'string' && data.appTitle.trim()
+    ? data.appTitle.trim()
+    : DEFAULT_APP_TITLE;
   const boards = normalizeBoards(data.boards);
   const boardIds = new Set(boards.map(board => board.id));
   const fallbackBoardId = boardIds.has('home') ? 'home' : boards[0].id;
@@ -307,7 +312,7 @@ export const normalizeData = (data = {}) => {
     })
     : [];
 
-  return { boards, memos };
+  return { appTitle, boards, memos };
 };
 
 export const sortMemos = (memos) => [...memos].sort((a, b) => {
