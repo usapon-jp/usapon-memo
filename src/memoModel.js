@@ -54,7 +54,10 @@ const createId = () => crypto.randomUUID();
 export const createBoard = (label = '新しいボード') => ({
   id: `board-${createId()}`,
   label: label.trim() || '新しいボード',
-  icon: 'folder'
+  icon: 'folder',
+  archived: false,
+  isTimeCapsule: false,
+  timeCapsuleAt: null
 });
 
 export const createChecklistItem = (text = '', completed = false, id = null) => ({
@@ -137,8 +140,19 @@ const normalizeBoard = (board = {}, index = 0, usedIds = new Set()) => {
   const icon = typeof board.icon === 'string' && BOARD_ICONS.has(board.icon)
     ? board.icon
     : defaultBoard.icon || 'folder';
+  const timeCapsuleDate = board.timeCapsuleAt ? new Date(board.timeCapsuleAt) : null;
+  const timeCapsuleAt = timeCapsuleDate && !Number.isNaN(timeCapsuleDate.getTime())
+    ? timeCapsuleDate.toISOString()
+    : null;
 
-  return { id, label, icon };
+  return {
+    id,
+    label,
+    icon,
+    archived: Boolean(board.archived),
+    isTimeCapsule: Boolean(board.isTimeCapsule),
+    timeCapsuleAt
+  };
 };
 
 const normalizeBoards = (boards) => {

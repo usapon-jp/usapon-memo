@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
-  Bell,
   BookOpen,
   CalendarDays,
   Camera,
@@ -202,6 +201,52 @@ const getNextBoardName = (boards) => {
   return `ボード${index}`;
 };
 
+const isTimeCapsuleOpen = (board, now = new Date()) => {
+  if (!board.isTimeCapsule) return true;
+  if (!board.timeCapsuleAt) return false;
+  const openAt = new Date(board.timeCapsuleAt);
+  return !Number.isNaN(openAt.getTime()) && openAt.getTime() <= now.getTime();
+};
+
+const isBoardVisibleInLibrary = (board, now = new Date()) => (
+  Boolean(board) && !board.archived && isTimeCapsuleOpen(board, now)
+);
+
+const getMemoSearchText = (memo = {}, board = {}) => [
+  board.label,
+  memo.title,
+  memo.text,
+  memo.caption,
+  memo.scheduleDate,
+  memo.scheduleTime,
+  memo.schedulePlace,
+  ...(memo.checklist || []).map(item => item.text)
+].filter(Boolean).join(' ').toLowerCase();
+
+const getMemoKindLabel = (memo) => {
+  if (memo.cardType === 'photo') return '写真';
+  if (memo.cardType === 'schedule') return '予定';
+  if (memo.cardType === 'checklist') return 'リスト';
+  return 'メモ';
+};
+
+const getMemoPrimaryText = (memo = {}) => {
+  if (memo.cardType === 'photo') return memo.caption || memo.title || '写真';
+  if (memo.cardType === 'schedule') {
+    return memo.title || memo.schedulePlace || [memo.scheduleDate, memo.scheduleTime].filter(Boolean).join(' ') || '予定';
+  }
+  if (memo.cardType === 'checklist') {
+    return memo.title || (memo.checklist || []).map(item => item.text).filter(Boolean).join(' / ') || 'リスト';
+  }
+  return memo.title || memo.text || 'メモ';
+};
+
+const getBoardOpenLabel = (board) => {
+  if (!board.isTimeCapsule) return '通常ボード';
+  if (!board.timeCapsuleAt) return '日時未設定';
+  return isTimeCapsuleOpen(board) ? '公開中' : `${toDatetimeLocalValue(board.timeCapsuleAt).replace('T', ' ')}に公開`;
+};
+
 export default function App() {
   const [data, setData] = useState(loadMemoData);
   const [page, setPage] = useState('home');
@@ -209,8 +254,16 @@ export default function App() {
   const [now, setNow] = useState(() => new Date());
   const [activeBoardId, setActiveBoardId] = useState('home');
   const [storageError, setStorageError] = useState('');
+  const initializedBoardRef = useRef(false);
   const appTitle = data.appTitle || DEFAULT_APP_TITLE;
   const boards = data.boards?.length ? data.boards : DEFAULT_BOARDS;
+  const homeBoards = useMemo(() => {
+    const visibleBoards = boards.filter(board => !board.archived && isTimeCapsuleOpen(board, now));
+    const openCapsules = visibleBoards.filter(board => board.isTimeCapsule);
+    const normalBoards = visibleBoards.filter(board => !board.isTimeCapsule);
+    return [...openCapsules, ...normalBoards];
+  }, [boards, now]);
+  const managementBoards = useMemo(() => boards.filter(board => !board.archived), [boards]);
 
   useEffect(() => {
     const ok = saveMemoData(data);
@@ -225,9 +278,15 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (boards.some(board => board.id === activeBoardId)) return;
-    setActiveBoardId(boards[0]?.id || 'home');
-  }, [activeBoardId, boards]);
+    if (initializedBoardRef.current) return;
+    initializedBoardRef.current = true;
+    if (homeBoards[0]) setActiveBoardId(homeBoards[0].id);
+  }, [homeBoards]);
+
+  useEffect(() => {
+    if (homeBoards.some(board => board.id === activeBoardId)) return;
+    setActiveBoardId(homeBoards[0]?.id || 'home');
+  }, [activeBoardId, homeBoards]);
 
   const visibleMemos = useMemo(
     () => sortMemos(data.memos.filter(memo => (
@@ -237,6 +296,7 @@ export default function App() {
   );
 
   const allMemos = useMemo(() => sortMemos(data.memos), [data.memos]);
+  const boardById = useMemo(() => Object.fromEntries(boards.map(board => [board.id, board])), [boards]);
 
   const saveMemo = (memo) => {
     const nextMemo = normalizeMemo({
@@ -376,31 +436,52 @@ export default function App() {
 
   const deleteBoard = (boardId) => {
     const board = boards.find(item => item.id === boardId);
-    if (!board || boards.length <= 1) {
+    const activeBoards = boards.filter(item => !item.archived);
+    if (!board || activeBoards.length <= 1) {
       window.alert('ボードは1つ以上必要です。');
       return;
     }
 
-    const fallbackBoard = boards.find(item => item.id !== boardId && item.id === 'home')
-      || boards.find(item => item.id !== boardId);
-    const confirmed = window.confirm(`「${board.label}」を削除しますか？カードは「${fallbackBoard.label}」へ移動します。`);
+    const fallbackBoard = homeBoards.find(item => item.id !== boardId && item.id === 'home')
+      || homeBoards.find(item => item.id !== boardId)
+      || activeBoards.find(item => item.id !== boardId);
+    const confirmed = window.confirm(`「${board.label}」をアーカイブしますか？中のカードもアーカイブ画面から復元できます。`);
     if (!confirmed) return;
 
     setData(current => ({
       ...current,
-      boards: current.boards.filter(item => item.id !== boardId),
-      memos: current.memos.map(memo => (
-        memo.boardId === boardId ? { ...memo, boardId: fallbackBoard.id } : memo
+      boards: current.boards.map(item => (
+        item.id === boardId ? { ...item, archived: true } : item
       ))
     }));
-    if (activeBoardId === boardId) {
+    if (fallbackBoard && activeBoardId === boardId) {
       setActiveBoardId(fallbackBoard.id);
     }
+  };
+
+  const archiveMemo = (id) => {
+    patchMemo(id, { archived: true });
+  };
+
+  const restoreMemo = (id) => {
+    patchMemo(id, { archived: false });
+  };
+
+  const restoreBoard = (boardId) => {
+    updateBoard(boardId, { archived: false });
+    setActiveBoardId(boardId);
+    setPage('home');
   };
 
   const openEditMemo = (memo) => {
     setDraft(normalizeMemo(memo));
     setPage('create');
+  };
+
+  const openMemoFromList = (memo) => {
+    const board = boardById[memo.boardId];
+    if (board && !board.archived) setActiveBoardId(board.id);
+    openEditMemo(memo);
   };
 
   return (
@@ -411,11 +492,14 @@ export default function App() {
         <HomePage
           appTitle={appTitle}
           activeBoardId={activeBoardId}
-          boards={boards}
+          boards={homeBoards}
+          allBoards={boards}
+          allMemos={allMemos}
           memos={visibleMemos}
           onAdd={openNewCard}
           onBoardChange={setActiveBoardId}
           onOpenList={() => setPage('list')}
+          onOpenPage={setPage}
           onEdit={openEditMemo}
           onMove={patchMemo}
           onDeleteMemo={deleteMemo}
@@ -441,7 +525,7 @@ export default function App() {
 
       {page === 'list' && (
         <BoardListPage
-          boards={boards}
+          boards={managementBoards}
           memos={allMemos}
           activeBoardId={activeBoardId}
           onBack={() => setPage('home')}
@@ -456,6 +540,61 @@ export default function App() {
           onMoveBoard={moveBoard}
         />
       )}
+
+      {page === 'memos' && (
+        <MemoListPage
+          title="メモ一覧"
+          memos={allMemos.filter(memo => (
+            !memo.archived
+            && memo.cardType !== 'photo'
+            && isBoardVisibleInLibrary(boardById[memo.boardId], now)
+          ))}
+          boards={boards}
+          onBack={() => setPage('home')}
+          onOpen={openMemoFromList}
+          onArchive={archiveMemo}
+        />
+      )}
+
+      {page === 'photos' && (
+        <PhotoListPage
+          memos={allMemos.filter(memo => (
+            !memo.archived
+            && memo.cardType === 'photo'
+            && isBoardVisibleInLibrary(boardById[memo.boardId], now)
+          ))}
+          boards={boards}
+          onBack={() => setPage('home')}
+          onOpen={openMemoFromList}
+          onArchive={archiveMemo}
+        />
+      )}
+
+      {page === 'archive' && (
+        <ArchivePage
+          boards={boards}
+          memos={allMemos}
+          onBack={() => setPage('home')}
+          onRestoreMemo={restoreMemo}
+          onRestoreBoard={restoreBoard}
+        />
+      )}
+
+      {page === 'settings' && (
+        <SettingsPage
+          appTitle={appTitle}
+          onBack={() => setPage('home')}
+          onUpdateAppTitle={updateAppTitle}
+        />
+      )}
+
+      {page === 'timeCapsule' && (
+        <TimeCapsulePage
+          boards={managementBoards}
+          onBack={() => setPage('home')}
+          onUpdateBoard={updateBoard}
+        />
+      )}
     </main>
   );
 }
@@ -464,10 +603,13 @@ function HomePage({
   appTitle,
   activeBoardId,
   boards,
+  allBoards,
+  allMemos,
   memos,
   onAdd,
   onBoardChange,
   onOpenList,
+  onOpenPage,
   onEdit,
   onMove,
   onDeleteMemo,
@@ -480,6 +622,8 @@ function HomePage({
   onUpdateAppTitle
 }) {
   const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [mainMenuOpen, setMainMenuOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [boardMenu, setBoardMenu] = useState(null);
   const [editingBoard, setEditingBoard] = useState(null);
   const [titleEditing, setTitleEditing] = useState(false);
@@ -500,7 +644,7 @@ function HomePage({
   const swipeStartRef = useRef(null);
   const longPressTimerRef = useRef(null);
   const longPressFiredRef = useRef(false);
-  const activeBoard = boards.find(board => board.id === activeBoardId) || boards[0];
+  const activeBoard = boards.find(board => board.id === activeBoardId) || boards[0] || { id: 'home', label: 'ホーム' };
 
   activeBoardIdRef.current = activeBoardId;
   boardsRef.current = boards;
@@ -782,6 +926,11 @@ function HomePage({
     onAdd(cardType);
   };
 
+  const openMenuPage = (page) => {
+    setMainMenuOpen(false);
+    onOpenPage(page);
+  };
+
   const clearBoardLongPress = () => {
     window.clearTimeout(longPressTimerRef.current);
     longPressTimerRef.current = null;
@@ -849,7 +998,7 @@ function HomePage({
   return (
     <section className="home-page cork-home" onClick={() => boardMenu && setBoardMenu(null)}>
       <header className="cork-header">
-        <button type="button" className="plain-icon" aria-label="メニュー">
+        <button type="button" className="plain-icon" onClick={() => setMainMenuOpen(true)} aria-label="メニュー">
           <Menu size={27} />
         </button>
         {titleEditing ? (
@@ -886,11 +1035,8 @@ function HomePage({
           </button>
         )}
         <div className="header-tools">
-          <button type="button" className="plain-icon" aria-label="検索">
+          <button type="button" className="plain-icon" onClick={() => setSearchOpen(true)} aria-label="検索">
             <Search size={27} />
-          </button>
-          <button type="button" className="plain-icon has-dot" aria-label="通知">
-            <Bell size={25} />
           </button>
         </div>
       </header>
@@ -1007,6 +1153,48 @@ function HomePage({
         />
       )}
 
+      {mainMenuOpen && (
+        <div className="menu-drawer" role="dialog" aria-label="メニュー">
+          <button type="button" className="sheet-close" onClick={() => setMainMenuOpen(false)} aria-label="閉じる">
+            <X size={20} />
+          </button>
+          <p>メニュー</p>
+          <button type="button" onClick={() => openMenuPage('settings')}>
+            <MoreHorizontal size={19} />
+            設定
+          </button>
+          <button type="button" onClick={() => openMenuPage('memos')}>
+            <StickyNote size={19} />
+            メモ一覧
+          </button>
+          <button type="button" onClick={() => openMenuPage('photos')}>
+            <Camera size={19} />
+            写真一覧
+          </button>
+          <button type="button" onClick={() => openMenuPage('timeCapsule')}>
+            <Clock size={19} />
+            タイムカプセル
+          </button>
+          <button type="button" onClick={() => openMenuPage('archive')}>
+            <Trash2 size={19} />
+            アーカイブ
+          </button>
+        </div>
+      )}
+
+      {searchOpen && (
+        <SearchSheet
+          boards={allBoards}
+          memos={allMemos}
+          onClose={() => setSearchOpen(false)}
+          onOpenMemo={(memo) => {
+            setSearchOpen(false);
+            onBoardChange(memo.boardId);
+            onEdit(memo);
+          }}
+        />
+      )}
+
       <section
         className="cork-board-wrap"
         aria-label={`${activeBoard.label}のコルクボード`}
@@ -1050,7 +1238,7 @@ function HomePage({
           <Plus size={22} />
           新規追加
         </button>
-        <button type="button">
+        <button type="button" onClick={() => onOpenPage('settings')}>
           <MoreHorizontal size={22} />
           設定
         </button>
@@ -1943,6 +2131,232 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
         </button>
       </footer>
     </section>
+  );
+}
+
+function SearchSheet({ boards, memos, onClose, onOpenMemo }) {
+  const [query, setQuery] = useState('');
+  const boardById = useMemo(() => Object.fromEntries(boards.map(board => [board.id, board])), [boards]);
+  const results = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    if (!normalizedQuery) return [];
+    return memos
+      .filter(memo => {
+        const board = boardById[memo.boardId];
+        if (!isBoardVisibleInLibrary(board) || memo.archived) return false;
+        return getMemoSearchText(memo, board).includes(normalizedQuery);
+      })
+      .slice(0, 24);
+  }, [boardById, memos, query]);
+
+  return (
+    <div className="search-sheet" role="dialog" aria-label="検索">
+      <button type="button" className="sheet-close" onClick={onClose} aria-label="閉じる">
+        <X size={20} />
+      </button>
+      <p>検索</p>
+      <label className="search-field">
+        <Search size={18} />
+        <input
+          autoFocus
+          value={query}
+          placeholder="メモ、写真、予定を探す"
+          aria-label="検索キーワード"
+          onChange={(event) => setQuery(event.target.value)}
+        />
+      </label>
+      <div className="compact-list">
+        {query.trim() && results.length === 0 && <span className="list-empty-text">見つかりませんでした</span>}
+        {results.map(memo => (
+          <MemoResultRow
+            key={memo.id}
+            memo={memo}
+            board={boardById[memo.boardId]}
+            onOpen={() => onOpenMemo(memo)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function MemoResultRow({ memo, board, onOpen }) {
+  return (
+    <button type="button" className="memo-result-row" onClick={onOpen}>
+      <span>{getMemoKindLabel(memo)}</span>
+      <strong>{getMemoPrimaryText(memo)}</strong>
+      <small>{board?.label || 'ボードなし'}</small>
+    </button>
+  );
+}
+
+function MemoListPage({ title, memos, boards, onBack, onOpen, onArchive }) {
+  const boardById = useMemo(() => Object.fromEntries(boards.map(board => [board.id, board])), [boards]);
+  return (
+    <section className="list-page">
+      <SimplePageHeader title={title} eyebrow="カード" onBack={onBack} />
+      <div className="plain-list">
+        {memos.length === 0 && <p className="list-empty-text">まだありません</p>}
+        {memos.map(memo => (
+          <article key={memo.id} className="list-item-card">
+            <button type="button" onClick={() => onOpen(memo)}>
+              <span>{getMemoKindLabel(memo)} / {boardById[memo.boardId]?.label || 'ボードなし'}</span>
+              <strong>{getMemoPrimaryText(memo)}</strong>
+            </button>
+            <button type="button" className="subtle-action" onClick={() => onArchive(memo.id)}>アーカイブ</button>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function PhotoListPage({ memos, boards, onBack, onOpen, onArchive }) {
+  const boardById = useMemo(() => Object.fromEntries(boards.map(board => [board.id, board])), [boards]);
+  return (
+    <section className="list-page">
+      <SimplePageHeader title="写真一覧" eyebrow="アルバム" onBack={onBack} />
+      <div className="photo-grid-list">
+        {memos.length === 0 && <p className="list-empty-text">写真はまだありません</p>}
+        {memos.map(memo => (
+          <article key={memo.id} className="photo-list-card">
+            <button type="button" onClick={() => onOpen(memo)}>
+              {memo.photoDataUrl ? <img src={memo.photoDataUrl} alt={memo.caption || '写真'} /> : <Camera size={28} />}
+              <strong>{getMemoPrimaryText(memo)}</strong>
+              <small>{boardById[memo.boardId]?.label || 'ボードなし'}</small>
+            </button>
+            <button type="button" className="subtle-action" onClick={() => onArchive(memo.id)}>アーカイブ</button>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function SettingsPage({ appTitle, onBack, onUpdateAppTitle }) {
+  const [title, setTitle] = useState(appTitle);
+
+  const saveTitle = () => {
+    onUpdateAppTitle(title);
+  };
+
+  return (
+    <section className="list-page">
+      <SimplePageHeader title="設定" eyebrow="アプリ" onBack={onBack} />
+      <div className="settings-card">
+        <label>
+          <span>タイトル</span>
+          <input
+            value={title}
+            aria-label="アプリタイトル"
+            onChange={(event) => setTitle(event.target.value)}
+            onBlur={saveTitle}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                event.currentTarget.blur();
+              }
+            }}
+          />
+        </label>
+      </div>
+    </section>
+  );
+}
+
+function TimeCapsulePage({ boards, onBack, onUpdateBoard }) {
+  return (
+    <section className="list-page">
+      <SimplePageHeader title="タイムカプセル" eyebrow="ボード予約" onBack={onBack} />
+      <div className="plain-list">
+        {boards.map(board => (
+          <article key={board.id} className="list-item-card time-capsule-card">
+            <div>
+              <span>{getBoardOpenLabel(board)}</span>
+              <strong>{board.label}</strong>
+            </div>
+            <label>
+              <span>公開日時</span>
+              <input
+                type="datetime-local"
+                value={toDatetimeLocalValue(board.timeCapsuleAt)}
+                onChange={(event) => onUpdateBoard(board.id, {
+                  isTimeCapsule: Boolean(event.target.value),
+                  timeCapsuleAt: fromDatetimeLocalValue(event.target.value)
+                })}
+              />
+            </label>
+            <button
+              type="button"
+              className="subtle-action"
+              onClick={() => onUpdateBoard(board.id, { isTimeCapsule: false, timeCapsuleAt: null })}
+              disabled={!board.isTimeCapsule}
+            >
+              解除
+            </button>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ArchivePage({ boards, memos, onBack, onRestoreMemo, onRestoreBoard }) {
+  const [tab, setTab] = useState('memos');
+  const archivedMemos = memos.filter(memo => memo.archived && memo.cardType !== 'photo');
+  const archivedPhotos = memos.filter(memo => memo.archived && memo.cardType === 'photo');
+  const archivedBoards = boards.filter(board => board.archived);
+
+  return (
+    <section className="list-page">
+      <SimplePageHeader title="アーカイブ" eyebrow="復元" onBack={onBack} />
+      <div className="archive-tabs" aria-label="アーカイブ種別">
+        <button type="button" className={tab === 'memos' ? 'active' : ''} onClick={() => setTab('memos')}>メモ</button>
+        <button type="button" className={tab === 'photos' ? 'active' : ''} onClick={() => setTab('photos')}>写真</button>
+        <button type="button" className={tab === 'boards' ? 'active' : ''} onClick={() => setTab('boards')}>ボード</button>
+      </div>
+      <div className="plain-list">
+        {tab === 'memos' && archivedMemos.length === 0 && <p className="list-empty-text">アーカイブ済みメモはありません</p>}
+        {tab === 'photos' && archivedPhotos.length === 0 && <p className="list-empty-text">アーカイブ済み写真はありません</p>}
+        {tab === 'boards' && archivedBoards.length === 0 && <p className="list-empty-text">アーカイブ済みボードはありません</p>}
+        {tab === 'memos' && archivedMemos.map(memo => (
+          <ArchiveItem key={memo.id} title={getMemoPrimaryText(memo)} meta={getMemoKindLabel(memo)} onRestore={() => onRestoreMemo(memo.id)} />
+        ))}
+        {tab === 'photos' && archivedPhotos.map(memo => (
+          <ArchiveItem key={memo.id} title={getMemoPrimaryText(memo)} meta="写真" onRestore={() => onRestoreMemo(memo.id)} />
+        ))}
+        {tab === 'boards' && archivedBoards.map(board => (
+          <ArchiveItem key={board.id} title={board.label} meta="ボード" onRestore={() => onRestoreBoard(board.id)} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ArchiveItem({ title, meta, onRestore }) {
+  return (
+    <article className="list-item-card">
+      <div>
+        <span>{meta}</span>
+        <strong>{title}</strong>
+      </div>
+      <button type="button" className="subtle-action" onClick={onRestore}>復元</button>
+    </article>
+  );
+}
+
+function SimplePageHeader({ title, eyebrow, onBack }) {
+  return (
+    <header className="page-header">
+      <button type="button" className="icon-button ghost" onClick={onBack} aria-label="ホームへ戻る">
+        <ArrowLeft size={22} />
+      </button>
+      <div>
+        <p className="eyebrow">{eyebrow}</p>
+        <h1>{title}</h1>
+      </div>
+      <span className="header-spacer" />
+    </header>
   );
 }
 
