@@ -1747,10 +1747,6 @@ function HomePage({
           <Plus size={22} />
           新規追加
         </button>
-        <button type="button" onClick={() => onOpenPage('settings')}>
-          <MoreHorizontal size={22} />
-          設定
-        </button>
         <button type="button" onClick={() => onOpenPage('diary')}>
           <BookOpen size={22} />
           日記
