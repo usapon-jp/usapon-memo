@@ -570,6 +570,178 @@ button {
   box-shadow: 0 0 0 3px rgba(159, 186, 147, 0.18);
 }
 
+.settings-wide-action {
+  justify-self: start;
+}
+
+.diary-page {
+  background:
+    radial-gradient(circle at 12% 3%, rgba(255, 238, 206, 0.72), transparent 28%),
+    radial-gradient(circle at 92% 12%, rgba(220, 232, 208, 0.78), transparent 30%),
+    #fffaf2;
+}
+
+.diary-date-row {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  align-items: center;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.diary-date-row button {
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.78);
+  color: #7c5b3e;
+  font-size: 26px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.diary-date-row strong {
+  color: #5b442e;
+  font-size: 18px;
+  font-weight: 900;
+  text-align: center;
+}
+
+.diary-card {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid rgba(150, 118, 80, 0.12);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.9), rgba(255, 246, 231, 0.78)),
+    #fffaf0;
+  box-shadow: 0 14px 28px rgba(103, 69, 35, 0.08);
+}
+
+.diary-card label {
+  display: grid;
+  gap: 9px;
+}
+
+.diary-card label span,
+.diary-section-title span {
+  color: rgba(91, 68, 46, 0.64);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.diary-card textarea {
+  min-height: 112px;
+  border: 1px solid rgba(150, 118, 80, 0.14);
+  border-radius: 16px;
+  padding: 13px;
+  resize: vertical;
+  background: rgba(255, 255, 255, 0.74);
+  color: #5b442e;
+  font-weight: 800;
+  line-height: 1.65;
+  outline: none;
+}
+
+.diary-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.diary-section-title button,
+.diary-actions button,
+.diary-board-sheet button:not(.sheet-close),
+.diary-photo-card button {
+  min-height: 38px;
+  border: 0;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 14px;
+  background: #f0e3d1;
+  color: #7c5b3e;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.diary-photo-list {
+  display: grid;
+  gap: 18px;
+}
+
+.diary-photo-card {
+  display: grid;
+  gap: 9px;
+  justify-items: center;
+  padding: 12px 12px 16px;
+  border-radius: 5px;
+  background: #fffdf8;
+  box-shadow: 0 12px 24px rgba(103, 69, 35, 0.12);
+}
+
+.diary-photo-card img {
+  width: min(100%, 260px);
+  aspect-ratio: 1;
+  object-fit: cover;
+  background: #f3eadc;
+}
+
+.diary-photo-card input {
+  width: min(100%, 260px);
+  border: 0;
+  border-bottom: 1px dashed rgba(130, 100, 72, 0.28);
+  padding: 8px;
+  background: transparent;
+  color: #5b442e;
+  font-weight: 800;
+  text-align: center;
+  outline: none;
+}
+
+.diary-actions {
+  display: grid;
+  justify-content: center;
+  margin: 22px 0 8px;
+}
+
+.diary-actions button {
+  min-height: 48px;
+  padding: 0 28px;
+  background: #dfead6;
+  color: #6c7b5d;
+  font-size: 15px;
+}
+
+.diary-board-sheet {
+  width: min(calc(100% - 36px), 390px);
+  position: fixed;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom) + 102px);
+  z-index: 80;
+  display: grid;
+  gap: 10px;
+  transform: translateX(-50%);
+  padding: 22px 18px 18px;
+  border-radius: 24px;
+  background: rgba(255, 251, 244, 0.98);
+  box-shadow: 0 24px 48px rgba(83, 50, 24, 0.18);
+}
+
+.diary-board-sheet p {
+  margin: 0;
+  color: #6d5137;
+  font-weight: 900;
+  text-align: center;
+}
+
 .time-capsule-card {
   grid-template-columns: minmax(0, 1fr);
   align-items: stretch;
@@ -1419,7 +1591,7 @@ body {
 
 .cork-header {
   display: grid;
-  grid-template-columns: 48px minmax(0, 1fr) 48px;
+  grid-template-columns: 48px minmax(0, 1fr) 142px;
   align-items: center;
   gap: 8px;
   padding: 0 18px 14px;
@@ -1533,6 +1705,64 @@ body {
   max-height: min(72vh, 620px);
   overflow: hidden;
   padding: 22px 18px 18px;
+}
+
+.notification-sheet {
+  width: min(calc(100% - 36px), 420px);
+  position: fixed;
+  top: calc(env(safe-area-inset-top) + 78px);
+  left: 50%;
+  z-index: 48;
+  display: grid;
+  gap: 10px;
+  transform: translateX(-50%);
+  padding: 22px 18px 18px;
+  border: 1px solid rgba(142, 103, 67, 0.12);
+  border-radius: 24px;
+  background: rgba(255, 251, 244, 0.98);
+  box-shadow: 0 24px 56px rgba(83, 50, 24, 0.2);
+}
+
+.notification-sheet p {
+  margin: 0;
+  color: #6d5137;
+  font-size: 17px;
+  font-weight: 900;
+  text-align: center;
+}
+
+.notification-row {
+  min-width: 0;
+  border: 1px solid rgba(142, 103, 67, 0.1);
+  border-radius: 16px;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  background: rgba(255, 255, 255, 0.72);
+  color: #624a32;
+  text-align: left;
+  cursor: pointer;
+}
+
+.notification-row strong,
+.notification-row small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notification-row strong {
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.notification-row small {
+  color: rgba(98, 74, 50, 0.58);
+  font-size: 11px;
+  font-weight: 800;
 }
 
 .search-field {
@@ -1859,6 +2089,103 @@ body {
   transition: none;
 }
 
+.board-item {
+  position: absolute;
+  z-index: 12;
+  transform: rotate(var(--rotation, 0deg)) scale(var(--scale, 1));
+  transform-origin: center;
+  transition: transform 150ms ease, filter 150ms ease;
+  touch-action: none;
+  user-select: none;
+}
+
+.board-item.is-dragging {
+  z-index: 1001;
+  transition: none;
+  filter: drop-shadow(0 18px 22px rgba(72, 45, 24, 0.22));
+}
+
+.board-free-text {
+  max-width: 210px;
+  color: #6f5640;
+  font-family: "HuiFontP", "ふい字Ｐ", "ふい字P", "Klee One", "Hiragino Sans", sans-serif;
+  font-size: 28px;
+  font-weight: 400;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+.board-free-image img {
+  display: block;
+  max-width: 180px;
+  max-height: 180px;
+  object-fit: contain;
+  pointer-events: none;
+  filter: drop-shadow(0 10px 14px rgba(84, 54, 28, 0.16));
+}
+
+.direct-text-editor {
+  position: absolute;
+  z-index: 1100;
+}
+
+.direct-text-editor textarea {
+  width: 220px;
+  min-height: 54px;
+  border: 0;
+  padding: 0;
+  resize: none;
+  background: transparent;
+  color: #6f5640;
+  font-family: "HuiFontP", "ふい字Ｐ", "ふい字P", "Klee One", "Hiragino Sans", sans-serif;
+  font-size: 28px;
+  line-height: 1.35;
+  outline: 2px dashed rgba(111, 86, 64, 0.18);
+  outline-offset: 6px;
+}
+
+.quick-add-menu {
+  position: fixed;
+  z-index: 1300;
+  display: grid;
+  gap: 6px;
+  transform: translate(-18px, 12px);
+  padding: 7px;
+  border: 1px solid rgba(145, 108, 73, 0.12);
+  border-radius: 16px;
+  background: rgba(255, 252, 246, 0.98);
+  box-shadow: 0 18px 38px rgba(92, 59, 28, 0.18);
+}
+
+.quick-add-menu button {
+  min-height: 38px;
+  border: 0;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  background: transparent;
+  color: #72563b;
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.quick-add-menu button:hover {
+  background: rgba(242, 223, 201, 0.58);
+}
+
+.visually-hidden-file {
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .memo-trash {
   width: 58px;
   height: 58px;
@@ -2072,7 +2399,7 @@ body {
   z-index: 60;
   border-radius: 999px;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   align-items: center;
   padding: 8px 12px;
   background: rgba(255, 251, 244, 0.92);
@@ -2088,7 +2415,7 @@ body {
   gap: 4px;
   background: transparent;
   color: #9a7350;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 800;
   cursor: pointer;
 }
@@ -2315,7 +2642,7 @@ body {
 
 @media (max-width: 430px) {
   .cork-header {
-    grid-template-columns: 42px minmax(0, 1fr) 84px;
+    grid-template-columns: 42px minmax(0, 1fr) 126px;
     padding-inline: 12px;
   }
 
@@ -2324,6 +2651,11 @@ body {
   .app-title-input {
     font-size: 30px;
     letter-spacing: 0.03em;
+  }
+
+  .plain-icon {
+    width: 38px;
+    height: 38px;
   }
 
   .board-tabs {

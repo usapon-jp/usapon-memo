@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
+  Bell,
   BookOpen,
   CalendarDays,
   Camera,
@@ -15,9 +16,12 @@ import {
   MoreHorizontal,
   Pencil,
   Plus,
+  RotateCcw,
   Search,
   StickyNote,
   Trash2,
+  Type,
+  Upload,
   ArrowUp,
   ArrowDown,
   X
@@ -27,12 +31,15 @@ import {
   PHOTO_CROP_RATIOS,
   clamp,
   createBoard,
+  createBoardItem,
   createChecklistItem,
   createEmptyMemo,
   createSticker,
   DEFAULT_BOARDS,
   DEFAULT_APP_TITLE,
+  isBoardItemVisible,
   isMemoVisibleOnBoard,
+  normalizeBoardItem,
   normalizeMemo,
   sortMemos
 } from './memoModel.js';
@@ -89,6 +96,17 @@ const fromDatetimeLocalValue = (value) => {
   if (!value) return null;
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
+};
+
+const toDateKey = (date = new Date()) => {
+  const offsetDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return offsetDate.toISOString().slice(0, 10);
+};
+
+const addDays = (date, days) => {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
 };
 
 const createDraft = (patch = {}) => {
@@ -152,6 +170,30 @@ const resizeImageFile = async (file, maxWidth = 900) => {
   return {
     dataUrl: output,
     aspectRatio: canvas.width / canvas.height
+  };
+};
+
+const resizeFreeImageFile = async (file, maxWidth = 1200) => {
+  const dataUrl = await fileToDataUrl(file);
+  const image = await new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = dataUrl;
+  });
+  const scale = Math.min(1, maxWidth / Math.max(image.width, image.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(image.width * scale));
+  canvas.height = Math.max(1, Math.round(image.height * scale));
+  const context = canvas.getContext('2d');
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  const isTransparent = file.type === 'image/png' || file.type === 'image/webp';
+  return {
+    dataUrl: isTransparent ? canvas.toDataURL('image/png') : canvas.toDataURL('image/jpeg', 0.78),
+    mimeType: isTransparent ? 'image/png' : 'image/jpeg',
+    naturalWidth: canvas.width,
+    naturalHeight: canvas.height
   };
 };
 
@@ -223,6 +265,11 @@ const getMemoSearchText = (memo = {}, board = {}) => [
   ...(memo.checklist || []).map(item => item.text)
 ].filter(Boolean).join(' ').toLowerCase();
 
+const getBoardItemSearchText = (item = {}, board = {}) => [
+  board.label,
+  item.type === 'text' ? item.text : '画像'
+].filter(Boolean).join(' ').toLowerCase();
+
 const getMemoKindLabel = (memo) => {
   if (memo.cardType === 'photo') return '写真';
   if (memo.cardType === 'schedule') return '予定';
@@ -254,6 +301,9 @@ export default function App() {
   const [now, setNow] = useState(() => new Date());
   const [activeBoardId, setActiveBoardId] = useState('home');
   const [storageError, setStorageError] = useState('');
+  const [undoAction, setUndoAction] = useState(null);
+  const [notifications, setNotifications] = useState([]);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const initializedBoardRef = useRef(false);
   const appTitle = data.appTitle || DEFAULT_APP_TITLE;
   const boards = data.boards?.length ? data.boards : DEFAULT_BOARDS;
@@ -296,9 +346,67 @@ export default function App() {
   );
 
   const allMemos = useMemo(() => sortMemos(data.memos), [data.memos]);
+  const allBoardItems = useMemo(() => data.boardItems || [], [data.boardItems]);
+  const visibleBoardItems = useMemo(
+    () => allBoardItems.filter(item => item.boardId === activeBoardId && isBoardItemVisible(item)),
+    [activeBoardId, allBoardItems]
+  );
   const boardById = useMemo(() => Object.fromEntries(boards.map(board => [board.id, board])), [boards]);
 
+  useEffect(() => {
+    const releasedBoards = boards.filter(board => (
+      board.isTimeCapsule
+      && isTimeCapsuleOpen(board, now)
+      && !data.notifiedTimeCapsuleBoardIds?.includes(board.id)
+    ));
+    if (!releasedBoards.length) return;
+
+    const nextNotifications = releasedBoards.map(board => ({
+      id: `time-${board.id}-${Date.now()}`,
+      type: 'timeCapsule',
+      title: '表示されたタイムカプセルがあります',
+      body: `「${board.label}」が開きました`,
+      boardId: board.id,
+      createdAt: new Date().toISOString()
+    }));
+    setNotifications(current => [...nextNotifications, ...current]);
+    setNotificationsOpen(false);
+    if (globalThis.Notification?.permission === 'granted') {
+      nextNotifications.forEach(item => {
+        try {
+          new Notification(item.title, { body: item.body });
+        } catch (error) {
+          console.warn('Notification failed', error);
+        }
+      });
+    }
+    setData(current => ({
+      ...current,
+      notifiedTimeCapsuleBoardIds: [
+        ...new Set([...(current.notifiedTimeCapsuleBoardIds || []), ...releasedBoards.map(board => board.id)])
+      ]
+    }));
+  }, [boards, data.notifiedTimeCapsuleBoardIds, now]);
+
+  const captureUndo = (label) => {
+    setUndoAction({ label, data });
+  };
+
+  const undoLastAction = () => {
+    if (!undoAction) return;
+    setData(undoAction.data);
+    setNotifications(current => [{
+      id: `undo-${Date.now()}`,
+      type: 'undo',
+      title: '元に戻しました',
+      body: undoAction.label,
+      createdAt: new Date().toISOString()
+    }, ...current]);
+    setUndoAction(null);
+  };
+
   const saveMemo = (memo) => {
+    captureUndo('メモの保存');
     const nextMemo = normalizeMemo({
       ...memo,
       updatedAt: new Date().toISOString()
@@ -329,6 +437,10 @@ export default function App() {
     }));
   };
 
+  const beginMove = (label = '移動') => {
+    captureUndo(label);
+  };
+
   const toggleChecklistItem = (memoId, itemId) => {
     const memo = data.memos.find(item => item.id === memoId);
     const item = memo?.checklist.find(check => check.id === itemId);
@@ -342,10 +454,82 @@ export default function App() {
   };
 
   const deleteMemo = (id) => {
+    captureUndo('メモの削除');
     setData(current => ({
       ...current,
       memos: current.memos.filter(memo => memo.id !== id)
     }));
+  };
+
+  const addBoardItem = (patch) => {
+    captureUndo(patch.type === 'image' ? '画像の追加' : 'テキストの追加');
+    const nextItem = createBoardItem(patch);
+    setData(current => ({
+      ...current,
+      boardItems: [nextItem, ...(current.boardItems || [])]
+    }));
+    return nextItem;
+  };
+
+  const patchBoardItem = (id, patch) => {
+    setData(current => ({
+      ...current,
+      boardItems: (current.boardItems || []).map(item => (
+        item.id === id
+          ? normalizeBoardItem({ ...item, ...patch, updatedAt: new Date().toISOString() })
+          : item
+      ))
+    }));
+  };
+
+  const deleteBoardItem = (id) => {
+    captureUndo('アイテムの削除');
+    setData(current => ({
+      ...current,
+      boardItems: (current.boardItems || []).filter(item => item.id !== id)
+    }));
+  };
+
+  const updateDiaryRecord = (dateKey, patch) => {
+    setData(current => {
+      const currentRecord = current.diaryRecords?.[dateKey] || { text: '', photos: [] };
+      return {
+        ...current,
+        diaryRecords: {
+          ...(current.diaryRecords || {}),
+          [dateKey]: {
+            ...currentRecord,
+            ...patch,
+            updatedAt: new Date().toISOString(),
+            createdAt: currentRecord.createdAt || new Date().toISOString()
+          }
+        }
+      };
+    });
+  };
+
+  const pasteDiaryToBoard = (dateKey, boardId) => {
+    const record = data.diaryRecords?.[dateKey];
+    if (!record) return;
+    captureUndo('日記の貼り付け');
+    const title = `${dateKey}の日記`;
+    const text = [record.text, ...record.photos.map(photo => photo.comment).filter(Boolean)].filter(Boolean).join('\n');
+    const nextMemo = normalizeMemo(createDraft({
+      boardId,
+      cardType: 'note',
+      title,
+      text: text || '日記',
+      checklist: [],
+      x: 16,
+      y: 16,
+      color: 'white'
+    }));
+    setData(current => ({
+      ...current,
+      memos: [nextMemo, ...current.memos]
+    }));
+    setActiveBoardId(boardId);
+    setPage('home');
   };
 
   const updateAppTitle = (nextTitle) => {
@@ -354,6 +538,21 @@ export default function App() {
       ...current,
       appTitle
     }));
+  };
+
+  const requestBrowserNotifications = async () => {
+    if (!('Notification' in globalThis)) {
+      window.alert('このブラウザでは通知に対応していません。');
+      return;
+    }
+    const permission = await Notification.requestPermission();
+    setNotifications(current => [{
+      id: `permission-${Date.now()}`,
+      type: 'system',
+      title: permission === 'granted' ? 'ブラウザ通知を許可しました' : 'ブラウザ通知はオフです',
+      body: 'アプリ内通知はそのまま使えます',
+      createdAt: new Date().toISOString()
+    }, ...current]);
   };
 
   const openNewCard = (cardType = 'checklist') => {
@@ -379,6 +578,7 @@ export default function App() {
   };
 
   const updateBoard = (boardId, patch) => {
+    captureUndo('ボードの変更');
     setData(current => ({
       ...current,
       boards: current.boards.map(board => (
@@ -398,6 +598,7 @@ export default function App() {
     if (!sourceBoard) return;
 
     const nextBoard = createBoard(`${sourceBoard.label} コピー`);
+    captureUndo('ボードの複製');
     setData(current => ({
       ...current,
       boards: [...current.boards, nextBoard],
@@ -413,12 +614,25 @@ export default function App() {
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString()
           }))
+      ],
+      boardItems: [
+        ...(current.boardItems || []),
+        ...(current.boardItems || [])
+          .filter(item => item.boardId === boardId)
+          .map(item => normalizeBoardItem({
+            ...item,
+            id: crypto.randomUUID(),
+            boardId: nextBoard.id,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          }))
       ]
     }));
     setActiveBoardId(nextBoard.id);
   };
 
   const moveBoard = (boardId, direction) => {
+    captureUndo('ボードの並び替え');
     setData(current => {
       const index = current.boards.findIndex(board => board.id === boardId);
       const offset = direction === 'prev' || direction === 'up' ? -1 : 1;
@@ -448,6 +662,7 @@ export default function App() {
     const confirmed = window.confirm(`「${board.label}」をアーカイブしますか？中のカードもアーカイブ画面から復元できます。`);
     if (!confirmed) return;
 
+    captureUndo('ボードのアーカイブ');
     setData(current => ({
       ...current,
       boards: current.boards.map(item => (
@@ -460,14 +675,17 @@ export default function App() {
   };
 
   const archiveMemo = (id) => {
+    captureUndo('メモのアーカイブ');
     patchMemo(id, { archived: true });
   };
 
   const restoreMemo = (id) => {
+    captureUndo('メモの復元');
     patchMemo(id, { archived: false });
   };
 
   const restoreBoard = (boardId) => {
+    captureUndo('ボードの復元');
     updateBoard(boardId, { archived: false });
     setActiveBoardId(boardId);
     setPage('home');
@@ -495,14 +713,24 @@ export default function App() {
           boards={homeBoards}
           allBoards={boards}
           allMemos={allMemos}
+          allBoardItems={allBoardItems}
+          boardItems={visibleBoardItems}
           memos={visibleMemos}
+          notifications={notifications}
+          hasUnreadNotification={notifications.length > 0}
+          notificationsOpen={notificationsOpen}
+          undoAction={undoAction}
           onAdd={openNewCard}
+          onAddBoardItem={addBoardItem}
           onBoardChange={setActiveBoardId}
           onOpenList={() => setPage('list')}
           onOpenPage={setPage}
           onEdit={openEditMemo}
+          onBeginMove={beginMove}
           onMove={patchMemo}
+          onMoveBoardItem={patchBoardItem}
           onDeleteMemo={deleteMemo}
+          onDeleteBoardItem={deleteBoardItem}
           onToggleChecklistItem={toggleChecklistItem}
           onAddBoard={addBoard}
           onUpdateBoard={updateBoard}
@@ -510,6 +738,9 @@ export default function App() {
           onDeleteBoard={deleteBoard}
           onMoveBoard={moveBoard}
           onUpdateAppTitle={updateAppTitle}
+          onUndo={undoLastAction}
+          onToggleNotifications={() => setNotificationsOpen(current => !current)}
+          onCloseNotifications={() => setNotificationsOpen(false)}
         />
       )}
 
@@ -585,6 +816,7 @@ export default function App() {
           appTitle={appTitle}
           onBack={() => setPage('home')}
           onUpdateAppTitle={updateAppTitle}
+          onRequestNotifications={requestBrowserNotifications}
         />
       )}
 
@@ -593,6 +825,16 @@ export default function App() {
           boards={managementBoards}
           onBack={() => setPage('home')}
           onUpdateBoard={updateBoard}
+        />
+      )}
+
+      {page === 'diary' && (
+        <DiaryPage
+          boards={boards}
+          records={data.diaryRecords || {}}
+          onBack={() => setPage('home')}
+          onUpdateRecord={updateDiaryRecord}
+          onPasteToBoard={pasteDiaryToBoard}
         />
       )}
     </main>
@@ -605,21 +847,34 @@ function HomePage({
   boards,
   allBoards,
   allMemos,
+  allBoardItems,
+  boardItems,
   memos,
+  notifications,
+  hasUnreadNotification,
+  notificationsOpen,
+  undoAction,
   onAdd,
+  onAddBoardItem,
   onBoardChange,
   onOpenList,
   onOpenPage,
   onEdit,
+  onBeginMove,
   onMove,
+  onMoveBoardItem,
   onDeleteMemo,
+  onDeleteBoardItem,
   onToggleChecklistItem,
   onAddBoard,
   onUpdateBoard,
   onDuplicateBoard,
   onDeleteBoard,
   onMoveBoard,
-  onUpdateAppTitle
+  onUpdateAppTitle,
+  onUndo,
+  onToggleNotifications,
+  onCloseNotifications
 }) {
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [mainMenuOpen, setMainMenuOpen] = useState(false);
@@ -629,10 +884,15 @@ function HomePage({
   const [titleEditing, setTitleEditing] = useState(false);
   const [titleDraft, setTitleDraft] = useState(appTitle);
   const [draggingMemoId, setDraggingMemoId] = useState(null);
+  const [draggingBoardItemId, setDraggingBoardItemId] = useState(null);
   const [boardReorderMode, setBoardReorderMode] = useState(false);
   const [trashActive, setTrashActive] = useState(false);
+  const [quickAdd, setQuickAdd] = useState(null);
+  const [directText, setDirectText] = useState(null);
+  const [pasteMenu, setPasteMenu] = useState(null);
   const boardRef = useRef(null);
   const trashRef = useRef(null);
+  const directImageInputRef = useRef(null);
   const activeCardRef = useRef(null);
   const cardPointersRef = useRef(new globalThis.Map());
   const cardGestureRef = useRef(null);
@@ -643,6 +903,8 @@ function HomePage({
   const trashActiveRef = useRef(false);
   const swipeStartRef = useRef(null);
   const longPressTimerRef = useRef(null);
+  const boardPressTimerRef = useRef(null);
+  const boardLongPressFiredRef = useRef(false);
   const longPressFiredRef = useRef(false);
   const activeBoard = boards.find(board => board.id === activeBoardId) || boards[0] || { id: 'home', label: 'ホーム' };
 
@@ -655,6 +917,7 @@ function HomePage({
 
   useEffect(() => () => {
     window.clearTimeout(longPressTimerRef.current);
+    window.clearTimeout(boardPressTimerRef.current);
     window.clearTimeout(edgeSwitchRef.current.timer);
   }, []);
 
@@ -686,6 +949,11 @@ function HomePage({
   const patchDraggedMemo = (id, patch) => {
     updateDragMemo(patch);
     onMove(id, patch);
+  };
+
+  const patchDraggedBoardItem = (id, patch) => {
+    updateDragMemo(patch);
+    onMoveBoardItem(id, patch);
   };
 
   const getMemoPointPatch = (clientX, clientY, gesture) => ({
@@ -812,6 +1080,7 @@ function HomePage({
   const handlePointerDown = (event, memo) => {
     if (!boardRef.current || event.target.closest('input, textarea, button')) return;
     event.preventDefault();
+    onBeginMove('メモの移動');
     setDraggingMemoId(memo.id);
     dragMemoRef.current = { ...memo };
     activeCardRef.current = event.currentTarget;
@@ -902,6 +1171,174 @@ function HomePage({
     window.addEventListener('pointermove', moveMemo);
     window.addEventListener('pointerup', stopMove);
     window.addEventListener('pointercancel', stopMove);
+  };
+
+  const handleBoardItemPointerDown = (event, item) => {
+    if (!boardRef.current || event.target.closest('input, textarea, button')) return;
+    event.preventDefault();
+    onBeginMove(item.type === 'image' ? '画像の移動' : 'テキストの移動');
+    setDraggingBoardItemId(item.id);
+    dragMemoRef.current = { ...item };
+    activeCardRef.current = event.currentTarget;
+    cardPointersRef.current.set(event.pointerId, {
+      pointerId: event.pointerId,
+      clientX: event.clientX,
+      clientY: event.clientY
+    });
+    event.currentTarget.setPointerCapture(event.pointerId);
+
+    cardGestureRef.current = cardPointersRef.current.size >= 2
+      ? createPinchGesture(item)
+      : createDragGesture(event, item);
+
+    const moveItem = (moveEvent) => {
+      if (!cardPointersRef.current.has(moveEvent.pointerId)) return;
+      cardPointersRef.current.set(moveEvent.pointerId, {
+        pointerId: moveEvent.pointerId,
+        clientX: moveEvent.clientX,
+        clientY: moveEvent.clientY
+      });
+
+      if (cardPointersRef.current.size >= 2) {
+        if (cardGestureRef.current?.type !== 'pinch') {
+          cardGestureRef.current = createPinchGesture(item);
+        }
+        const gesture = cardGestureRef.current;
+        const points = Array.from(cardPointersRef.current.values()).slice(0, 2);
+        const center = getPointerCenter(points[0], points[1]);
+        patchDraggedBoardItem(item.id, {
+          x: clamp(gesture.x + ((center.x - gesture.center.x) / gesture.boardRect.width) * 100, -8, 88),
+          y: clamp(gesture.y + ((center.y - gesture.center.y) / gesture.boardRect.height) * 100, -8, 88),
+          scale: clamp(gesture.scale * (getPointerDistance(points[0], points[1]) / gesture.distance), 0.3, 3.2),
+          rotation: clamp(gesture.rotation + getPointerAngle(points[0], points[1]) - gesture.angle, -180, 180)
+        });
+      } else if (cardGestureRef.current?.type === 'drag') {
+        patchDraggedBoardItem(item.id, getMemoPointPatch(moveEvent.clientX, moveEvent.clientY, cardGestureRef.current));
+      }
+      window.requestAnimationFrame(updateTrashHover);
+    };
+
+    const stopItem = (stopEvent) => {
+      cardPointersRef.current.delete(stopEvent.pointerId);
+      if (cardPointersRef.current.size > 0) return;
+      const shouldDelete = trashActiveRef.current;
+      setDraggingBoardItemId(null);
+      setTrashHover(false);
+      activeCardRef.current = null;
+      cardGestureRef.current = null;
+      dragMemoRef.current = null;
+      window.removeEventListener('pointermove', moveItem);
+      window.removeEventListener('pointerup', stopItem);
+      window.removeEventListener('pointercancel', stopItem);
+      if (shouldDelete) onDeleteBoardItem(item.id);
+    };
+
+    window.addEventListener('pointermove', moveItem);
+    window.addEventListener('pointerup', stopItem);
+    window.addEventListener('pointercancel', stopItem);
+  };
+
+  const getBoardPositionFromEvent = (event) => {
+    const rect = boardRef.current?.getBoundingClientRect();
+    if (!rect) return { x: 18, y: 18 };
+    return {
+      x: clamp(((event.clientX - rect.left) / rect.width) * 100, 0, 88),
+      y: clamp(((event.clientY - rect.top) / rect.height) * 100, 0, 88)
+    };
+  };
+
+  const openQuickAdd = (event) => {
+    if (event.target.closest('.board-card, .board-item, .board-empty')) return;
+    const position = getBoardPositionFromEvent(event);
+    setQuickAdd({ ...position, clientX: event.clientX, clientY: event.clientY });
+    setPasteMenu(null);
+    onCloseNotifications();
+  };
+
+  const startBoardPress = (event) => {
+    if (event.target.closest('.board-card, .board-item, input, textarea')) return;
+    window.clearTimeout(boardPressTimerRef.current);
+    boardLongPressFiredRef.current = false;
+    const position = getBoardPositionFromEvent(event);
+    boardPressTimerRef.current = window.setTimeout(() => {
+      boardLongPressFiredRef.current = true;
+      setQuickAdd(null);
+      setPasteMenu({ ...position, clientX: event.clientX, clientY: event.clientY });
+    }, 620);
+  };
+
+  const clearBoardPress = () => {
+    window.clearTimeout(boardPressTimerRef.current);
+  };
+
+  const commitDirectText = () => {
+    const text = directText?.text?.trim();
+    if (text) {
+      onAddBoardItem({
+        type: 'text',
+        boardId: activeBoardId,
+        text,
+        x: directText.x,
+        y: directText.y
+      });
+    }
+    setDirectText(null);
+  };
+
+  const startDirectText = () => {
+    if (!quickAdd) return;
+    setDirectText({ x: quickAdd.x, y: quickAdd.y, text: '' });
+    setQuickAdd(null);
+  };
+
+  const createImageBoardItem = async (file, position = quickAdd) => {
+    if (!file || !position) return;
+    const image = await resizeFreeImageFile(file);
+    onAddBoardItem({
+      type: 'image',
+      boardId: activeBoardId,
+      imageDataUrl: image.dataUrl,
+      imageMimeType: image.mimeType,
+      naturalWidth: image.naturalWidth,
+      naturalHeight: image.naturalHeight,
+      x: position.x,
+      y: position.y
+    });
+    setQuickAdd(null);
+    setPasteMenu(null);
+  };
+
+  const pasteFromClipboard = async () => {
+    const position = pasteMenu || quickAdd;
+    if (!position) return;
+    try {
+      if (navigator.clipboard?.read) {
+        const items = await navigator.clipboard.read();
+        for (const item of items) {
+          const imageType = item.types.find(type => type.startsWith('image/'));
+          if (imageType) {
+            await createImageBoardItem(await item.getType(imageType), position);
+            return;
+          }
+        }
+      }
+      const text = await navigator.clipboard?.readText?.();
+      if (text?.trim()) {
+        onAddBoardItem({
+          type: 'text',
+          boardId: activeBoardId,
+          text: text.trim(),
+          x: position.x,
+          y: position.y
+        });
+        setPasteMenu(null);
+      } else {
+        directImageInputRef.current?.click();
+      }
+    } catch (error) {
+      console.warn('Clipboard paste failed', error);
+      directImageInputRef.current?.click();
+    }
   };
 
   const handleTouchStart = (event) => {
@@ -1035,8 +1472,16 @@ function HomePage({
           </button>
         )}
         <div className="header-tools">
+          {undoAction && (
+            <button type="button" className="plain-icon" onClick={onUndo} aria-label="戻る">
+              <RotateCcw size={24} />
+            </button>
+          )}
           <button type="button" className="plain-icon" onClick={() => setSearchOpen(true)} aria-label="検索">
             <Search size={27} />
+          </button>
+          <button type="button" className={`plain-icon ${hasUnreadNotification ? 'has-dot' : ''}`} onClick={onToggleNotifications} aria-label="通知">
+            <Bell size={25} />
           </button>
         </div>
       </header>
@@ -1175,6 +1620,10 @@ function HomePage({
             <Clock size={19} />
             タイムカプセル
           </button>
+          <button type="button" onClick={() => openMenuPage('diary')}>
+            <BookOpen size={19} />
+            日記
+          </button>
           <button type="button" onClick={() => openMenuPage('archive')}>
             <Trash2 size={19} />
             アーカイブ
@@ -1186,6 +1635,7 @@ function HomePage({
         <SearchSheet
           boards={allBoards}
           memos={allMemos}
+          boardItems={allBoardItems}
           onClose={() => setSearchOpen(false)}
           onOpenMemo={(memo) => {
             setSearchOpen(false);
@@ -1195,15 +1645,41 @@ function HomePage({
         />
       )}
 
+      {notificationsOpen && (
+        <NotificationSheet
+          notifications={notifications}
+          undoAction={undoAction}
+          onUndo={onUndo}
+          onClose={onCloseNotifications}
+          onOpenBoard={(boardId) => {
+            onBoardChange(boardId);
+            onCloseNotifications();
+          }}
+        />
+      )}
+
       <section
         className="cork-board-wrap"
         aria-label={`${activeBoard.label}のコルクボード`}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
+        onPointerDown={startBoardPress}
+        onPointerUp={clearBoardPress}
+        onPointerCancel={clearBoardPress}
+        onPointerLeave={clearBoardPress}
       >
-        <div ref={boardRef} className="sticky-board cork-board">
-          {memos.length === 0 ? (
-            <button type="button" className="board-empty cork-empty" onClick={() => onAdd('checklist')}>
+        <div ref={boardRef} className="sticky-board cork-board" onClick={(event) => {
+          if (boardLongPressFiredRef.current) {
+            boardLongPressFiredRef.current = false;
+            return;
+          }
+          openQuickAdd(event);
+        }}>
+          {memos.length === 0 && boardItems.length === 0 ? (
+            <button type="button" className="board-empty cork-empty" onClick={(event) => {
+              event.stopPropagation();
+              setQuickAdd({ x: 36, y: 44, clientX: event.clientX, clientY: event.clientY });
+            }}>
               <StickyNote size={28} />
               <strong>ここに貼っていこう</strong>
               <span>写真やメモを、少しずつ集めるボードです</span>
@@ -1220,10 +1696,43 @@ function HomePage({
               />
             ))
           )}
+          {boardItems.map(item => (
+            <BoardFreeItem
+              key={item.id}
+              item={item}
+              isDragging={draggingBoardItemId === item.id}
+              onPointerDown={(event) => handleBoardItemPointerDown(event, item)}
+            />
+          ))}
+          {directText && (
+            <form
+              className="direct-text-editor"
+              style={{ left: `${directText.x}%`, top: `${directText.y}%` }}
+              onSubmit={(event) => {
+                event.preventDefault();
+                commitDirectText();
+              }}
+            >
+              <textarea
+                autoFocus
+                value={directText.text}
+                placeholder="文字を入力"
+                onChange={(event) => setDirectText(current => ({ ...current, text: event.target.value }))}
+                onBlur={commitDirectText}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') setDirectText(null);
+                  if (event.key === 'Enter' && !event.shiftKey) {
+                    event.preventDefault();
+                    commitDirectText();
+                  }
+                }}
+              />
+            </form>
+          )}
         </div>
       </section>
 
-      {draggingMemoId && (
+      {(draggingMemoId || draggingBoardItemId) && (
         <div ref={trashRef} className={`memo-trash ${trashActive ? 'is-active' : ''}`} aria-hidden="true">
           <Trash2 size={26} />
         </div>
@@ -1241,6 +1750,10 @@ function HomePage({
         <button type="button" onClick={() => onOpenPage('settings')}>
           <MoreHorizontal size={22} />
           設定
+        </button>
+        <button type="button" onClick={() => onOpenPage('diary')}>
+          <BookOpen size={22} />
+          日記
         </button>
       </footer>
 
@@ -1266,6 +1779,44 @@ function HomePage({
           </div>
         </div>
       )}
+
+      {quickAdd && (
+        <div className="quick-add-menu" style={{ left: `${quickAdd.clientX}px`, top: `${quickAdd.clientY}px` }} role="dialog" aria-label="直接追加">
+          <button type="button" onClick={startDirectText}>
+            <Type size={18} />
+            テキスト
+          </button>
+          <button type="button" onClick={() => directImageInputRef.current?.click()}>
+            <Upload size={18} />
+            画像
+          </button>
+        </div>
+      )}
+
+      {pasteMenu && (
+        <div className="quick-add-menu paste-menu" style={{ left: `${pasteMenu.clientX}px`, top: `${pasteMenu.clientY}px` }} role="dialog" aria-label="ペースト">
+          <button type="button" onClick={pasteFromClipboard}>
+            <Copy size={18} />
+            ペースト
+          </button>
+          <button type="button" onClick={() => directImageInputRef.current?.click()}>
+            <Upload size={18} />
+            画像を選ぶ
+          </button>
+        </div>
+      )}
+
+      <input
+        ref={directImageInputRef}
+        type="file"
+        accept="image/*"
+        className="visually-hidden-file"
+        onChange={async (event) => {
+          const file = event.target.files?.[0];
+          await createImageBoardItem(file, quickAdd || pasteMenu || { x: 24, y: 24 });
+          event.target.value = '';
+        }}
+      />
     </section>
   );
 }
@@ -1454,6 +2005,31 @@ function BoardMemo({ memo, isDragging, onPointerDown, onEdit, onToggleChecklistI
           <span>{memo.text || '自由メモ'}</span>
         )}
       </div>
+    </article>
+  );
+}
+
+function BoardFreeItem({ item, isDragging, onPointerDown }) {
+  const style = {
+    left: `${item.x}%`,
+    top: `${item.y}%`,
+    '--rotation': `${item.rotation || 0}deg`,
+    '--scale': item.scale || 1
+  };
+
+  return (
+    <article
+      className={`board-item board-free-${item.type} ${isDragging ? 'is-dragging' : ''}`}
+      data-memo-id={item.id}
+      data-board-item-id={item.id}
+      style={style}
+      onPointerDown={onPointerDown}
+    >
+      {item.type === 'image' ? (
+        <img src={item.imageDataUrl} alt="" draggable={false} />
+      ) : (
+        <span>{item.text}</span>
+      )}
     </article>
   );
 }
@@ -2134,20 +2710,28 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
   );
 }
 
-function SearchSheet({ boards, memos, onClose, onOpenMemo }) {
+function SearchSheet({ boards, memos, boardItems = [], onClose, onOpenMemo }) {
   const [query, setQuery] = useState('');
   const boardById = useMemo(() => Object.fromEntries(boards.map(board => [board.id, board])), [boards]);
   const results = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
-    if (!normalizedQuery) return [];
-    return memos
+    if (!normalizedQuery) return { memos: [], items: [] };
+    const memoResults = memos
       .filter(memo => {
         const board = boardById[memo.boardId];
         if (!isBoardVisibleInLibrary(board) || memo.archived) return false;
         return getMemoSearchText(memo, board).includes(normalizedQuery);
       })
       .slice(0, 24);
-  }, [boardById, memos, query]);
+    const itemResults = boardItems
+      .filter(item => {
+        const board = boardById[item.boardId];
+        if (!isBoardVisibleInLibrary(board) || item.archived) return false;
+        return getBoardItemSearchText(item, board).includes(normalizedQuery);
+      })
+      .slice(0, 12);
+    return { memos: memoResults, items: itemResults };
+  }, [boardById, boardItems, memos, query]);
 
   return (
     <div className="search-sheet" role="dialog" aria-label="検索">
@@ -2166,8 +2750,8 @@ function SearchSheet({ boards, memos, onClose, onOpenMemo }) {
         />
       </label>
       <div className="compact-list">
-        {query.trim() && results.length === 0 && <span className="list-empty-text">見つかりませんでした</span>}
-        {results.map(memo => (
+        {query.trim() && results.memos.length === 0 && results.items.length === 0 && <span className="list-empty-text">見つかりませんでした</span>}
+        {results.memos.map(memo => (
           <MemoResultRow
             key={memo.id}
             memo={memo}
@@ -2175,7 +2759,49 @@ function SearchSheet({ boards, memos, onClose, onOpenMemo }) {
             onOpen={() => onOpenMemo(memo)}
           />
         ))}
+        {results.items.map(item => (
+          <div key={item.id} className="memo-result-row is-static">
+            <span>{item.type === 'image' ? '画像' : '文字'}</span>
+            <strong>{item.type === 'image' ? '画像' : item.text}</strong>
+            <small>{boardById[item.boardId]?.label || 'ボードなし'}</small>
+          </div>
+        ))}
       </div>
+    </div>
+  );
+}
+
+function NotificationSheet({ notifications, undoAction, onUndo, onClose, onOpenBoard }) {
+  return (
+    <div className="notification-sheet" role="dialog" aria-label="通知">
+      <button type="button" className="sheet-close" onClick={onClose} aria-label="閉じる">
+        <X size={20} />
+      </button>
+      <p>通知</p>
+      {undoAction && (
+        <button type="button" className="notification-row" onClick={onUndo}>
+          <RotateCcw size={18} />
+          <span>
+            <strong>戻せます</strong>
+            <small>{undoAction.label}</small>
+          </span>
+        </button>
+      )}
+      {notifications.length === 0 && !undoAction && <span className="list-empty-text">通知はありません</span>}
+      {notifications.map(item => (
+        <button
+          key={item.id}
+          type="button"
+          className="notification-row"
+          onClick={() => item.boardId ? onOpenBoard(item.boardId) : undefined}
+        >
+          <Bell size={18} />
+          <span>
+            <strong>{item.title}</strong>
+            <small>{item.body}</small>
+          </span>
+        </button>
+      ))}
     </div>
   );
 }
@@ -2233,7 +2859,7 @@ function PhotoListPage({ memos, boards, onBack, onOpen, onArchive }) {
   );
 }
 
-function SettingsPage({ appTitle, onBack, onUpdateAppTitle }) {
+function SettingsPage({ appTitle, onBack, onUpdateAppTitle, onRequestNotifications }) {
   const [title, setTitle] = useState(appTitle);
 
   const saveTitle = () => {
@@ -2259,7 +2885,126 @@ function SettingsPage({ appTitle, onBack, onUpdateAppTitle }) {
             }}
           />
         </label>
+        <button type="button" className="subtle-action settings-wide-action" onClick={onRequestNotifications}>
+          ブラウザ通知を許可
+        </button>
       </div>
+    </section>
+  );
+}
+
+function DiaryPage({ boards, records, onBack, onUpdateRecord, onPasteToBoard }) {
+  const [selectedDate, setSelectedDate] = useState(() => new Date());
+  const [pasteOpen, setPasteOpen] = useState(false);
+  const fileInputRef = useRef(null);
+  const dateKey = toDateKey(selectedDate);
+  const record = records[dateKey] || { text: '', photos: [] };
+  const boardChoices = boards;
+
+  const updateText = (text) => {
+    onUpdateRecord(dateKey, { ...record, text });
+  };
+
+  const updatePhotos = (photos) => {
+    onUpdateRecord(dateKey, { ...record, photos });
+  };
+
+  const addDiaryPhotos = async (files) => {
+    const nextPhotos = [];
+    for (const file of files) {
+      const image = await resizeFreeImageFile(file, 900);
+      nextPhotos.push({
+        id: crypto.randomUUID(),
+        url: image.dataUrl,
+        comment: ''
+      });
+    }
+    updatePhotos([...(record.photos || []), ...nextPhotos]);
+  };
+
+  return (
+    <section className="list-page diary-page">
+      <SimplePageHeader title="日記" eyebrow="きょうの記録" onBack={onBack} />
+      <div className="diary-date-row">
+        <button type="button" onClick={() => setSelectedDate(current => addDays(current, -1))}>‹</button>
+        <strong>{dateKey}</strong>
+        <button type="button" onClick={() => setSelectedDate(current => addDays(current, 1))}>›</button>
+      </div>
+
+      <section className="diary-card">
+        <label>
+          <span>ひとこと日記</span>
+          <textarea
+            value={record.text || ''}
+            placeholder="今日はどんな日だった？"
+            onChange={(event) => updateText(event.target.value)}
+          />
+        </label>
+      </section>
+
+      <section className="diary-card">
+        <div className="diary-section-title">
+          <span>思い出の写真</span>
+          <button type="button" onClick={() => fileInputRef.current?.click()}>
+            <ImagePlus size={17} />
+            追加
+          </button>
+        </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          className="visually-hidden-file"
+          onChange={async (event) => {
+            await addDiaryPhotos(Array.from(event.target.files || []));
+            event.target.value = '';
+          }}
+        />
+        <div className="diary-photo-list">
+          {(record.photos || []).map((photo, index) => (
+            <article key={photo.id || index} className="diary-photo-card">
+              <img src={photo.url} alt="" />
+              <input
+                value={photo.comment || ''}
+                placeholder="コメント"
+                onChange={(event) => {
+                  const nextPhotos = [...(record.photos || [])];
+                  nextPhotos[index] = { ...photo, comment: event.target.value };
+                  updatePhotos(nextPhotos);
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => updatePhotos((record.photos || []).filter((_, photoIndex) => photoIndex !== index))}
+              >
+                削除
+              </button>
+            </article>
+          ))}
+          {(record.photos || []).length === 0 && <p className="list-empty-text">写真はまだありません</p>}
+        </div>
+      </section>
+
+      <div className="diary-actions">
+        <button type="button" onClick={() => setPasteOpen(current => !current)}>
+          ボードに貼る
+        </button>
+      </div>
+
+      {pasteOpen && (
+        <div className="diary-board-sheet" role="dialog" aria-label="日記を貼るボード">
+          <button type="button" className="sheet-close" onClick={() => setPasteOpen(false)} aria-label="閉じる">
+            <X size={20} />
+          </button>
+          <p>貼るボード</p>
+          {boardChoices.map(board => (
+            <button key={board.id} type="button" onClick={() => onPasteToBoard(dateKey, board.id)}>
+              {board.label}{board.archived ? '（アーカイブ）' : ''}
+            </button>
+          ))}
+        </div>
+      )}
     </section>
   );
 }

@@ -51,6 +51,25 @@ export const clamp = (value, min = 0, max = 100) => Math.min(max, Math.max(min, 
 
 const createId = () => crypto.randomUUID();
 
+export const createBoardItem = (patch = {}) => normalizeBoardItem({
+  id: createId(),
+  type: 'text',
+  boardId: 'home',
+  text: '',
+  imageDataUrl: '',
+  imageMimeType: '',
+  naturalWidth: 0,
+  naturalHeight: 0,
+  x: 24,
+  y: 24,
+  scale: 1,
+  rotation: 0,
+  archived: false,
+  createdAt: nowIso(),
+  updatedAt: nowIso(),
+  ...patch
+});
+
 export const createBoard = (label = '新しいボード') => ({
   id: `board-${createId()}`,
   label: label.trim() || '新しいボード',
@@ -175,6 +194,8 @@ export const getReminderStatus = (memo, now = new Date()) => {
 };
 
 export const isMemoVisibleOnBoard = (memo, now = new Date()) => !memo.archived && isReminderDue(memo, now);
+
+export const isBoardItemVisible = (item) => !item.archived;
 
 const normalizeChecklist = (checklist) => (
   Array.isArray(checklist)
@@ -310,6 +331,49 @@ export const normalizeMemo = (memo = {}, index = 0) => {
   };
 };
 
+export const normalizeBoardItem = (item = {}, index = 0) => {
+  const position = DEFAULT_POSITIONS[index % DEFAULT_POSITIONS.length];
+  const type = item.type === 'image' ? 'image' : 'text';
+  const createdAt = typeof item.createdAt === 'string' ? item.createdAt : nowIso();
+  const updatedAt = typeof item.updatedAt === 'string' ? item.updatedAt : createdAt;
+
+  return {
+    id: typeof item.id === 'string' ? item.id : createId(),
+    type,
+    boardId: typeof item.boardId === 'string' && item.boardId.trim() ? item.boardId.trim() : 'home',
+    text: typeof item.text === 'string' ? item.text : '',
+    imageDataUrl: typeof item.imageDataUrl === 'string' ? item.imageDataUrl : '',
+    imageMimeType: typeof item.imageMimeType === 'string' ? item.imageMimeType : '',
+    naturalWidth: Number.isFinite(Number(item.naturalWidth)) ? Number(item.naturalWidth) : 0,
+    naturalHeight: Number.isFinite(Number(item.naturalHeight)) ? Number(item.naturalHeight) : 0,
+    x: Number.isFinite(Number(item.x)) ? clamp(Number(item.x), -8, 88) : position.x,
+    y: Number.isFinite(Number(item.y)) ? clamp(Number(item.y), -8, 88) : position.y,
+    scale: Number.isFinite(Number(item.scale)) ? clamp(Number(item.scale), 0.3, 3.2) : 1,
+    rotation: Number.isFinite(Number(item.rotation)) ? clamp(Number(item.rotation), -180, 180) : 0,
+    archived: Boolean(item.archived),
+    createdAt,
+    updatedAt
+  };
+};
+
+const normalizeDiaryPhoto = (photo = {}) => ({
+  id: typeof photo.id === 'string' ? photo.id : createId(),
+  url: typeof photo.url === 'string' ? photo.url : '',
+  comment: typeof photo.comment === 'string' ? photo.comment : ''
+});
+
+const normalizeDiaryRecord = (record = {}) => {
+  const createdAt = typeof record.createdAt === 'string' ? record.createdAt : nowIso();
+  return {
+    text: typeof record.text === 'string' ? record.text : '',
+    photos: Array.isArray(record.photos)
+      ? record.photos.map(normalizeDiaryPhoto).filter(photo => photo.url)
+      : [],
+    createdAt,
+    updatedAt: typeof record.updatedAt === 'string' ? record.updatedAt : createdAt
+  };
+};
+
 export const normalizeData = (data = {}) => {
   const appTitle = typeof data.appTitle === 'string' && data.appTitle.trim()
     ? data.appTitle.trim()
@@ -325,8 +389,22 @@ export const normalizeData = (data = {}) => {
         : { ...normalized, boardId: fallbackBoardId };
     })
     : [];
+  const boardItems = Array.isArray(data.boardItems)
+    ? data.boardItems.map((item, index) => {
+      const normalized = normalizeBoardItem(item, index);
+      return boardIds.has(normalized.boardId)
+        ? normalized
+        : { ...normalized, boardId: fallbackBoardId };
+    })
+    : [];
+  const diaryRecords = data.diaryRecords && typeof data.diaryRecords === 'object'
+    ? Object.fromEntries(Object.entries(data.diaryRecords).map(([dateKey, record]) => [dateKey, normalizeDiaryRecord(record)]))
+    : {};
+  const notifiedTimeCapsuleBoardIds = Array.isArray(data.notifiedTimeCapsuleBoardIds)
+    ? data.notifiedTimeCapsuleBoardIds.filter(id => typeof id === 'string')
+    : [];
 
-  return { appTitle, boards, memos };
+  return { appTitle, boards, memos, boardItems, diaryRecords, notifiedTimeCapsuleBoardIds };
 };
 
 export const sortMemos = (memos) => [...memos].sort((a, b) => {
