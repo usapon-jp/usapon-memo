@@ -574,6 +574,74 @@ button {
   justify-self: start;
 }
 
+.storage-info-card > strong,
+.backup-card > strong {
+  color: #5b442e;
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.storage-meter {
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(124, 91, 62, 0.12);
+}
+
+.storage-meter span {
+  height: 100%;
+  display: block;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #c8d7ba, #ead791);
+}
+
+.storage-stats {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.storage-stats div,
+.storage-breakdown span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.storage-stats dt,
+.storage-breakdown span {
+  color: rgba(91, 68, 46, 0.66);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.storage-stats dd {
+  margin: 0;
+  color: #5b442e;
+  font-weight: 900;
+}
+
+.storage-breakdown {
+  display: grid;
+  gap: 7px;
+  padding-top: 4px;
+}
+
+.backup-card p {
+  margin: 0;
+  color: rgba(91, 68, 46, 0.66);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.6;
+}
+
+.backup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .diary-page {
   background:
     radial-gradient(circle at 12% 3%, rgba(255, 238, 206, 0.72), transparent 28%),
@@ -668,6 +736,65 @@ button {
   background: #f0e3d1;
   color: #7c5b3e;
   font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.diary-board-snapshot-list {
+  display: grid;
+  gap: 16px;
+}
+
+.diary-board-snapshot-card {
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+  padding: 12px 12px 14px;
+  border-radius: 7px;
+  background: #fffdf8;
+  box-shadow: 0 14px 28px rgba(103, 69, 35, 0.12);
+}
+
+.diary-board-snapshot-card img {
+  width: min(100%, 320px);
+  aspect-ratio: 4 / 5;
+  object-fit: cover;
+  object-position: top center;
+  border: 8px solid #fffaf2;
+  border-bottom-width: 16px;
+  border-radius: 4px;
+  background: #f3eadc;
+  box-shadow: 0 8px 18px rgba(99, 65, 34, 0.1);
+}
+
+.diary-board-snapshot-card div {
+  display: grid;
+  gap: 4px;
+  justify-items: center;
+  color: #6d5137;
+  text-align: center;
+}
+
+.diary-board-snapshot-card strong {
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.diary-board-snapshot-card span,
+.diary-board-snapshot-card small,
+.diary-sheet-empty {
+  color: rgba(109, 81, 55, 0.62);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.diary-board-snapshot-card button {
+  min-height: 34px;
+  border: 0;
+  border-radius: 999px;
+  padding: 0 14px;
+  background: rgba(219, 126, 103, 0.14);
+  color: #a05a4d;
   font-weight: 900;
   cursor: pointer;
 }
@@ -1894,6 +2021,12 @@ body {
   animation: board-wiggle 0.28s ease-in-out infinite alternate;
 }
 
+.board-tab-label {
+  display: inline-flex;
+  align-items: center;
+  touch-action: none;
+}
+
 .board-reorder-done {
   background: #e7f0df !important;
   color: #607050 !important;
@@ -2061,6 +2194,27 @@ body {
   overflow: hidden;
 }
 
+.snapshot-capture-stage {
+  width: 599px;
+  height: 608px;
+  position: fixed;
+  left: -200vw;
+  top: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  background: #f3eadc;
+}
+
+.snapshot-capture-stage .cork-board {
+  width: 599px;
+  height: 608px;
+}
+
+.snapshot-empty {
+  pointer-events: none;
+}
+
 .cork-empty {
   border: 0;
   background: rgba(255, 250, 240, 0.78);
@@ -2087,6 +2241,33 @@ body {
 .board-card.is-dragging:active {
   z-index: 1000;
   transition: none;
+}
+
+.link-preview {
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+  color: #6d5137;
+  cursor: pointer;
+}
+
+.link-preview > span {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1.25;
+  text-align: center;
+}
+
+.link-preview small {
+  max-width: 100%;
+  color: rgba(109, 81, 55, 0.56);
+  font-size: 7px;
+  font-weight: 800;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  text-align: center;
 }
 
 .board-item {
@@ -2462,7 +2643,7 @@ body {
 
 .add-sheet > div {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -2592,6 +2773,7 @@ body {
 
 .photo-editor input[type="text"],
 .schedule-editor input,
+.link-editor input,
 .board-select select {
   width: 100%;
   min-height: 38px;
@@ -2618,6 +2800,14 @@ body {
   gap: 13px;
 }
 
+.link-editor {
+  position: relative;
+  z-index: 3;
+  display: grid;
+  gap: 13px;
+}
+
+.link-editor label,
 .schedule-editor label {
   display: grid;
   grid-template-columns: 20px 1fr;

@@ -1,3 +1,4 @@
+import html2canvas from 'html2canvas';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
@@ -11,6 +12,7 @@ import {
   Folder,
   Home,
   ImagePlus,
+  Link as LinkIcon,
   Map,
   Menu,
   MoreHorizontal,
@@ -40,6 +42,7 @@ import {
   isBoardItemVisible,
   isMemoVisibleOnBoard,
   normalizeBoardItem,
+  normalizeData,
   normalizeMemo,
   sortMemos
 } from './memoModel.js';
@@ -109,6 +112,17 @@ const addDays = (date, days) => {
   return next;
 };
 
+const formatDiaryCapturedAt = (value) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString('ja-JP', {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+};
+
 const createDraft = (patch = {}) => {
   const cardType = patch.cardType || 'checklist';
   return createEmptyMemo({
@@ -124,78 +138,202 @@ const createDraft = (patch = {}) => {
   });
 };
 
-const fileToDataUrl = (file) => new Promise((resolve, reject) => {
-  const reader = new FileReader();
-  reader.onload = () => resolve(reader.result);
-  reader.onerror = () => reject(reader.error);
-  reader.readAsDataURL(file);
-});
-
 const MAX_PHOTO_DATA_URL_LENGTH = 620000;
 const PHOTO_CANVAS_BACKGROUND = '#f3eadc';
-const BOARD_EDGE_HOTZONE = 34;
-const BOARD_EDGE_SWITCH_DELAY = 600;
+const BACKUP_VERSION = 1;
+const FALLBACK_STORAGE_QUOTA = 5 * 1024 * 1024;
 const ENABLE_CREATE_SETTINGS_PANEL = false;
+const BOARD_SNAPSHOT_WIDTH = 800;
+const BOARD_SNAPSHOT_RETRY_WIDTH = 640;
 
-const resizeImageFile = async (file, maxWidth = 900) => {
-  const dataUrl = await fileToDataUrl(file);
-  const image = await new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = reject;
-    img.src = dataUrl;
-  });
-  let scale = Math.min(1, maxWidth / image.width);
-  let quality = 0.72;
-  let output = '';
-  const canvas = document.createElement('canvas');
-  const context = canvas.getContext('2d');
+const nextFrame = () => new Promise(resolve => requestAnimationFrame(() => resolve()));
 
-  for (let attempt = 0; attempt < 8; attempt += 1) {
-    canvas.width = Math.max(1, Math.round(image.width * scale));
-    canvas.height = Math.max(1, Math.round(image.height * scale));
-    context.clearRect(0, 0, canvas.width, canvas.height);
-    context.fillStyle = PHOTO_CANVAS_BACKGROUND;
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    context.drawImage(image, 0, 0, canvas.width, canvas.height);
-    output = canvas.toDataURL('image/jpeg', quality);
-    if (output.length <= MAX_PHOTO_DATA_URL_LENGTH) break;
-    if (quality > 0.54) {
-      quality -= 0.08;
-    } else {
-      scale *= 0.82;
+const dataUrlByteLength = (dataUrl = '') => {
+  const base64 = dataUrl.split(',')[1] || '';
+  if (!base64) return 0;
+  const padding = base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0;
+  return Math.max(0, Math.floor((base64.length * 3) / 4) - padding);
+};
+
+const formatBytes = (bytes = 0) => {
+  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+  return `${(bytes / 1024 / 1024).toFixed(2)}MB`;
+};
+
+const formatCompressionMessage = (label, result) => {
+  if (!result?.originalBytes || !result?.compressedBytes) return '';
+  const savedPercent = Math.max(0, Math.round((1 - result.compressedBytes / result.originalBytes) * 100));
+  return `${label}を圧縮しました: ${formatBytes(result.originalBytes)} → ${formatBytes(result.compressedBytes)}（${savedPercent}%削減）`;
+};
+
+const normalizeLinkUrl = (value = '') => {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  try {
+    return new URL(trimmed).toString();
+  } catch {
+    try {
+      return new URL(`https://${trimmed}`).toString();
+    } catch {
+      return trimmed;
     }
   }
+};
 
+const getLinkHost = (value = '') => {
+  try {
+    return new URL(normalizeLinkUrl(value)).hostname.replace(/^www\./, '');
+  } catch {
+    return value.replace(/^https?:\/\//, '').split('/')[0] || 'リンク';
+  }
+};
+
+const isCanvasLikelyTextHeavy = (sourceCanvas) => {
+  const sample = document.createElement('canvas');
+  const size = 48;
+  sample.width = size;
+  sample.height = size;
+  const context = sample.getContext('2d');
+  context.drawImage(sourceCanvas, 0, 0, size, size);
+  const data = context.getImageData(0, 0, size, size).data;
+  let edges = 0;
+  let checks = 0;
+  const luminance = (index) => (data[index] * 0.299) + (data[index + 1] * 0.587) + (data[index + 2] * 0.114);
+  for (let y = 0; y < size - 1; y += 1) {
+    for (let x = 0; x < size - 1; x += 1) {
+      const current = (y * size + x) * 4;
+      const right = (y * size + x + 1) * 4;
+      const down = ((y + 1) * size + x) * 4;
+      if (Math.abs(luminance(current) - luminance(right)) > 42) edges += 1;
+      if (Math.abs(luminance(current) - luminance(down)) > 42) edges += 1;
+      checks += 2;
+    }
+  }
+  return checks > 0 && edges / checks > 0.16;
+};
+
+const canvasHasTransparency = (canvas) => {
+  const context = canvas.getContext('2d');
+  const { data } = context.getImageData(0, 0, canvas.width, canvas.height);
+  for (let index = 3; index < data.length; index += 64) {
+    if (data[index] < 250) return true;
+  }
+  return false;
+};
+
+const canvasToCompressedJpeg = (sourceCanvas, maxWidth = BOARD_SNAPSHOT_WIDTH, quality = 0.78, originalBytes = 0) => {
+  const scale = Math.min(1, maxWidth / sourceCanvas.width);
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(sourceCanvas.width * scale));
+  canvas.height = Math.max(1, Math.round(sourceCanvas.height * scale));
+  const context = canvas.getContext('2d');
+  context.fillStyle = PHOTO_CANVAS_BACKGROUND;
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(sourceCanvas, 0, 0, canvas.width, canvas.height);
+  const dataUrl = canvas.toDataURL('image/jpeg', quality);
   return {
-    dataUrl: output,
-    aspectRatio: canvas.width / canvas.height
+    dataUrl,
+    originalBytes: originalBytes || dataUrlByteLength(dataUrl),
+    compressedBytes: dataUrlByteLength(dataUrl),
+    reductionRate: originalBytes ? Math.max(0, 1 - (dataUrlByteLength(dataUrl) / originalBytes)) : 0,
+    mimeType: 'image/jpeg',
+    naturalWidth: canvas.width,
+    naturalHeight: canvas.height
   };
 };
 
-const resizeFreeImageFile = async (file, maxWidth = 1200) => {
-  const dataUrl = await fileToDataUrl(file);
+const captureBoardElement = async (element, options = {}) => {
+  const canvas = await html2canvas(element, {
+    backgroundColor: PHOTO_CANVAS_BACKGROUND,
+    scale: 1,
+    useCORS: true,
+    logging: false
+  });
+  return canvasToCompressedJpeg(
+    canvas,
+    options.maxWidth || BOARD_SNAPSHOT_WIDTH,
+    options.quality ?? 0.78,
+    options.originalBytes || dataUrlByteLength(canvas.toDataURL('image/png'))
+  );
+};
+
+const compressImageFile = async (file, options = {}) => {
+  const preserveTransparency = Boolean(options.preserveTransparency);
+  const maxLongSide = options.maxLongSide || 1200;
   const image = await new Promise((resolve, reject) => {
     const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
     img.onload = () => resolve(img);
     img.onerror = reject;
-    img.src = dataUrl;
+    img.src = objectUrl;
   });
-  const scale = Math.min(1, maxWidth / Math.max(image.width, image.height));
+  const scale = Math.min(1, maxLongSide / Math.max(image.width, image.height));
   const canvas = document.createElement('canvas');
   canvas.width = Math.max(1, Math.round(image.width * scale));
   canvas.height = Math.max(1, Math.round(image.height * scale));
   const context = canvas.getContext('2d');
   context.clearRect(0, 0, canvas.width, canvas.height);
   context.drawImage(image, 0, 0, canvas.width, canvas.height);
-  const isTransparent = file.type === 'image/png' || file.type === 'image/webp';
+  URL.revokeObjectURL(image.src);
+
+  const originalBytes = Number.isFinite(file.size) ? file.size : 0;
+  const hasTransparency = preserveTransparency && canvasHasTransparency(canvas);
+  if (hasTransparency) {
+    const dataUrl = canvas.toDataURL('image/png');
+    const compressedBytes = dataUrlByteLength(dataUrl);
+    return {
+      dataUrl,
+      aspectRatio: canvas.width / canvas.height,
+      mimeType: 'image/png',
+      naturalWidth: canvas.width,
+      naturalHeight: canvas.height,
+      originalBytes,
+      compressedBytes,
+      reductionRate: originalBytes ? Math.max(0, 1 - compressedBytes / originalBytes) : 0
+    };
+  }
+
+  const textHeavy = isCanvasLikelyTextHeavy(canvas);
+  let scaleDown = 1;
+  let quality = textHeavy ? 0.82 : 0.75;
+  let output = '';
+  let outputCanvas = canvas;
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    if (scaleDown < 1) {
+      outputCanvas = document.createElement('canvas');
+      outputCanvas.width = Math.max(1, Math.round(canvas.width * scaleDown));
+      outputCanvas.height = Math.max(1, Math.round(canvas.height * scaleDown));
+      const outputContext = outputCanvas.getContext('2d');
+      outputContext.fillStyle = PHOTO_CANVAS_BACKGROUND;
+      outputContext.fillRect(0, 0, outputCanvas.width, outputCanvas.height);
+      outputContext.drawImage(canvas, 0, 0, outputCanvas.width, outputCanvas.height);
+    } else {
+      context.globalCompositeOperation = 'destination-over';
+      context.fillStyle = PHOTO_CANVAS_BACKGROUND;
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.globalCompositeOperation = 'source-over';
+    }
+    output = outputCanvas.toDataURL('image/jpeg', quality);
+    if (output.length <= MAX_PHOTO_DATA_URL_LENGTH) break;
+    if (quality > 0.56) quality -= 0.07;
+    else scaleDown *= 0.86;
+  }
+  const compressedBytes = dataUrlByteLength(output);
   return {
-    dataUrl: isTransparent ? canvas.toDataURL('image/png') : canvas.toDataURL('image/jpeg', 0.78),
-    mimeType: isTransparent ? 'image/png' : 'image/jpeg',
-    naturalWidth: canvas.width,
-    naturalHeight: canvas.height
+    dataUrl: output,
+    aspectRatio: outputCanvas.width / outputCanvas.height,
+    mimeType: 'image/jpeg',
+    naturalWidth: outputCanvas.width,
+    naturalHeight: outputCanvas.height,
+    originalBytes,
+    compressedBytes,
+    reductionRate: originalBytes ? Math.max(0, 1 - compressedBytes / originalBytes) : 0
   };
 };
+
+const resizeImageFile = async (file) => compressImageFile(file, { preserveTransparency: false, maxLongSide: 1200 });
+const resizeFreeImageFile = async (file) => compressImageFile(file, { preserveTransparency: true, maxLongSide: 1200 });
 
 const getPhotoCropClass = (ratio) => PHOTO_RATIO_CLASS[ratio] || PHOTO_RATIO_CLASS.landscape;
 const getPhotoFrameRatio = (memo) => {
@@ -259,6 +397,8 @@ const getMemoSearchText = (memo = {}, board = {}) => [
   memo.title,
   memo.text,
   memo.caption,
+  memo.linkTitle,
+  memo.linkUrl,
   memo.scheduleDate,
   memo.scheduleTime,
   memo.schedulePlace,
@@ -272,6 +412,7 @@ const getBoardItemSearchText = (item = {}, board = {}) => [
 
 const getMemoKindLabel = (memo) => {
   if (memo.cardType === 'photo') return '写真';
+  if (memo.cardType === 'link') return 'リンク';
   if (memo.cardType === 'schedule') return '予定';
   if (memo.cardType === 'checklist') return 'リスト';
   return 'メモ';
@@ -279,6 +420,7 @@ const getMemoKindLabel = (memo) => {
 
 const getMemoPrimaryText = (memo = {}) => {
   if (memo.cardType === 'photo') return memo.caption || memo.title || '写真';
+  if (memo.cardType === 'link') return memo.linkTitle || memo.title || getLinkHost(memo.linkUrl) || 'リンク';
   if (memo.cardType === 'schedule') {
     return memo.title || memo.schedulePlace || [memo.scheduleDate, memo.scheduleTime].filter(Boolean).join(' ') || '予定';
   }
@@ -287,6 +429,52 @@ const getMemoPrimaryText = (memo = {}) => {
   }
   return memo.title || memo.text || 'メモ';
 };
+
+const getStringBytes = (value = '') => new Blob([value]).size;
+
+const getStorageBreakdown = (data = {}) => {
+  const photoCards = (data.memos || [])
+    .filter(memo => memo.cardType === 'photo')
+    .reduce((sum, memo) => sum + dataUrlByteLength(memo.photoDataUrl), 0);
+  const boardImages = (data.boardItems || [])
+    .filter(item => item.type === 'image')
+    .reduce((sum, item) => sum + dataUrlByteLength(item.imageDataUrl), 0);
+  const diaryPhotos = Object.values(data.diaryRecords || {})
+    .flatMap(record => record.photos || [])
+    .reduce((sum, photo) => sum + dataUrlByteLength(photo.url), 0);
+  const boardSnapshots = Object.values(data.diaryRecords || {})
+    .flatMap(record => record.boards || [])
+    .reduce((sum, snapshot) => sum + dataUrlByteLength(snapshot.snapshotDataUrl), 0);
+  const total = getStringBytes(JSON.stringify(normalizeData(data)));
+  const imageTotal = photoCards + boardImages + diaryPhotos + boardSnapshots;
+  return {
+    total,
+    photoCards,
+    diaryPhotos,
+    boardSnapshots,
+    boardImages,
+    imageTotal,
+    other: Math.max(0, total - imageTotal)
+  };
+};
+
+const createBackupPayload = (data) => ({
+  version: BACKUP_VERSION,
+  exportedAt: new Date().toISOString(),
+  data: normalizeData(data)
+});
+
+const cloneMemoForBoard = (memo, boardId, position = {}) => normalizeMemo({
+  ...memo,
+  id: crypto.randomUUID(),
+  boardId,
+  x: Number.isFinite(Number(position.x)) ? position.x : memo.x,
+  y: Number.isFinite(Number(position.y)) ? position.y : memo.y,
+  checklist: (memo.checklist || []).map(item => ({ ...item, id: crypto.randomUUID() })),
+  stickers: (memo.stickers || []).map(sticker => ({ ...sticker, id: crypto.randomUUID() })),
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString()
+});
 
 const getBoardOpenLabel = (board) => {
   if (!board.isTimeCapsule) return '通常ボード';
@@ -301,10 +489,14 @@ export default function App() {
   const [now, setNow] = useState(() => new Date());
   const [activeBoardId, setActiveBoardId] = useState('home');
   const [storageError, setStorageError] = useState('');
+  const [appToast, setAppToast] = useState('');
   const [undoAction, setUndoAction] = useState(null);
   const [notifications, setNotifications] = useState([]);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [snapshotRequest, setSnapshotRequest] = useState(null);
+  const [storageEstimate, setStorageEstimate] = useState(null);
   const initializedBoardRef = useRef(false);
+  const snapshotStageRef = useRef(null);
   const appTitle = data.appTitle || DEFAULT_APP_TITLE;
   const boards = data.boards?.length ? data.boards : DEFAULT_BOARDS;
   const homeBoards = useMemo(() => {
@@ -314,11 +506,42 @@ export default function App() {
     return [...openCapsules, ...normalBoards];
   }, [boards, now]);
   const managementBoards = useMemo(() => boards.filter(board => !board.archived), [boards]);
+  const storageBreakdown = useMemo(() => getStorageBreakdown(data), [data]);
+  const diaryAttachableBoards = useMemo(
+    () => boards.filter(board => !board.isTimeCapsule || isTimeCapsuleOpen(board, now)),
+    [boards, now]
+  );
 
   useEffect(() => {
     const ok = saveMemoData(data);
-    setStorageError(ok ? '' : '保存容量がいっぱいです。写真カードを減らすか、小さめの写真に差し替えてください。');
+    if (!ok) setStorageError('保存容量がいっぱいです。写真カードを減らすか、小さめの写真に差し替えてください。');
   }, [data]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const updateEstimate = async () => {
+      if (!navigator.storage?.estimate) {
+        setStorageEstimate(null);
+        return;
+      }
+      try {
+        const estimate = await navigator.storage.estimate();
+        if (!cancelled) setStorageEstimate(estimate);
+      } catch {
+        if (!cancelled) setStorageEstimate(null);
+      }
+    };
+    updateEstimate();
+    return () => {
+      cancelled = true;
+    };
+  }, [storageBreakdown.total]);
+
+  useEffect(() => {
+    if (!appToast) return undefined;
+    const timer = window.setTimeout(() => setAppToast(''), 3600);
+    return () => window.clearTimeout(timer);
+  }, [appToast]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -352,6 +575,97 @@ export default function App() {
     [activeBoardId, allBoardItems]
   );
   const boardById = useMemo(() => Object.fromEntries(boards.map(board => [board.id, board])), [boards]);
+  const snapshotBoard = snapshotRequest ? boardById[snapshotRequest.boardId] : null;
+  const snapshotMemos = useMemo(
+    () => snapshotRequest
+      ? sortMemos(data.memos.filter(memo => (
+        memo.boardId === snapshotRequest.boardId && isMemoVisibleOnBoard(memo, now)
+      )))
+      : [],
+    [data.memos, now, snapshotRequest]
+  );
+  const snapshotBoardItems = useMemo(
+    () => snapshotRequest
+      ? allBoardItems.filter(item => item.boardId === snapshotRequest.boardId && isBoardItemVisible(item))
+      : [],
+    [allBoardItems, snapshotRequest]
+  );
+
+  useEffect(() => {
+    if (!snapshotRequest || !snapshotBoard) return undefined;
+    let cancelled = false;
+
+    const persistSnapshot = (snapshotResult) => {
+      const capturedAt = new Date().toISOString();
+      const record = data.diaryRecords?.[snapshotRequest.dateKey] || { text: '', photos: [], boards: [] };
+      const nextSnapshot = {
+        id: crypto.randomUUID(),
+        boardId: snapshotBoard.id,
+        label: snapshotBoard.label,
+        icon: snapshotBoard.icon,
+        archived: Boolean(snapshotBoard.archived),
+        capturedAt,
+        snapshotDataUrl: snapshotResult.dataUrl,
+        memoCount: snapshotMemos.length,
+        photoCount: snapshotMemos.filter(memo => memo.cardType === 'photo').length,
+        itemCount: snapshotBoardItems.length
+      };
+      const nextRecord = {
+        ...record,
+        boards: [nextSnapshot, ...(record.boards || [])],
+        createdAt: record.createdAt || capturedAt,
+        updatedAt: capturedAt
+      };
+      const nextData = {
+        ...data,
+        diaryRecords: {
+          ...(data.diaryRecords || {}),
+          [snapshotRequest.dateKey]: nextRecord
+        }
+      };
+      if (!saveMemoData(nextData)) return false;
+      setSnapshotRequest(null);
+      setAppToast(formatCompressionMessage('ボード', snapshotResult));
+      captureUndo('ボードスナップショットの追加');
+      setData(nextData);
+      return true;
+    };
+
+    const runCapture = async () => {
+      await nextFrame();
+      await nextFrame();
+      if (cancelled) return;
+      const boardElement = snapshotStageRef.current?.querySelector('.cork-board');
+      if (!boardElement) {
+        setSnapshotRequest(null);
+        setStorageError('ボードのスクショを作れませんでした。もう一度試してください。');
+        return;
+      }
+
+      try {
+        const firstSnapshot = await captureBoardElement(boardElement);
+        if (!cancelled && persistSnapshot(firstSnapshot)) return;
+
+        const retrySnapshot = await captureBoardElement(boardElement, {
+          maxWidth: BOARD_SNAPSHOT_RETRY_WIDTH,
+          quality: 0.58
+        });
+        if (!cancelled && persistSnapshot(retrySnapshot)) return;
+
+        setSnapshotRequest(null);
+        setStorageError('保存容量がいっぱいです。日記の写真やボード画像を減らしてから、もう一度試してください。');
+      } catch (error) {
+        console.error('Failed to capture board snapshot', error);
+        setSnapshotRequest(null);
+        setStorageError('ボードのスクショを作れませんでした。画像を読み込んでからもう一度試してください。');
+      }
+    };
+
+    runCapture();
+    return () => {
+      cancelled = true;
+    };
+  }, [data, snapshotBoard, snapshotBoardItems, snapshotMemos, snapshotRequest]);
 
   useEffect(() => {
     const releasedBoards = boards.filter(board => (
@@ -437,6 +751,17 @@ export default function App() {
     }));
   };
 
+  const pasteMemoCopy = (memo, boardId, position) => {
+    if (!memo) return;
+    captureUndo('メモのコピー');
+    const nextMemo = cloneMemoForBoard(memo, boardId, position);
+    setData(current => ({
+      ...current,
+      memos: [nextMemo, ...current.memos]
+    }));
+    setActiveBoardId(boardId);
+  };
+
   const beginMove = (label = '移動') => {
     captureUndo(label);
   };
@@ -508,28 +833,10 @@ export default function App() {
     });
   };
 
-  const pasteDiaryToBoard = (dateKey, boardId) => {
-    const record = data.diaryRecords?.[dateKey];
-    if (!record) return;
-    captureUndo('日記の貼り付け');
-    const title = `${dateKey}の日記`;
-    const text = [record.text, ...record.photos.map(photo => photo.comment).filter(Boolean)].filter(Boolean).join('\n');
-    const nextMemo = normalizeMemo(createDraft({
-      boardId,
-      cardType: 'note',
-      title,
-      text: text || '日記',
-      checklist: [],
-      x: 16,
-      y: 16,
-      color: 'white'
-    }));
-    setData(current => ({
-      ...current,
-      memos: [nextMemo, ...current.memos]
-    }));
-    setActiveBoardId(boardId);
-    setPage('home');
+  const attachBoardSnapshotToDiary = (dateKey, boardId) => {
+    if (!boardById[boardId]) return;
+    setStorageError('');
+    setSnapshotRequest({ dateKey, boardId, requestedAt: Date.now() });
   };
 
   const updateAppTitle = (nextTitle) => {
@@ -538,6 +845,43 @@ export default function App() {
       ...current,
       appTitle
     }));
+  };
+
+  const exportBackup = () => {
+    const payload = createBackupPayload(data);
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `usapon-memo-backup-${toDateKey(new Date())}.json`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+    setAppToast(`バックアップを書き出しました（${formatBytes(blob.size)}）`);
+  };
+
+  const importBackup = async (file) => {
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const importedData = parsed?.data && typeof parsed.data === 'object' ? parsed.data : parsed;
+      const normalized = normalizeData(importedData);
+      const confirmed = window.confirm('現在のデータをバックアップ内容で上書きします。よろしいですか？');
+      if (!confirmed) return;
+      if (!saveMemoData(normalized)) {
+        setStorageError('バックアップの容量が大きすぎて読み込めませんでした。');
+        return;
+      }
+      setStorageError('');
+      setData(normalized);
+      setActiveBoardId(normalized.boards[0]?.id || 'home');
+      setAppToast('バックアップを読み込みました。');
+    } catch (error) {
+      console.error('Backup import failed', error);
+      setStorageError('バックアップを読み込めませんでした。JSONファイルを確認してください。');
+    }
   };
 
   const requestBrowserNotifications = async () => {
@@ -704,7 +1048,7 @@ export default function App() {
 
   return (
     <main className="phone-shell">
-      {storageError && <p className="storage-toast">{storageError}</p>}
+      {(storageError || appToast) && <p className="storage-toast">{storageError || appToast}</p>}
 
       {page === 'home' && (
         <HomePage
@@ -728,6 +1072,7 @@ export default function App() {
           onEdit={openEditMemo}
           onBeginMove={beginMove}
           onMove={patchMemo}
+          onPasteMemoCopy={pasteMemoCopy}
           onMoveBoardItem={patchBoardItem}
           onDeleteMemo={deleteMemo}
           onDeleteBoardItem={deleteBoardItem}
@@ -739,6 +1084,7 @@ export default function App() {
           onMoveBoard={moveBoard}
           onUpdateAppTitle={updateAppTitle}
           onUndo={undoLastAction}
+          onShowToast={setAppToast}
           onToggleNotifications={() => setNotificationsOpen(current => !current)}
           onCloseNotifications={() => setNotificationsOpen(false)}
         />
@@ -751,6 +1097,7 @@ export default function App() {
           setDraft={setDraft}
           onBack={() => setPage('home')}
           onSave={saveMemo}
+          onShowToast={setAppToast}
         />
       )}
 
@@ -814,9 +1161,13 @@ export default function App() {
       {page === 'settings' && (
         <SettingsPage
           appTitle={appTitle}
+          storageBreakdown={storageBreakdown}
+          storageEstimate={storageEstimate}
           onBack={() => setPage('home')}
           onUpdateAppTitle={updateAppTitle}
           onRequestNotifications={requestBrowserNotifications}
+          onExportBackup={exportBackup}
+          onImportBackup={importBackup}
         />
       )}
 
@@ -830,14 +1181,58 @@ export default function App() {
 
       {page === 'diary' && (
         <DiaryPage
-          boards={boards}
+          boards={diaryAttachableBoards}
           records={data.diaryRecords || {}}
           onBack={() => setPage('home')}
           onUpdateRecord={updateDiaryRecord}
-          onPasteToBoard={pasteDiaryToBoard}
+          onAttachBoardSnapshot={attachBoardSnapshotToDiary}
+          onShowToast={setAppToast}
+        />
+      )}
+
+      {snapshotRequest && snapshotBoard && (
+        <BoardSnapshotStage
+          refTarget={snapshotStageRef}
+          board={snapshotBoard}
+          memos={snapshotMemos}
+          boardItems={snapshotBoardItems}
         />
       )}
     </main>
+  );
+}
+
+function BoardSnapshotStage({ refTarget, board, memos, boardItems }) {
+  return (
+    <div className="snapshot-capture-stage" ref={refTarget} aria-hidden="true">
+      <div className="sticky-board cork-board">
+        {memos.map(memo => (
+          <BoardMemo
+            key={memo.id}
+            memo={memo}
+            isDragging={false}
+            onPointerDown={() => {}}
+            onEdit={() => {}}
+            onToggleChecklistItem={() => {}}
+          />
+        ))}
+        {boardItems.map(item => (
+          <BoardFreeItem
+            key={item.id}
+            item={item}
+            isDragging={false}
+            onPointerDown={() => {}}
+          />
+        ))}
+        {memos.length === 0 && boardItems.length === 0 && (
+          <div className="board-empty cork-empty snapshot-empty">
+            <StickyNote size={28} />
+            <strong>{board.label}</strong>
+            <span>まだ貼り付けはありません</span>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -862,6 +1257,7 @@ function HomePage({
   onEdit,
   onBeginMove,
   onMove,
+  onPasteMemoCopy,
   onMoveBoardItem,
   onDeleteMemo,
   onDeleteBoardItem,
@@ -873,6 +1269,7 @@ function HomePage({
   onMoveBoard,
   onUpdateAppTitle,
   onUndo,
+  onShowToast,
   onToggleNotifications,
   onCloseNotifications
 }) {
@@ -880,6 +1277,8 @@ function HomePage({
   const [mainMenuOpen, setMainMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [boardMenu, setBoardMenu] = useState(null);
+  const [memoMenu, setMemoMenu] = useState(null);
+  const [copiedMemo, setCopiedMemo] = useState(null);
   const [editingBoard, setEditingBoard] = useState(null);
   const [titleEditing, setTitleEditing] = useState(false);
   const [titleDraft, setTitleDraft] = useState(appTitle);
@@ -899,13 +1298,17 @@ function HomePage({
   const activeBoardIdRef = useRef(activeBoardId);
   const boardsRef = useRef(boards);
   const dragMemoRef = useRef(null);
-  const edgeSwitchRef = useRef({ direction: null, timer: null, lastSwitchAt: 0 });
   const trashActiveRef = useRef(false);
   const swipeStartRef = useRef(null);
   const longPressTimerRef = useRef(null);
   const boardPressTimerRef = useRef(null);
+  const boardPressOriginRef = useRef(null);
   const boardLongPressFiredRef = useRef(false);
   const longPressFiredRef = useRef(false);
+  const memoLongPressTimerRef = useRef(null);
+  const memoLongPressOriginRef = useRef(null);
+  const memoLongPressFiredRef = useRef(false);
+  const boardReorderDragRef = useRef(null);
   const activeBoard = boards.find(board => board.id === activeBoardId) || boards[0] || { id: 'home', label: 'ホーム' };
 
   activeBoardIdRef.current = activeBoardId;
@@ -918,7 +1321,7 @@ function HomePage({
   useEffect(() => () => {
     window.clearTimeout(longPressTimerRef.current);
     window.clearTimeout(boardPressTimerRef.current);
-    window.clearTimeout(edgeSwitchRef.current.timer);
+    window.clearTimeout(memoLongPressTimerRef.current);
   }, []);
 
   const commitAppTitle = () => {
@@ -931,12 +1334,6 @@ function HomePage({
   const setTrashHover = (isActive) => {
     trashActiveRef.current = isActive;
     setTrashActive(isActive);
-  };
-
-  const clearEdgeSwitch = () => {
-    window.clearTimeout(edgeSwitchRef.current.timer);
-    edgeSwitchRef.current.timer = null;
-    edgeSwitchRef.current.direction = null;
   };
 
   const updateDragMemo = (patch) => {
@@ -960,74 +1357,6 @@ function HomePage({
     x: clamp(((clientX - gesture.grabOffsetX - gesture.boardRect.left) / gesture.boardRect.width) * 100, 1, 70),
     y: clamp(((clientY - gesture.grabOffsetY - gesture.boardRect.top) / gesture.boardRect.height) * 100, 1, 80)
   });
-
-  const refreshDragGestureAfterBoardSwitch = () => {
-    const memo = dragMemoRef.current;
-    if (!memo || !boardRef.current || cardPointersRef.current.size !== 1) return;
-    window.requestAnimationFrame(() => {
-      const nextCard = document.querySelector(`[data-memo-id="${memo.id}"]`);
-      const point = Array.from(cardPointersRef.current.values())[0];
-      if (!nextCard || !point || !boardRef.current) return;
-      activeCardRef.current = nextCard;
-      const cardRect = nextCard.getBoundingClientRect();
-      cardGestureRef.current = {
-        type: 'drag',
-        memoId: memo.id,
-        boardRect: boardRef.current.getBoundingClientRect(),
-        grabOffsetX: point.clientX - cardRect.left,
-        grabOffsetY: point.clientY - cardRect.top
-      };
-      window.requestAnimationFrame(updateTrashHover);
-    });
-  };
-
-  const switchBoardDuringDrag = (direction) => {
-    const memo = dragMemoRef.current;
-    const currentBoards = boardsRef.current;
-    const currentIndex = currentBoards.findIndex(board => board.id === activeBoardIdRef.current);
-    const nextIndex = direction === 'next' ? currentIndex + 1 : currentIndex - 1;
-    const nextBoard = currentBoards[nextIndex];
-    if (!memo || !nextBoard) return;
-
-    const nextX = direction === 'next' ? 4 : 82;
-    clearEdgeSwitch();
-    edgeSwitchRef.current.lastSwitchAt = Date.now();
-    patchDraggedMemo(memo.id, {
-      boardId: nextBoard.id,
-      x: nextX,
-      y: clamp(memo.y ?? 12, 1, 80)
-    });
-    activeBoardIdRef.current = nextBoard.id;
-    onBoardChange(nextBoard.id);
-    setTrashHover(false);
-    refreshDragGestureAfterBoardSwitch();
-  };
-
-  const updateBoardEdgeHover = (clientX) => {
-    if (!boardRef.current || !dragMemoRef.current) return;
-    const boardRect = boardRef.current.getBoundingClientRect();
-    const currentBoards = boardsRef.current;
-    const currentIndex = currentBoards.findIndex(board => board.id === activeBoardIdRef.current);
-    let direction = null;
-    if (clientX <= boardRect.left + BOARD_EDGE_HOTZONE && currentIndex > 0) {
-      direction = 'prev';
-    } else if (clientX >= boardRect.right - BOARD_EDGE_HOTZONE && currentIndex < currentBoards.length - 1) {
-      direction = 'next';
-    }
-
-    if (!direction) {
-      clearEdgeSwitch();
-      return;
-    }
-
-    if (edgeSwitchRef.current.direction === direction && edgeSwitchRef.current.timer) return;
-    if (Date.now() - edgeSwitchRef.current.lastSwitchAt < 700) return;
-    clearEdgeSwitch();
-    edgeSwitchRef.current.direction = direction;
-    edgeSwitchRef.current.timer = window.setTimeout(() => {
-      switchBoardDuringDrag(direction);
-    }, BOARD_EDGE_SWITCH_DELAY);
-  };
 
   const updateTrashHover = () => {
     const trashRect = trashRef.current?.getBoundingClientRect();
@@ -1080,6 +1409,9 @@ function HomePage({
   const handlePointerDown = (event, memo) => {
     if (!boardRef.current || event.target.closest('input, textarea, button')) return;
     event.preventDefault();
+    window.clearTimeout(memoLongPressTimerRef.current);
+    memoLongPressFiredRef.current = false;
+    memoLongPressOriginRef.current = { clientX: event.clientX, clientY: event.clientY };
     onBeginMove('メモの移動');
     setDraggingMemoId(memo.id);
     dragMemoRef.current = { ...memo };
@@ -1102,8 +1434,24 @@ function HomePage({
       ? createPinchGesture(memo)
       : createDragGesture(event, memo);
 
+    memoLongPressTimerRef.current = window.setTimeout(() => {
+      memoLongPressFiredRef.current = true;
+      setDraggingMemoId(null);
+      setTrashHover(false);
+      activeCardRef.current = null;
+      cardGestureRef.current = null;
+      dragMemoRef.current = null;
+      cardPointersRef.current.clear();
+      setMemoMenu({ id: memo.id, x: event.clientX || 0, y: event.clientY || 0 });
+      setBoardMenu(null);
+    }, 560);
+
     const moveMemo = (moveEvent) => {
       if (!cardPointersRef.current.has(moveEvent.pointerId)) return;
+      const origin = memoLongPressOriginRef.current;
+      if (origin && Math.hypot(moveEvent.clientX - origin.clientX, moveEvent.clientY - origin.clientY) > 10) {
+        window.clearTimeout(memoLongPressTimerRef.current);
+      }
       cardPointersRef.current.set(moveEvent.pointerId, {
         pointerId: moveEvent.pointerId,
         clientX: moveEvent.clientX,
@@ -1126,15 +1474,15 @@ function HomePage({
           rotation: nextRotation
         };
         patchDraggedMemo(memo.id, patch);
-        updateBoardEdgeHover(center.x);
       } else if (cardGestureRef.current?.type === 'drag') {
         patchDraggedMemo(memo.id, getMemoPointPatch(moveEvent.clientX, moveEvent.clientY, cardGestureRef.current));
-        updateBoardEdgeHover(moveEvent.clientX);
       }
       window.requestAnimationFrame(updateTrashHover);
     };
 
     const stopMove = (stopEvent) => {
+      window.clearTimeout(memoLongPressTimerRef.current);
+      memoLongPressOriginRef.current = null;
       cardPointersRef.current.delete(stopEvent.pointerId);
       if (cardPointersRef.current.size >= 2) {
         cardGestureRef.current = createPinchGesture(memo);
@@ -1156,7 +1504,6 @@ function HomePage({
       }
 
       const shouldDelete = trashActiveRef.current;
-      clearEdgeSwitch();
       setDraggingMemoId(null);
       setTrashHover(false);
       activeCardRef.current = null;
@@ -1247,19 +1594,12 @@ function HomePage({
     };
   };
 
-  const openQuickAdd = (event) => {
-    if (event.target.closest('.board-card, .board-item, .board-empty')) return;
-    const position = getBoardPositionFromEvent(event);
-    setQuickAdd({ ...position, clientX: event.clientX, clientY: event.clientY });
-    setPasteMenu(null);
-    onCloseNotifications();
-  };
-
   const startBoardPress = (event) => {
     if (event.target.closest('.board-card, .board-item, input, textarea')) return;
     window.clearTimeout(boardPressTimerRef.current);
     boardLongPressFiredRef.current = false;
     const position = getBoardPositionFromEvent(event);
+    boardPressOriginRef.current = { clientX: event.clientX, clientY: event.clientY };
     boardPressTimerRef.current = window.setTimeout(() => {
       boardLongPressFiredRef.current = true;
       setQuickAdd(null);
@@ -1267,8 +1607,17 @@ function HomePage({
     }, 620);
   };
 
+  const moveBoardPress = (event) => {
+    const origin = boardPressOriginRef.current;
+    if (!origin) return;
+    if (Math.hypot(event.clientX - origin.clientX, event.clientY - origin.clientY) > 12) {
+      clearBoardPress();
+    }
+  };
+
   const clearBoardPress = () => {
     window.clearTimeout(boardPressTimerRef.current);
+    boardPressOriginRef.current = null;
   };
 
   const commitDirectText = () => {
@@ -1286,9 +1635,11 @@ function HomePage({
   };
 
   const startDirectText = () => {
-    if (!quickAdd) return;
-    setDirectText({ x: quickAdd.x, y: quickAdd.y, text: '' });
+    const position = quickAdd || pasteMenu;
+    if (!position) return;
+    setDirectText({ x: position.x, y: position.y, text: '' });
     setQuickAdd(null);
+    setPasteMenu(null);
   };
 
   const createImageBoardItem = async (file, position = quickAdd) => {
@@ -1304,6 +1655,7 @@ function HomePage({
       x: position.x,
       y: position.y
     });
+    onShowToast?.(formatCompressionMessage('画像', image));
     setQuickAdd(null);
     setPasteMenu(null);
   };
@@ -1311,6 +1663,15 @@ function HomePage({
   const pasteFromClipboard = async () => {
     const position = pasteMenu || quickAdd;
     if (!position) return;
+    if (copiedMemo) {
+      onPasteMemoCopy(copiedMemo, activeBoardId, {
+        x: position.x,
+        y: position.y
+      });
+      setPasteMenu(null);
+      setQuickAdd(null);
+      return;
+    }
     try {
       if (navigator.clipboard?.read) {
         const items = await navigator.clipboard.read();
@@ -1342,15 +1703,28 @@ function HomePage({
   };
 
   const handleTouchStart = (event) => {
-    if (event.target.closest('.board-card')) return;
-    swipeStartRef.current = event.touches[0].clientX;
+    if (boardReorderMode || event.target.closest('.board-card, .board-item, input, textarea')) return;
+    const touch = event.touches[0];
+    swipeStartRef.current = {
+      x: touch.clientX,
+      y: touch.clientY,
+      time: Date.now()
+    };
   };
 
   const handleTouchEnd = (event) => {
     if (swipeStartRef.current === null) return;
-    const distance = event.changedTouches[0].clientX - swipeStartRef.current;
+    const touch = event.changedTouches[0];
+    const distance = touch.clientX - swipeStartRef.current.x;
+    const verticalDistance = touch.clientY - swipeStartRef.current.y;
+    const elapsed = Date.now() - swipeStartRef.current.time;
     swipeStartRef.current = null;
-    if (Math.abs(distance) < 70) return;
+    if (
+      Math.abs(distance) < 90
+      || Math.abs(verticalDistance) > 46
+      || Math.abs(distance) < Math.abs(verticalDistance) * 1.8
+      || elapsed > 850
+    ) return;
     const currentIndex = boards.findIndex(board => board.id === activeBoardId);
     const nextIndex = distance < 0
       ? Math.min(boards.length - 1, currentIndex + 1)
@@ -1376,6 +1750,7 @@ function HomePage({
   const openBoardMenu = (event, board) => {
     event.preventDefault();
     clearBoardLongPress();
+    setBoardReorderMode(false);
     setBoardMenu({
       id: board.id,
       label: board.label,
@@ -1385,12 +1760,20 @@ function HomePage({
   };
 
   const startBoardLongPress = (event, board) => {
+    if (boardReorderMode) {
+      if (!event.target.closest('.board-tab-label')) setBoardReorderMode(false);
+      return;
+    }
     clearBoardLongPress();
     longPressFiredRef.current = false;
     longPressTimerRef.current = window.setTimeout(() => {
       longPressFiredRef.current = true;
-      setBoardMenu(null);
-      setBoardReorderMode(true);
+      setBoardMenu({
+        id: board.id,
+        label: board.label,
+        x: event.clientX || 0,
+        y: event.clientY || 0
+      });
     }, 560);
   };
 
@@ -1399,18 +1782,61 @@ function HomePage({
       longPressFiredRef.current = false;
       return;
     }
-    openBoardMenu(event, board);
-  };
-
-  const openFromMenu = () => {
-    if (!boardMenu) return;
-    onBoardChange(boardMenu.id);
+    if (boardReorderMode) return;
     setBoardMenu(null);
+    onBoardChange(board.id);
   };
 
   const reorderFromMenu = () => {
     setBoardReorderMode(true);
     setBoardMenu(null);
+  };
+
+  const startBoardReorderDrag = (event, board) => {
+    if (!boardReorderMode) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const chipElement = event.currentTarget;
+    const chipWidth = Math.max(88, chipElement.getBoundingClientRect().width);
+    chipElement.setPointerCapture(event.pointerId);
+    boardReorderDragRef.current = {
+      id: board.id,
+      lastClientX: event.clientX
+    };
+
+    const moveBoardChip = (moveEvent) => {
+      const state = boardReorderDragRef.current;
+      if (!state || state.id !== board.id) return;
+      const currentBoards = boardsRef.current;
+      const index = currentBoards.findIndex(item => item.id === board.id);
+      if (index < 0) return;
+      const delta = moveEvent.clientX - state.lastClientX;
+      if (delta > chipWidth * 0.45 && index < currentBoards.length - 1) {
+        onMoveBoard(board.id, 'next');
+        state.lastClientX = moveEvent.clientX;
+      } else if (delta < -chipWidth * 0.45 && index > 0) {
+        onMoveBoard(board.id, 'prev');
+        state.lastClientX = moveEvent.clientX;
+      }
+    };
+
+    const stopBoardChip = () => {
+      boardReorderDragRef.current = null;
+      window.removeEventListener('pointermove', moveBoardChip);
+      window.removeEventListener('pointerup', stopBoardChip);
+      window.removeEventListener('pointercancel', stopBoardChip);
+    };
+
+    window.addEventListener('pointermove', moveBoardChip);
+    window.addEventListener('pointerup', stopBoardChip);
+    window.addEventListener('pointercancel', stopBoardChip);
+  };
+
+  const maybeFinishBoardReorder = (event) => {
+    if (!boardReorderMode) return;
+    if (boardReorderDragRef.current) return;
+    if (event.target.closest('.board-tab-label')) return;
+    setBoardReorderMode(false);
   };
 
   const editFromMenu = () => {
@@ -1432,8 +1858,49 @@ function HomePage({
     setBoardMenu(null);
   };
 
+  const openMemoMenu = (event, memo) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setMemoMenu({
+      id: memo.id,
+      x: event.clientX || 0,
+      y: event.clientY || 0
+    });
+    setBoardMenu(null);
+  };
+
+  const copyMemoFromMenu = () => {
+    if (!memoMenu) return;
+    const memo = allMemos.find(item => item.id === memoMenu.id);
+    if (memo) {
+      setCopiedMemo(memo);
+      onShowToast?.('メモをコピーしました。貼りたいボードの空白を長押ししてペーストできます。');
+    }
+    setMemoMenu(null);
+  };
+
+  const editMemoFromMenu = () => {
+    if (!memoMenu) return;
+    const memo = allMemos.find(item => item.id === memoMenu.id);
+    if (memo) onEdit(memo);
+    setMemoMenu(null);
+  };
+
+  const deleteMemoFromMenu = () => {
+    if (!memoMenu) return;
+    onDeleteMemo(memoMenu.id);
+    setMemoMenu(null);
+  };
+
   return (
-    <section className="home-page cork-home" onClick={() => boardMenu && setBoardMenu(null)}>
+    <section
+      className="home-page cork-home"
+      onClick={(event) => {
+        if (boardMenu) setBoardMenu(null);
+        if (memoMenu) setMemoMenu(null);
+        maybeFinishBoardReorder(event);
+      }}
+    >
       <header className="cork-header">
         <button type="button" className="plain-icon" onClick={() => setMainMenuOpen(true)} aria-label="メニュー">
           <Menu size={27} />
@@ -1487,11 +1954,6 @@ function HomePage({
       </header>
 
       <nav className="board-tabs" aria-label="ボード切替">
-        {boardReorderMode && (
-          <button type="button" className="board-reorder-done" onClick={() => setBoardReorderMode(false)}>
-            完了
-          </button>
-        )}
         {boards.map((board, index) => {
           const Icon = BOARD_ICON_MAP[board.icon] || Folder;
           return (
@@ -1509,36 +1971,13 @@ function HomePage({
                 handleBoardClick(event, board);
               }}
             >
-              {boardReorderMode && (
-                <span className="board-chip-move" aria-hidden="true">
-                  <span
-                    role="button"
-                    tabIndex={-1}
-                    className={index === 0 ? 'disabled' : ''}
-                    onPointerDown={(event) => event.stopPropagation()}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      if (index > 0) onMoveBoard(board.id, 'prev');
-                    }}
-                  >
-                    ‹
-                  </span>
-                  <span
-                    role="button"
-                    tabIndex={-1}
-                    className={index === boards.length - 1 ? 'disabled' : ''}
-                    onPointerDown={(event) => event.stopPropagation()}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      if (index < boards.length - 1) onMoveBoard(board.id, 'next');
-                    }}
-                  >
-                    ›
-                  </span>
-                </span>
-              )}
               <Icon size={18} />
-              <span>{board.label}</span>
+              <span
+                className="board-tab-label"
+                onPointerDown={(event) => startBoardReorderDrag(event, board)}
+              >
+                {board.label}
+              </span>
             </button>
           );
         })}
@@ -1564,10 +2003,6 @@ function HomePage({
           style={{ '--menu-x': `${boardMenu.x}px`, '--menu-y': `${boardMenu.y}px` }}
           onClick={(event) => event.stopPropagation()}
         >
-          <button type="button" role="menuitem" onClick={openFromMenu}>
-            <Folder size={16} />
-            このボードを開く
-          </button>
           <button type="button" role="menuitem" onClick={reorderFromMenu}>
             <Menu size={16} />
             並び替え
@@ -1581,6 +2016,28 @@ function HomePage({
             複製
           </button>
           <button type="button" role="menuitem" className="danger" onClick={deleteFromMenu} disabled={boards.length <= 1}>
+            <Trash2 size={16} />
+            削除
+          </button>
+        </div>
+      )}
+
+      {memoMenu && (
+        <div
+          className="board-tab-menu memo-action-menu"
+          role="menu"
+          style={{ '--menu-x': `${memoMenu.x}px`, '--menu-y': `${memoMenu.y}px` }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <button type="button" role="menuitem" onClick={copyMemoFromMenu}>
+            <Copy size={16} />
+            コピー
+          </button>
+          <button type="button" role="menuitem" onClick={editMemoFromMenu}>
+            <Pencil size={16} />
+            編集
+          </button>
+          <button type="button" role="menuitem" className="danger" onClick={deleteMemoFromMenu}>
             <Trash2 size={16} />
             削除
           </button>
@@ -1664,6 +2121,7 @@ function HomePage({
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
         onPointerDown={startBoardPress}
+        onPointerMove={moveBoardPress}
         onPointerUp={clearBoardPress}
         onPointerCancel={clearBoardPress}
         onPointerLeave={clearBoardPress}
@@ -1673,12 +2131,10 @@ function HomePage({
             boardLongPressFiredRef.current = false;
             return;
           }
-          openQuickAdd(event);
         }}>
           {memos.length === 0 && boardItems.length === 0 ? (
             <button type="button" className="board-empty cork-empty" onClick={(event) => {
               event.stopPropagation();
-              setQuickAdd({ x: 36, y: 44, clientX: event.clientX, clientY: event.clientY });
             }}>
               <StickyNote size={28} />
               <strong>ここに貼っていこう</strong>
@@ -1691,6 +2147,7 @@ function HomePage({
                 memo={memo}
                 isDragging={draggingMemoId === memo.id}
                 onPointerDown={(event) => handlePointerDown(event, memo)}
+                onContextMenu={(event) => openMemoMenu(event, memo)}
                 onEdit={() => onEdit(memo)}
                 onToggleChecklistItem={onToggleChecklistItem}
               />
@@ -1772,6 +2229,10 @@ function HomePage({
               <ImagePlus size={24} />
               写真
             </button>
+            <button type="button" onClick={() => chooseAddType('link')}>
+              <LinkIcon size={24} />
+              リンク
+            </button>
           </div>
         </div>
       )}
@@ -1790,14 +2251,18 @@ function HomePage({
       )}
 
       {pasteMenu && (
-        <div className="quick-add-menu paste-menu" style={{ left: `${pasteMenu.clientX}px`, top: `${pasteMenu.clientY}px` }} role="dialog" aria-label="ペースト">
-          <button type="button" onClick={pasteFromClipboard}>
-            <Copy size={18} />
-            ペースト
+        <div className="quick-add-menu paste-menu" style={{ left: `${pasteMenu.clientX}px`, top: `${pasteMenu.clientY}px` }} role="dialog" aria-label="空白に追加">
+          <button type="button" onClick={startDirectText}>
+            <Type size={18} />
+            テキスト
           </button>
           <button type="button" onClick={() => directImageInputRef.current?.click()}>
             <Upload size={18} />
-            画像を選ぶ
+            画像
+          </button>
+          <button type="button" onClick={pasteFromClipboard}>
+            <Copy size={18} />
+            {copiedMemo ? 'メモを貼る' : 'ペースト'}
           </button>
         </div>
       )}
@@ -1915,7 +2380,7 @@ function StickerLayer({
   );
 }
 
-function BoardMemo({ memo, isDragging, onPointerDown, onEdit, onToggleChecklistItem }) {
+function BoardMemo({ memo, isDragging, onPointerDown, onContextMenu, onEdit, onToggleChecklistItem }) {
   const hasTitle = memo.title.trim().length > 0;
   const cardType = memo.cardType || (memo.type === 'checklist' ? 'checklist' : 'note');
   const style = {
@@ -1935,6 +2400,7 @@ function BoardMemo({ memo, isDragging, onPointerDown, onEdit, onToggleChecklistI
         data-memo-id={memo.id}
         style={style}
         onPointerDown={onPointerDown}
+        onContextMenu={onContextMenu}
       >
         <span className="photo-tape" aria-hidden="true" />
         <div className="photo-card-inner" role="button" tabIndex={0} onClick={onEdit} onKeyDown={(event) => {
@@ -1959,6 +2425,7 @@ function BoardMemo({ memo, isDragging, onPointerDown, onEdit, onToggleChecklistI
       data-memo-id={memo.id}
       style={style}
       onPointerDown={onPointerDown}
+      onContextMenu={onContextMenu}
     >
       <span className="card-tape" aria-hidden="true" />
       {cardType !== 'photo' && <StickerLayer stickers={memo.stickers} />}
@@ -1971,6 +2438,27 @@ function BoardMemo({ memo, isDragging, onPointerDown, onEdit, onToggleChecklistI
             <small>{memo.scheduleDate || '日付未定'}</small>
             <span>{memo.scheduleTime || '時間未定'}</span>
             <em>{memo.schedulePlace || '場所未定'}</em>
+          </span>
+        ) : cardType === 'link' ? (
+          <span
+            className="link-preview"
+            role="link"
+            tabIndex={0}
+            onClick={(event) => {
+              event.stopPropagation();
+              if (memo.linkUrl) window.open(normalizeLinkUrl(memo.linkUrl), '_blank', 'noopener,noreferrer');
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                event.stopPropagation();
+                if (memo.linkUrl) window.open(normalizeLinkUrl(memo.linkUrl), '_blank', 'noopener,noreferrer');
+              }
+            }}
+          >
+            <LinkIcon size={18} />
+            <span>{memo.linkTitle || getLinkHost(memo.linkUrl)}</span>
+            <small>{memo.linkUrl}</small>
           </span>
         ) : cardType === 'checklist' ? (
           <span className="mini-checklist">
@@ -2078,7 +2566,7 @@ function SettingsPanel({ boards, draft, setDraft, updateCardType }) {
   );
 }
 
-function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
+function MemoCreatePage({ boards, draft, setDraft, onBack, onSave, onShowToast }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [imageBusy, setImageBusy] = useState(false);
   const [selectedStickerId, setSelectedStickerId] = useState('');
@@ -2097,9 +2585,11 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
     ? Boolean(draft.photoDataUrl || draft.caption.trim() || draft.title.trim())
     : draft.cardType === 'schedule'
       ? Boolean(draft.title.trim() || draft.scheduleDate || draft.scheduleTime || draft.schedulePlace || draft.stickers.length)
-      : draft.cardType === 'checklist'
-        ? draft.title.trim().length > 0 || draft.checklist.some(item => item.text.trim()) || draft.stickers.length > 0
-        : draft.title.trim().length > 0 || draft.text.trim().length > 0 || draft.stickers.length > 0;
+      : draft.cardType === 'link'
+        ? draft.linkUrl.trim().length > 0
+        : draft.cardType === 'checklist'
+          ? draft.title.trim().length > 0 || draft.checklist.some(item => item.text.trim()) || draft.stickers.length > 0
+          : draft.title.trim().length > 0 || draft.text.trim().length > 0 || draft.stickers.length > 0;
   const firstChecklistItem = draft.checklist[0] || null;
   const selectedPaletteColor = draft.cardType === 'photo' ? draft.tapeColor : draft.color;
   const paletteLabel = draft.cardType === 'photo' ? 'マステ色' : 'メモ色';
@@ -2190,19 +2680,20 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
     if (!file) return;
     setImageBusy(true);
     try {
-      const { dataUrl: photoDataUrl, aspectRatio } = await resizeImageFile(file);
+      const image = await resizeImageFile(file);
       setDraft(current => ({
         ...current,
-        photoDataUrl,
+        photoDataUrl: image.dataUrl,
         caption: current.caption || current.title,
         photoCropRatio: 'custom',
         photoZoom: 1,
         photoOffsetX: 0,
         photoOffsetY: 0,
         photoRotation: 0,
-        photoAspectRatio: aspectRatio,
-        photoFrameRatio: aspectRatio
+        photoAspectRatio: image.aspectRatio,
+        photoFrameRatio: image.aspectRatio
       }));
+      onShowToast?.(formatCompressionMessage('写真', image));
       setPhotoToolsOpen(false);
     } finally {
       setImageBusy(false);
@@ -2417,6 +2908,8 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
   const cleanAndSave = () => {
     const nextDraft = normalizeMemo({
       ...draft,
+      linkUrl: draft.cardType === 'link' ? normalizeLinkUrl(draft.linkUrl) : draft.linkUrl,
+      linkTitle: draft.cardType === 'link' ? (draft.linkTitle.trim() || getLinkHost(draft.linkUrl)) : draft.linkTitle,
       checklist: draft.cardType === 'checklist'
         ? draft.checklist
         : draft.checklist.filter(item => item.text.trim())
@@ -2442,7 +2935,7 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
         <button type="button" className="create-nav-button" onClick={onBack} aria-label="ホームへ戻る">
           <ArrowLeft size={34} strokeWidth={2.4} />
         </button>
-        <h1 className="create-title">{draft.cardType === 'photo' ? '写真カード' : draft.cardType === 'schedule' ? '予定カード' : 'やることリスト'}</h1>
+        <h1 className="create-title">{draft.cardType === 'photo' ? '写真カード' : draft.cardType === 'schedule' ? '予定カード' : draft.cardType === 'link' ? 'リンクカード' : 'やることリスト'}</h1>
         {ENABLE_CREATE_SETTINGS_PANEL ? (
           <button
             type="button"
@@ -2543,6 +3036,36 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave }) {
               placeholder="キャプション"
               aria-label="写真のキャプション"
               onChange={(event) => setDraft(current => ({ ...current, caption: event.target.value }))}
+            />
+          </div>
+        ) : draft.cardType === 'link' ? (
+          <div className="link-editor">
+            <label>
+              <LinkIcon size={17} />
+              <input
+                ref={primaryInputRef}
+                type="url"
+                value={draft.linkUrl}
+                placeholder="https://example.com"
+                aria-label="リンクURL"
+                onChange={(event) => setDraft(current => ({
+                  ...current,
+                  linkUrl: event.target.value,
+                  linkTitle: current.linkTitle || getLinkHost(event.target.value)
+                }))}
+                onBlur={(event) => setDraft(current => ({
+                  ...current,
+                  linkUrl: normalizeLinkUrl(event.target.value),
+                  linkTitle: current.linkTitle || getLinkHost(event.target.value)
+                }))}
+              />
+            </label>
+            <input
+              type="text"
+              value={draft.linkTitle}
+              placeholder="リンクのタイトル"
+              aria-label="リンクタイトル"
+              onChange={(event) => setDraft(current => ({ ...current, linkTitle: event.target.value }))}
             />
           </div>
         ) : draft.cardType === 'schedule' ? (
@@ -2855,8 +3378,23 @@ function PhotoListPage({ memos, boards, onBack, onOpen, onArchive }) {
   );
 }
 
-function SettingsPage({ appTitle, onBack, onUpdateAppTitle, onRequestNotifications }) {
+function SettingsPage({
+  appTitle,
+  storageBreakdown,
+  storageEstimate,
+  onBack,
+  onUpdateAppTitle,
+  onRequestNotifications,
+  onExportBackup,
+  onImportBackup
+}) {
   const [title, setTitle] = useState(appTitle);
+  const backupInputRef = useRef(null);
+  const quota = storageEstimate?.quota || FALLBACK_STORAGE_QUOTA;
+  const remaining = Math.max(0, quota - (storageEstimate?.usage || storageBreakdown.total));
+  const imagePercent = storageBreakdown.total
+    ? Math.round((storageBreakdown.imageTotal / storageBreakdown.total) * 100)
+    : 0;
 
   const saveTitle = () => {
     onUpdateAppTitle(title);
@@ -2885,16 +3423,58 @@ function SettingsPage({ appTitle, onBack, onUpdateAppTitle, onRequestNotificatio
           ブラウザ通知を許可
         </button>
       </div>
+
+      <div className="settings-card storage-info-card">
+        <strong>保存容量</strong>
+        <div className="storage-meter" aria-label="保存容量">
+          <span style={{ width: `${Math.min(100, (storageBreakdown.total / quota) * 100)}%` }} />
+        </div>
+        <dl className="storage-stats">
+          <div><dt>現在の使用容量</dt><dd>{formatBytes(storageBreakdown.total)}</dd></div>
+          <div><dt>残り容量の目安</dt><dd>{formatBytes(remaining)}</dd></div>
+          <div><dt>写真・画像の割合</dt><dd>{imagePercent}%</dd></div>
+        </dl>
+        <div className="storage-breakdown">
+          <span>写真カード <b>{formatBytes(storageBreakdown.photoCards)}</b></span>
+          <span>日記写真 <b>{formatBytes(storageBreakdown.diaryPhotos)}</b></span>
+          <span>ボード画像 <b>{formatBytes(storageBreakdown.boardImages)}</b></span>
+          <span>ボードスクショ <b>{formatBytes(storageBreakdown.boardSnapshots)}</b></span>
+          <span>その他 <b>{formatBytes(storageBreakdown.other)}</b></span>
+        </div>
+      </div>
+
+      <div className="settings-card backup-card">
+        <strong>バックアップ</strong>
+        <p>メモ、写真、日記、ボード、設定をJSONファイルにまとめます。</p>
+        <div className="backup-actions">
+          <button type="button" className="subtle-action" onClick={onExportBackup}>
+            バックアップを書き出す
+          </button>
+          <button type="button" className="subtle-action" onClick={() => backupInputRef.current?.click()}>
+            バックアップを読み込む
+          </button>
+        </div>
+        <input
+          ref={backupInputRef}
+          type="file"
+          accept="application/json,.json"
+          className="visually-hidden-file"
+          onChange={async (event) => {
+            await onImportBackup(event.target.files?.[0]);
+            event.target.value = '';
+          }}
+        />
+      </div>
     </section>
   );
 }
 
-function DiaryPage({ boards, records, onBack, onUpdateRecord, onPasteToBoard }) {
+function DiaryPage({ boards, records, onBack, onUpdateRecord, onAttachBoardSnapshot, onShowToast }) {
   const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [pasteOpen, setPasteOpen] = useState(false);
   const fileInputRef = useRef(null);
   const dateKey = toDateKey(selectedDate);
-  const record = records[dateKey] || { text: '', photos: [] };
+  const record = records[dateKey] || { text: '', photos: [], boards: [] };
   const boardChoices = boards;
 
   const updateText = (text) => {
@@ -2905,15 +3485,29 @@ function DiaryPage({ boards, records, onBack, onUpdateRecord, onPasteToBoard }) 
     onUpdateRecord(dateKey, { ...record, photos });
   };
 
+  const updateBoards = (nextBoards) => {
+    onUpdateRecord(dateKey, { ...record, boards: nextBoards });
+  };
+
   const addDiaryPhotos = async (files) => {
     const nextPhotos = [];
+    let originalBytes = 0;
+    let compressedBytes = 0;
     for (const file of files) {
-      const image = await resizeFreeImageFile(file, 900);
+      const image = await compressImageFile(file, { preserveTransparency: false, maxLongSide: 1200 });
+      originalBytes += image.originalBytes || 0;
+      compressedBytes += image.compressedBytes || 0;
       nextPhotos.push({
         id: crypto.randomUUID(),
         url: image.dataUrl,
-        comment: ''
+        comment: '',
+        originalBytes: image.originalBytes,
+        compressedBytes: image.compressedBytes,
+        mimeType: image.mimeType
       });
+    }
+    if (nextPhotos.length > 0) {
+      onShowToast?.(formatCompressionMessage('日記写真', { originalBytes, compressedBytes }));
     }
     updatePhotos([...(record.photos || []), ...nextPhotos]);
   };
@@ -2982,23 +3576,52 @@ function DiaryPage({ boards, records, onBack, onUpdateRecord, onPasteToBoard }) 
         </div>
       </section>
 
-      <div className="diary-actions">
-        <button type="button" onClick={() => setPasteOpen(current => !current)}>
-          ボードに貼る
-        </button>
-      </div>
+      <section className="diary-card">
+        <div className="diary-section-title">
+          <span>貼り付けたボード</span>
+          <button type="button" onClick={() => setPasteOpen(current => !current)}>
+            <ImagePlus size={17} />
+            ボードを貼る
+          </button>
+        </div>
+        <div className="diary-board-snapshot-list">
+          {(record.boards || []).map(snapshot => (
+            <article key={snapshot.id} className="diary-board-snapshot-card">
+              <img src={snapshot.snapshotDataUrl} alt={`${snapshot.label}のスクショ`} />
+              <div>
+                <strong>{snapshot.label}{snapshot.archived ? '（アーカイブ）' : ''}</strong>
+                <span>{formatDiaryCapturedAt(snapshot.capturedAt)}</span>
+                <small>
+                  メモ {snapshot.memoCount} / 写真 {snapshot.photoCount} / アイテム {snapshot.itemCount}
+                </small>
+              </div>
+              <button
+                type="button"
+                onClick={() => updateBoards((record.boards || []).filter(item => item.id !== snapshot.id))}
+              >
+                削除
+              </button>
+            </article>
+          ))}
+          {(record.boards || []).length === 0 && <p className="list-empty-text">貼り付けたボードはまだありません</p>}
+        </div>
+      </section>
 
       {pasteOpen && (
-        <div className="diary-board-sheet" role="dialog" aria-label="日記を貼るボード">
+        <div className="diary-board-sheet" role="dialog" aria-label="貼り付けるボード">
           <button type="button" className="sheet-close" onClick={() => setPasteOpen(false)} aria-label="閉じる">
             <X size={20} />
           </button>
-          <p>貼るボード</p>
+          <p>貼り付けるボード</p>
           {boardChoices.map(board => (
-            <button key={board.id} type="button" onClick={() => onPasteToBoard(dateKey, board.id)}>
+            <button key={board.id} type="button" onClick={() => {
+              onAttachBoardSnapshot(dateKey, board.id);
+              setPasteOpen(false);
+            }}>
               {board.label}{board.archived ? '（アーカイブ）' : ''}
             </button>
           ))}
+          {boardChoices.length === 0 && <span className="diary-sheet-empty">貼れるボードがありません</span>}
         </div>
       )}
     </section>

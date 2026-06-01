@@ -10,11 +10,11 @@
   },
   "dependencies": {
     "@vitejs/plugin-react": "^6.0.1",
-    "vite": "^8.0.10",
-    "typescript": "^5.9.3",
+    "html2canvas": "^1.4.1",
+    "lucide-react": "^1.14.0",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
-    "lucide-react": "^1.14.0"
-  },
-  "devDependencies": {}
+    "typescript": "^5.9.3",
+    "vite": "^8.0.10"
+  }
 }

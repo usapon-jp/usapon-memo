@@ -10,7 +10,8 @@ export const CARD_TYPES = {
   note: 'note',
   checklist: 'checklist',
   photo: 'photo',
-  schedule: 'schedule'
+  schedule: 'schedule',
+  link: 'link'
 };
 
 export const PHOTO_CROP_RATIOS = {
@@ -117,6 +118,8 @@ export const createEmptyMemo = (patch = {}) => {
     scheduleDate: '',
     scheduleTime: '',
     schedulePlace: '',
+    linkUrl: '',
+    linkTitle: '',
     color: 'yellow',
     tapeColor: patch.tapeColor || patch.color || 'yellow',
     x: 12,
@@ -138,6 +141,7 @@ export const createEmptyMemo = (patch = {}) => {
 export const getMemoPreview = (memo) => {
   if (memo.title) return memo.title;
   if (memo.cardType === 'photo') return memo.caption || '写真';
+  if (memo.cardType === 'link') return memo.linkTitle || memo.linkUrl || 'リンク';
   if (memo.cardType === 'schedule') return memo.schedulePlace || memo.scheduleDate || '予定';
   if (memo.cardType === 'checklist' || memo.type === 'checklist') {
     return memo.checklist.map(item => item.text).filter(Boolean).join(' / ') || 'チェックリスト';
@@ -234,6 +238,8 @@ const migrateLegacyMemo = (memo, index) => {
     scheduleDate: '',
     scheduleTime: '',
     schedulePlace: '',
+    linkUrl: '',
+    linkTitle: '',
     color: LEGACY_COLOR_MAP[memo.category] || 'yellow',
     tapeColor: LEGACY_COLOR_MAP[memo.category] || 'yellow',
     x: position.x,
@@ -281,6 +287,8 @@ export const normalizeMemo = (memo = {}, index = 0) => {
   const scheduleDate = typeof memo.scheduleDate === 'string' ? memo.scheduleDate.trim() : '';
   const scheduleTime = typeof memo.scheduleTime === 'string' ? memo.scheduleTime.trim() : '';
   const schedulePlace = typeof memo.schedulePlace === 'string' ? memo.schedulePlace.trim() : '';
+  const linkUrl = typeof memo.linkUrl === 'string' ? memo.linkUrl.trim() : '';
+  const linkTitle = typeof memo.linkTitle === 'string' ? memo.linkTitle.trim() : '';
   const tapeColor = MEMO_COLORS[memo.tapeColor]
     ? memo.tapeColor
     : (MEMO_COLORS[memo.color] ? memo.color : 'yellow');
@@ -314,6 +322,8 @@ export const normalizeMemo = (memo = {}, index = 0) => {
     scheduleDate,
     scheduleTime,
     schedulePlace,
+    linkUrl,
+    linkTitle,
     color: MEMO_COLORS[memo.color] ? memo.color : 'yellow',
     tapeColor,
     x: Number.isFinite(Number(memo.x)) ? clamp(Number(memo.x)) : position.x,
@@ -359,8 +369,28 @@ export const normalizeBoardItem = (item = {}, index = 0) => {
 const normalizeDiaryPhoto = (photo = {}) => ({
   id: typeof photo.id === 'string' ? photo.id : createId(),
   url: typeof photo.url === 'string' ? photo.url : '',
-  comment: typeof photo.comment === 'string' ? photo.comment : ''
+  comment: typeof photo.comment === 'string' ? photo.comment : '',
+  originalBytes: Number.isFinite(Number(photo.originalBytes)) ? Math.max(0, Number(photo.originalBytes)) : 0,
+  compressedBytes: Number.isFinite(Number(photo.compressedBytes)) ? Math.max(0, Number(photo.compressedBytes)) : 0,
+  mimeType: typeof photo.mimeType === 'string' ? photo.mimeType : ''
 });
+
+const normalizeDiaryBoardSnapshot = (snapshot = {}) => {
+  const capturedAt = typeof snapshot.capturedAt === 'string' ? snapshot.capturedAt : nowIso();
+
+  return {
+    id: typeof snapshot.id === 'string' ? snapshot.id : createId(),
+    boardId: typeof snapshot.boardId === 'string' ? snapshot.boardId : '',
+    label: typeof snapshot.label === 'string' ? snapshot.label : 'ボード',
+    icon: typeof snapshot.icon === 'string' && BOARD_ICONS.has(snapshot.icon) ? snapshot.icon : 'folder',
+    archived: Boolean(snapshot.archived),
+    capturedAt,
+    snapshotDataUrl: typeof snapshot.snapshotDataUrl === 'string' ? snapshot.snapshotDataUrl : '',
+    memoCount: Number.isFinite(Number(snapshot.memoCount)) ? Math.max(0, Number(snapshot.memoCount)) : 0,
+    photoCount: Number.isFinite(Number(snapshot.photoCount)) ? Math.max(0, Number(snapshot.photoCount)) : 0,
+    itemCount: Number.isFinite(Number(snapshot.itemCount)) ? Math.max(0, Number(snapshot.itemCount)) : 0
+  };
+};
 
 const normalizeDiaryRecord = (record = {}) => {
   const createdAt = typeof record.createdAt === 'string' ? record.createdAt : nowIso();
@@ -368,6 +398,9 @@ const normalizeDiaryRecord = (record = {}) => {
     text: typeof record.text === 'string' ? record.text : '',
     photos: Array.isArray(record.photos)
       ? record.photos.map(normalizeDiaryPhoto).filter(photo => photo.url)
+      : [],
+    boards: Array.isArray(record.boards)
+      ? record.boards.map(normalizeDiaryBoardSnapshot).filter(snapshot => snapshot.snapshotDataUrl)
       : [],
     createdAt,
     updatedAt: typeof record.updatedAt === 'string' ? record.updatedAt : createdAt

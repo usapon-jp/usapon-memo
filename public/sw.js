@@ -1,4 +1,4 @@
-const CACHE_NAME = 'usapon-memo-v4';
+const CACHE_NAME = 'usapon-memo-v6';
 const APP_SHELL = [
   '/usapon-memo/',
   '/usapon-memo/manifest.webmanifest',
