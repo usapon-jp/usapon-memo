@@ -1,5 +1,5 @@
 import html2canvas from 'html2canvas';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { forwardRef, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
   Bell,
@@ -39,11 +39,15 @@ import {
   createSticker,
   DEFAULT_BOARDS,
   DEFAULT_APP_TITLE,
+  DEFAULT_STICKY_TEXT_SIZE,
+  DEFAULT_STICKY_TEXT_WEIGHT,
   isBoardItemVisible,
   isMemoVisibleOnBoard,
   normalizeBoardItem,
   normalizeData,
   normalizeMemo,
+  STICKY_TEXT_SIZES,
+  STICKY_TEXT_WEIGHTS,
   sortMemos
 } from './memoModel.js';
 import { loadMemoData, saveMemoData } from './storage.js';
@@ -72,6 +76,16 @@ const STICKER_MAP = Object.fromEntries(STICKER_OPTIONS.map(sticker => [sticker.i
 
 const COLOR_ORDER = ['white', 'green', 'yellow', 'blue', 'pink'];
 const COLOR_OPTIONS = COLOR_ORDER.map(id => ({ id, ...MEMO_COLORS[id] }));
+const STICKY_TEXT_SIZE_OPTIONS = [
+  { id: 'small', label: '小さめ' },
+  { id: 'standard', label: '標準' },
+  { id: 'large', label: '大きめ' }
+];
+const STICKY_TEXT_WEIGHT_OPTIONS = [
+  { id: 'soft', label: 'やさしい' },
+  { id: 'standard', label: '標準' },
+  { id: 'bold', label: 'はっきり' }
+];
 const TAPE_COLOR_MAP = {
   white: 'rgba(214, 203, 188, 0.66)',
   green: 'rgba(178, 204, 170, 0.76)',
@@ -498,6 +512,8 @@ export default function App() {
   const initializedBoardRef = useRef(false);
   const snapshotStageRef = useRef(null);
   const appTitle = data.appTitle || DEFAULT_APP_TITLE;
+  const stickyTextSize = STICKY_TEXT_SIZES.has(data.stickyTextSize) ? data.stickyTextSize : DEFAULT_STICKY_TEXT_SIZE;
+  const stickyTextWeight = STICKY_TEXT_WEIGHTS.has(data.stickyTextWeight) ? data.stickyTextWeight : DEFAULT_STICKY_TEXT_WEIGHT;
   const boards = data.boards?.length ? data.boards : DEFAULT_BOARDS;
   const homeBoards = useMemo(() => {
     const visibleBoards = boards.filter(board => !board.archived && isTimeCapsuleOpen(board, now));
@@ -847,6 +863,18 @@ export default function App() {
     }));
   };
 
+  const updateStickyTextSettings = (patch) => {
+    setData(current => ({
+      ...current,
+      stickyTextSize: STICKY_TEXT_SIZES.has(patch.stickyTextSize)
+        ? patch.stickyTextSize
+        : (STICKY_TEXT_SIZES.has(current.stickyTextSize) ? current.stickyTextSize : DEFAULT_STICKY_TEXT_SIZE),
+      stickyTextWeight: STICKY_TEXT_WEIGHTS.has(patch.stickyTextWeight)
+        ? patch.stickyTextWeight
+        : (STICKY_TEXT_WEIGHTS.has(current.stickyTextWeight) ? current.stickyTextWeight : DEFAULT_STICKY_TEXT_WEIGHT)
+    }));
+  };
+
   const exportBackup = () => {
     const payload = createBackupPayload(data);
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
@@ -1053,6 +1081,8 @@ export default function App() {
       {page === 'home' && (
         <HomePage
           appTitle={appTitle}
+          stickyTextSize={stickyTextSize}
+          stickyTextWeight={stickyTextWeight}
           activeBoardId={activeBoardId}
           boards={homeBoards}
           allBoards={boards}
@@ -1094,6 +1124,8 @@ export default function App() {
         <MemoCreatePage
           boards={boards}
           draft={draft}
+          stickyTextSize={stickyTextSize}
+          stickyTextWeight={stickyTextWeight}
           setDraft={setDraft}
           onBack={() => setPage('home')}
           onSave={saveMemo}
@@ -1161,10 +1193,13 @@ export default function App() {
       {page === 'settings' && (
         <SettingsPage
           appTitle={appTitle}
+          stickyTextSize={stickyTextSize}
+          stickyTextWeight={stickyTextWeight}
           storageBreakdown={storageBreakdown}
           storageEstimate={storageEstimate}
           onBack={() => setPage('home')}
           onUpdateAppTitle={updateAppTitle}
+          onUpdateStickyTextSettings={updateStickyTextSettings}
           onRequestNotifications={requestBrowserNotifications}
           onExportBackup={exportBackup}
           onImportBackup={importBackup}
@@ -1196,13 +1231,15 @@ export default function App() {
           board={snapshotBoard}
           memos={snapshotMemos}
           boardItems={snapshotBoardItems}
+          stickyTextSize={stickyTextSize}
+          stickyTextWeight={stickyTextWeight}
         />
       )}
     </main>
   );
 }
 
-function BoardSnapshotStage({ refTarget, board, memos, boardItems }) {
+function BoardSnapshotStage({ refTarget, board, memos, boardItems, stickyTextSize, stickyTextWeight }) {
   return (
     <div className="snapshot-capture-stage" ref={refTarget} aria-hidden="true">
       <div className="sticky-board cork-board">
@@ -1210,6 +1247,8 @@ function BoardSnapshotStage({ refTarget, board, memos, boardItems }) {
           <BoardMemo
             key={memo.id}
             memo={memo}
+            stickyTextSize={stickyTextSize}
+            stickyTextWeight={stickyTextWeight}
             isDragging={false}
             onPointerDown={() => {}}
             onEdit={() => {}}
@@ -1238,6 +1277,8 @@ function BoardSnapshotStage({ refTarget, board, memos, boardItems }) {
 
 function HomePage({
   appTitle,
+  stickyTextSize,
+  stickyTextWeight,
   activeBoardId,
   boards,
   allBoards,
@@ -2145,6 +2186,8 @@ function HomePage({
               <BoardMemo
                 key={memo.id}
                 memo={memo}
+                stickyTextSize={stickyTextSize}
+                stickyTextWeight={stickyTextWeight}
                 isDragging={draggingMemoId === memo.id}
                 onPointerDown={(event) => handlePointerDown(event, memo)}
                 onContextMenu={(event) => openMemoMenu(event, memo)}
@@ -2376,7 +2419,47 @@ function StickerLayer({
   );
 }
 
-function BoardMemo({ memo, isDragging, onPointerDown, onContextMenu, onEdit, onToggleChecklistItem }) {
+const StickyNoteCard = forwardRef(function StickyNoteCard({
+  as: Component = 'section',
+  mode = 'edit',
+  color = 'green',
+  cardType = 'note',
+  textSize = DEFAULT_STICKY_TEXT_SIZE,
+  textWeight = DEFAULT_STICKY_TEXT_WEIGHT,
+  className = '',
+  style,
+  children,
+  stickerLayer,
+  ...props
+}, ref) {
+  const safeColor = MEMO_COLORS[color] ? color : 'green';
+  const safeTextSize = STICKY_TEXT_SIZES.has(textSize) ? textSize : DEFAULT_STICKY_TEXT_SIZE;
+  const safeTextWeight = STICKY_TEXT_WEIGHTS.has(textWeight) ? textWeight : DEFAULT_STICKY_TEXT_WEIGHT;
+
+  return (
+    <Component
+      className={`sticky-note-card sticky-note-${mode} sticky-text-${safeTextSize} sticky-weight-${safeTextWeight} ${MEMO_COLORS[safeColor].className} card-${cardType} ${className}`.trim()}
+      ref={ref}
+      style={style}
+      {...props}
+    >
+      <span className="card-tape memo-tape" aria-hidden="true" />
+      {stickerLayer}
+      {children}
+    </Component>
+  );
+});
+
+function BoardMemo({
+  memo,
+  stickyTextSize,
+  stickyTextWeight,
+  isDragging,
+  onPointerDown,
+  onContextMenu,
+  onEdit,
+  onToggleChecklistItem
+}) {
   const hasTitle = memo.title.trim().length > 0;
   const cardType = memo.cardType || (memo.type === 'checklist' ? 'checklist' : 'note');
   const style = {
@@ -2416,15 +2499,20 @@ function BoardMemo({ memo, isDragging, onPointerDown, onContextMenu, onEdit, onT
   }
 
   return (
-    <article
-      className={`board-card board-memo ${MEMO_COLORS[memo.color].className} card-${cardType} ${memo.pinned ? 'is-pinned' : ''} ${memo.completed ? 'is-completed' : ''} ${dragClassName}`}
+    <StickyNoteCard
+      as="article"
+      mode="board"
+      color={memo.color}
+      cardType={cardType}
+      textSize={stickyTextSize}
+      textWeight={stickyTextWeight}
+      className={`board-card board-memo ${memo.pinned ? 'is-pinned' : ''} ${memo.completed ? 'is-completed' : ''} ${dragClassName}`}
       data-memo-id={memo.id}
       style={style}
       onPointerDown={onPointerDown}
       onContextMenu={onContextMenu}
+      stickerLayer={<StickerLayer stickers={memo.stickers} />}
     >
-      <span className="card-tape" aria-hidden="true" />
-      {cardType !== 'photo' && <StickerLayer stickers={memo.stickers} />}
       <div className="board-memo-body" role="button" tabIndex={0} onClick={onEdit} onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === ' ') onEdit();
       }}>
@@ -2485,7 +2573,7 @@ function BoardMemo({ memo, isDragging, onPointerDown, onContextMenu, onEdit, onT
           <span>{memo.text || '自由メモ'}</span>
         )}
       </div>
-    </article>
+    </StickyNoteCard>
   );
 }
 
@@ -2562,7 +2650,16 @@ function SettingsPanel({ boards, draft, setDraft, updateCardType }) {
   );
 }
 
-function MemoCreatePage({ boards, draft, setDraft, onBack, onSave, onShowToast }) {
+function MemoCreatePage({
+  boards,
+  draft,
+  stickyTextSize,
+  stickyTextWeight,
+  setDraft,
+  onBack,
+  onSave,
+  onShowToast
+}) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [imageBusy, setImageBusy] = useState(false);
   const [selectedStickerId, setSelectedStickerId] = useState('');
@@ -2959,15 +3056,19 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave, onShowToast }
         )}
       </header>
 
-      <section
+      <StickyNoteCard
+        as="section"
+        mode="edit"
         ref={createCardRef}
-        className={`create-card ${MEMO_COLORS[draft.color].className} create-${draft.cardType}`}
+        color={draft.color}
+        cardType={draft.cardType}
+        textSize={stickyTextSize}
+        textWeight={stickyTextWeight}
+        className={`create-card create-${draft.cardType}`}
         style={createCardStyle}
         onDragOver={(event) => draft.cardType !== 'photo' && event.preventDefault()}
         onDrop={(event) => draft.cardType !== 'photo' && dropSticker(event)}
-      >
-        <span className="memo-tape" aria-hidden="true" />
-        {draft.cardType !== 'photo' && (
+        stickerLayer={draft.cardType !== 'photo' ? (
           <StickerLayer
             stickers={draft.stickers}
             onStickerPointerDown={startStickerMove}
@@ -2975,7 +3076,8 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave, onShowToast }
             movingStickerId={movingStickerId}
             onDeleteSticker={deleteSticker}
           />
-        )}
+        ) : null}
+      >
         {draft.cardType !== 'photo' && (
           <input
             ref={titleInputRef}
@@ -3178,7 +3280,7 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave, onShowToast }
             ))}
           </div>
         )}
-      </section>
+      </StickyNoteCard>
 
       <section className="memo-options">
         <div className="color-row" aria-label={paletteLabel}>
@@ -3394,10 +3496,13 @@ function PhotoListPage({ memos, boards, onBack, onOpen, onArchive }) {
 
 function SettingsPage({
   appTitle,
+  stickyTextSize,
+  stickyTextWeight,
   storageBreakdown,
   storageEstimate,
   onBack,
   onUpdateAppTitle,
+  onUpdateStickyTextSettings,
   onRequestNotifications,
   onExportBackup,
   onImportBackup
@@ -3436,6 +3541,40 @@ function SettingsPage({
         <button type="button" className="subtle-action settings-wide-action" onClick={onRequestNotifications}>
           ブラウザ通知を許可
         </button>
+      </div>
+
+      <div className="settings-card sticky-display-card">
+        <strong>付箋の表示</strong>
+        <div className="setting-segment-group">
+          <span>付箋の文字サイズ</span>
+          <div className="setting-segments" role="group" aria-label="付箋の文字サイズ">
+            {STICKY_TEXT_SIZE_OPTIONS.map(option => (
+              <button
+                key={option.id}
+                type="button"
+                className={stickyTextSize === option.id ? 'active' : ''}
+                onClick={() => onUpdateStickyTextSettings({ stickyTextSize: option.id })}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="setting-segment-group">
+          <span>文字の太さ</span>
+          <div className="setting-segments" role="group" aria-label="文字の太さ">
+            {STICKY_TEXT_WEIGHT_OPTIONS.map(option => (
+              <button
+                key={option.id}
+                type="button"
+                className={stickyTextWeight === option.id ? 'active' : ''}
+                onClick={() => onUpdateStickyTextSettings({ stickyTextWeight: option.id })}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       <div className="settings-card storage-info-card">

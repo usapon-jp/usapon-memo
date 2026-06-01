@@ -29,6 +29,10 @@ export const DEFAULT_BOARDS = [
 ];
 
 export const DEFAULT_APP_TITLE = 'うさぽんメモ';
+export const DEFAULT_STICKY_TEXT_SIZE = 'standard';
+export const DEFAULT_STICKY_TEXT_WEIGHT = 'standard';
+export const STICKY_TEXT_SIZES = new Set(['small', 'standard', 'large']);
+export const STICKY_TEXT_WEIGHTS = new Set(['soft', 'standard', 'bold']);
 
 const BOARD_ICONS = new Set(['home', 'book', 'map', 'camera', 'folder']);
 const STICKER_ASSETS = new Set(['usa', 'piyo', 'pon', 'lemon']);
@@ -411,6 +415,12 @@ export const normalizeData = (data = {}) => {
   const appTitle = typeof data.appTitle === 'string' && data.appTitle.trim()
     ? data.appTitle.trim()
     : DEFAULT_APP_TITLE;
+  const stickyTextSize = STICKY_TEXT_SIZES.has(data.stickyTextSize)
+    ? data.stickyTextSize
+    : DEFAULT_STICKY_TEXT_SIZE;
+  const stickyTextWeight = STICKY_TEXT_WEIGHTS.has(data.stickyTextWeight)
+    ? data.stickyTextWeight
+    : DEFAULT_STICKY_TEXT_WEIGHT;
   const boards = normalizeBoards(data.boards);
   const boardIds = new Set(boards.map(board => board.id));
   const fallbackBoardId = boardIds.has('home') ? 'home' : boards[0].id;
@@ -437,7 +447,16 @@ export const normalizeData = (data = {}) => {
     ? data.notifiedTimeCapsuleBoardIds.filter(id => typeof id === 'string')
     : [];
 
-  return { appTitle, boards, memos, boardItems, diaryRecords, notifiedTimeCapsuleBoardIds };
+  return {
+    appTitle,
+    stickyTextSize,
+    stickyTextWeight,
+    boards,
+    memos,
+    boardItems,
+    diaryRecords,
+    notifiedTimeCapsuleBoardIds
+  };
 };
 
 export const sortMemos = (memos) => [...memos].sort((a, b) => {
