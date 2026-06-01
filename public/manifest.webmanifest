@@ -10,8 +10,8 @@
   "theme_color": "#fffaf0",
   "icons": [
     {
-      "src": "/usapon-memo/assets/usa.png",
-      "sizes": "any",
+      "src": "/usapon-memo/assets/app-icon.png",
+      "sizes": "400x400",
       "type": "image/png",
       "purpose": "any maskable"
     }
