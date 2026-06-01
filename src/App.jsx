@@ -2210,10 +2210,6 @@ function HomePage({
         </button>
       </footer>
 
-      <button type="button" className="floating-add" onClick={() => setAddMenuOpen(true)} aria-label="新規追加">
-        <Plus size={33} />
-      </button>
-
       {addMenuOpen && (
         <div className="add-sheet" role="dialog" aria-label="追加するカードを選択">
           <button type="button" className="sheet-close" onClick={() => setAddMenuOpen(false)} aria-label="閉じる">
@@ -2598,6 +2594,12 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave, onShowToast }
     '--photo-tape-color': getTapeColor(draft.tapeColor || draft.color)
   };
 
+  const resizeChecklistTextarea = (element) => {
+    if (!element) return;
+    element.style.height = 'auto';
+    element.style.height = `${element.scrollHeight}px`;
+  };
+
   useEffect(() => {
     if (!pendingFocusId.current) return;
     if (pendingFocusId.current === 'title') {
@@ -2609,6 +2611,12 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave, onShowToast }
     }
     pendingFocusId.current = null;
   }, [draft.checklist]);
+
+  useEffect(() => {
+    if (draft.cardType !== 'checklist') return;
+    resizeChecklistTextarea(primaryInputRef.current);
+    Object.values(checklistInputRefs.current).forEach(resizeChecklistTextarea);
+  }, [draft.cardType, draft.checklist]);
 
   const updateCardType = (cardType) => {
     setDraft(current => ({
@@ -3121,7 +3129,10 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave, onShowToast }
                   value={firstChecklistItem.text}
                   placeholder=""
                   aria-label="やること"
-                  onChange={(event) => updateChecklistItem(firstChecklistItem.id, { text: event.target.value })}
+                  onChange={(event) => {
+                    resizeChecklistTextarea(event.currentTarget);
+                    updateChecklistItem(firstChecklistItem.id, { text: event.target.value });
+                  }}
                   onKeyDown={(event) => {
                     if (handleChecklistEnter(event)) return;
                     handleChecklistBackspace(event, firstChecklistItem);
@@ -3154,7 +3165,10 @@ function MemoCreatePage({ boards, draft, setDraft, onBack, onSave, onShowToast }
                   value={item.text}
                   placeholder=""
                   aria-label={`${index + 2}行目のやること`}
-                  onChange={(event) => updateChecklistItem(item.id, { text: event.target.value })}
+                  onChange={(event) => {
+                    resizeChecklistTextarea(event.currentTarget);
+                    updateChecklistItem(item.id, { text: event.target.value });
+                  }}
                   onKeyDown={(event) => {
                     if (handleChecklistEnter(event)) return;
                     handleChecklistBackspace(event, item);
