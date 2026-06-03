@@ -50,7 +50,7 @@ import {
   STICKY_TEXT_WEIGHTS,
   sortMemos
 } from './memoModel.js';
-import { loadMemoData, saveMemoData } from './storage.js';
+import { LOCAL_STORAGE_QUOTA_BYTES, loadMemoData, saveMemoData } from './storage.js';
 
 const BOARD_ICON_MAP = {
   home: Home,
@@ -155,7 +155,7 @@ const createDraft = (patch = {}) => {
 const MAX_PHOTO_DATA_URL_LENGTH = 620000;
 const PHOTO_CANVAS_BACKGROUND = '#f3eadc';
 const BACKUP_VERSION = 1;
-const FALLBACK_STORAGE_QUOTA = 5 * 1024 * 1024;
+const STORAGE_FULL_MESSAGE = '保存容量がいっぱいです。写真カードを減らすか、小さめの写真に差し替えてください。';
 const ENABLE_CREATE_SETTINGS_PANEL = false;
 const BOARD_SNAPSHOT_WIDTH = 800;
 const BOARD_SNAPSHOT_RETRY_WIDTH = 640;
@@ -179,6 +179,21 @@ const formatCompressionMessage = (label, result) => {
   if (!result?.originalBytes || !result?.compressedBytes) return '';
   const savedPercent = Math.max(0, Math.round((1 - result.compressedBytes / result.originalBytes) * 100));
   return `${label}を圧縮しました: ${formatBytes(result.originalBytes)} → ${formatBytes(result.compressedBytes)}（${savedPercent}%削減）`;
+};
+
+const logImageCompressionDebug = (label, result) => {
+  const debugInfo = {
+    label,
+    originalBytes: result.originalBytes || 0,
+    compressedBytes: result.compressedBytes || 0,
+    maxStorageBytes: LOCAL_STORAGE_QUOTA_BYTES,
+    naturalWidth: result.naturalWidth || 0,
+    naturalHeight: result.naturalHeight || 0,
+    mimeType: result.mimeType || '',
+    loggedAt: new Date().toISOString()
+  };
+  globalThis.__usaponLastImageCompression = debugInfo;
+  console.log('[usapon-memo image compression]', debugInfo);
 };
 
 const normalizeLinkUrl = (value = '') => {
@@ -530,8 +545,12 @@ export default function App() {
   );
 
   useEffect(() => {
-    const ok = saveMemoData(data);
-    if (!ok) setStorageError('保存容量がいっぱいです。写真カードを減らすか、小さめの写真に差し替えてください。');
+    const ok = saveMemoData(data, { reason: 'autosave' });
+    if (!ok) {
+      setStorageError(STORAGE_FULL_MESSAGE);
+    } else {
+      setStorageError(current => current === STORAGE_FULL_MESSAGE ? '' : current);
+    }
   }, [data]);
 
   useEffect(() => {
@@ -640,7 +659,10 @@ export default function App() {
           [snapshotRequest.dateKey]: nextRecord
         }
       };
-      if (!saveMemoData(nextData)) return false;
+      if (!saveMemoData(nextData, {
+        reason: 'diary-board-snapshot',
+        attemptedSingleImageBytes: snapshotResult.compressedBytes || dataUrlByteLength(snapshotResult.dataUrl)
+      })) return false;
       setSnapshotRequest(null);
       setAppToast(formatCompressionMessage('ボード', snapshotResult));
       captureUndo('ボードスナップショットの追加');
@@ -894,7 +916,7 @@ export default function App() {
       const normalized = normalizeData(importedData);
       const confirmed = window.confirm('現在のデータをバックアップ内容で上書きします。よろしいですか？');
       if (!confirmed) return;
-      if (!saveMemoData(normalized)) {
+      if (!saveMemoData(normalized, { reason: 'backup-import' })) {
         setStorageError('バックアップの容量が大きすぎて読み込めませんでした。');
         return;
       }
@@ -1692,6 +1714,7 @@ function HomePage({
   const createImageBoardItem = async (file, position = quickAdd) => {
     if (!file || !position) return;
     const image = await resizeFreeImageFile(file);
+    logImageCompressionDebug('ボード画像', image);
     onAddBoardItem({
       type: 'image',
       boardId: activeBoardId,
@@ -2792,6 +2815,7 @@ function MemoCreatePage({
     setImageBusy(true);
     try {
       const image = await resizeImageFile(file);
+      logImageCompressionDebug('写真', image);
       setDraft(current => ({
         ...current,
         photoDataUrl: image.dataUrl,
@@ -3515,8 +3539,9 @@ function SettingsPage({
 }) {
   const [title, setTitle] = useState(appTitle);
   const backupInputRef = useRef(null);
-  const quota = storageEstimate?.quota || FALLBACK_STORAGE_QUOTA;
-  const remaining = Math.max(0, quota - (storageEstimate?.usage || storageBreakdown.total));
+  const quota = LOCAL_STORAGE_QUOTA_BYTES;
+  const remaining = Math.max(0, quota - storageBreakdown.total);
+  const browserQuota = storageEstimate?.quota || 0;
   const imagePercent = storageBreakdown.total
     ? Math.round((storageBreakdown.imageTotal / storageBreakdown.total) * 100)
     : 0;
@@ -3592,6 +3617,9 @@ function SettingsPage({
           <div><dt>現在の使用容量</dt><dd>{formatBytes(storageBreakdown.total)}</dd></div>
           <div><dt>残り容量の目安</dt><dd>{formatBytes(remaining)}</dd></div>
           <div><dt>写真・画像の割合</dt><dd>{imagePercent}%</dd></div>
+          {browserQuota > quota && (
+            <div><dt>ブラウザ全体の保存枠</dt><dd>{formatBytes(browserQuota)}</dd></div>
+          )}
         </dl>
         <div className="storage-breakdown">
           <span>写真カード <b>{formatBytes(storageBreakdown.photoCards)}</b></span>
@@ -3654,6 +3682,7 @@ function DiaryPage({ boards, records, onBack, onUpdateRecord, onAttachBoardSnaps
     let compressedBytes = 0;
     for (const file of files) {
       const image = await compressImageFile(file, { preserveTransparency: false, maxLongSide: 1200 });
+      logImageCompressionDebug('日記写真', image);
       originalBytes += image.originalBytes || 0;
       compressedBytes += image.compressedBytes || 0;
       nextPhotos.push({
