@@ -2575,7 +2575,7 @@ function BoardMemo({
           </span>
         ) : cardType === 'checklist' ? (
           <span className="mini-checklist">
-            {memo.checklist.slice(0, 4).map(item => {
+            {memo.checklist.map(item => {
               const hasText = item.text.trim().length > 0;
               if (!hasText) {
                 return <span key={item.id} className="mini-checklist-spacer" aria-hidden="true" />;

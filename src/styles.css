@@ -280,9 +280,10 @@ button {
 }
 
 .mini-checklist span {
-  display: flex;
+  display: grid;
+  grid-template-columns: 25px minmax(0, 1fr);
   align-items: flex-start;
-  gap: 5px;
+  gap: 12px;
   min-width: 0;
   overflow-wrap: anywhere;
   white-space: normal;
@@ -2314,8 +2315,8 @@ body {
 }
 
 .board-card {
-  width: 178px;
-  min-height: 158px;
+  width: 238px;
+  min-height: 198px;
   position: absolute;
   transform: translate(0, 0) rotate(var(--rotation, 0deg)) scale(var(--scale, 1));
   transform-origin: center;
@@ -2511,10 +2512,10 @@ body {
 
 .board-memo {
   grid-template-rows: 1fr;
-  padding: 32px 24px 22px;
-  border: 0;
+  padding: 45px 36px 28px;
+  border: 1px solid rgba(139, 181, 153, 0.36);
   border-radius: 4px;
-  box-shadow: 0 17px 28px rgba(87, 72, 52, 0.12);
+  box-shadow: 0 20px 34px rgba(87, 87, 74, 0.12);
 }
 
 .memo-white {
@@ -2533,8 +2534,8 @@ body {
 }
 
 .board-memo-body {
-  min-height: 64px;
-  gap: 10px;
+  min-height: 96px;
+  gap: 12px;
   color: var(--sticky-ink);
   font-size: var(--sticky-body-size);
   font-weight: var(--sticky-font-weight);
@@ -2543,18 +2544,20 @@ body {
 }
 
 .mini-checklist {
-  gap: 9px;
+  gap: calc(var(--sticky-body-size) * 0.72);
   font-size: var(--sticky-body-size);
   font-weight: var(--sticky-font-weight);
   line-height: var(--sticky-line-height);
 }
 
 .mini-check-toggle {
-  width: 12px;
-  height: 12px;
-  flex-basis: 12px;
-  margin-top: calc(var(--sticky-body-size) * 0.28);
-  border-color: var(--sticky-check);
+  width: 19px;
+  height: 19px;
+  flex: 0 0 19px;
+  margin-top: 0;
+  border: 2px solid var(--sticky-check);
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.52);
 }
 
 .schedule-preview {
@@ -2570,21 +2573,21 @@ body {
 }
 
 .photo-card {
-  width: 132px;
+  width: 238px;
   min-height: 0;
   display: block;
-  padding: 8px 8px 21px;
-  border: 1px solid rgba(101, 78, 54, 0.07);
+  padding: 45px 36px 28px;
+  border: 1px solid rgba(139, 181, 153, 0.18);
   border-radius: 4px;
   background: linear-gradient(180deg, #fffefb 0%, #fff9ee 100%);
-  box-shadow: 0 14px 24px rgba(76, 48, 28, 0.16);
+  box-shadow: 0 20px 34px rgba(87, 87, 74, 0.12);
   user-select: none;
   cursor: grab;
 }
 
 .photo-card-inner {
   display: grid;
-  gap: 7px;
+  gap: 13px;
   color: #5a4633;
   cursor: pointer;
 }
@@ -2944,12 +2947,12 @@ body {
   }
 
   .board-card {
-    width: 164px;
-    min-height: 148px;
+    width: 238px;
+    min-height: 198px;
   }
 
   .photo-card {
-    width: 132px;
+    width: 238px;
     min-height: 0;
   }
 
