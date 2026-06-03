@@ -507,6 +507,7 @@ export default function App() {
   const [undoAction, setUndoAction] = useState(null);
   const [notifications, setNotifications] = useState([]);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [hasUnreadNotifications, setHasUnreadNotifications] = useState(false);
   const [snapshotRequest, setSnapshotRequest] = useState(null);
   const [storageEstimate, setStorageEstimate] = useState(null);
   const initializedBoardRef = useRef(false);
@@ -700,6 +701,7 @@ export default function App() {
       createdAt: new Date().toISOString()
     }));
     setNotifications(current => [...nextNotifications, ...current]);
+    setHasUnreadNotifications(true);
     setNotificationsOpen(false);
     if (globalThis.Notification?.permission === 'granted') {
       nextNotifications.forEach(item => {
@@ -725,13 +727,7 @@ export default function App() {
   const undoLastAction = () => {
     if (!undoAction) return;
     setData(undoAction.data);
-    setNotifications(current => [{
-      id: `undo-${Date.now()}`,
-      type: 'undo',
-      title: '元に戻しました',
-      body: undoAction.label,
-      createdAt: new Date().toISOString()
-    }, ...current]);
+    setAppToast('元に戻しました。');
     setUndoAction(null);
   };
 
@@ -918,13 +914,23 @@ export default function App() {
       return;
     }
     const permission = await Notification.requestPermission();
-    setNotifications(current => [{
-      id: `permission-${Date.now()}`,
-      type: 'system',
-      title: permission === 'granted' ? 'ブラウザ通知を許可しました' : 'ブラウザ通知はオフです',
-      body: 'アプリ内通知はそのまま使えます',
-      createdAt: new Date().toISOString()
-    }, ...current]);
+    setAppToast(permission === 'granted'
+      ? 'ブラウザ通知を許可しました。'
+      : 'ブラウザ通知はオフです。アプリ内通知はそのまま使えます。');
+  };
+
+  const toggleNotifications = () => {
+    setNotificationsOpen(current => {
+      const nextOpen = !current;
+      if (nextOpen) {
+        setHasUnreadNotifications(false);
+      }
+      return nextOpen;
+    });
+  };
+
+  const closeNotifications = () => {
+    setNotificationsOpen(false);
   };
 
   const openNewCard = (cardType = 'checklist') => {
@@ -1091,7 +1097,7 @@ export default function App() {
           boardItems={visibleBoardItems}
           memos={visibleMemos}
           notifications={notifications}
-          hasUnreadNotification={notifications.length > 0}
+          hasUnreadNotification={hasUnreadNotifications}
           notificationsOpen={notificationsOpen}
           undoAction={undoAction}
           onAdd={openNewCard}
@@ -1115,8 +1121,8 @@ export default function App() {
           onUpdateAppTitle={updateAppTitle}
           onUndo={undoLastAction}
           onShowToast={setAppToast}
-          onToggleNotifications={() => setNotificationsOpen(current => !current)}
-          onCloseNotifications={() => setNotificationsOpen(false)}
+          onToggleNotifications={toggleNotifications}
+          onCloseNotifications={closeNotifications}
         />
       )}
 
