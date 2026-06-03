@@ -1,4 +1,5 @@
-const CACHE_NAME = 'usapon-memo-v7';
+const BUILD_ID = new URL(self.location.href).searchParams.get('v') || 'dev';
+const CACHE_NAME = `usapon-memo-${BUILD_ID}`;
 const APP_SHELL = [
   '/usapon-memo/',
   '/usapon-memo/manifest.webmanifest',
@@ -21,10 +22,16 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) => Promise.all(
-      keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
+      keys.filter((key) => key.startsWith('usapon-memo-') && key !== CACHE_NAME).map((key) => caches.delete(key))
     ))
   );
   self.clients.claim();
+});
+
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
 
 self.addEventListener('fetch', (event) => {
