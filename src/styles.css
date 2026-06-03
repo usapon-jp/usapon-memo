@@ -279,31 +279,32 @@ button {
   font-size: 12px;
 }
 
-.mini-checklist span {
+.mini-checklist > span {
   display: grid;
-  grid-template-columns: 25px minmax(0, 1fr);
-  align-items: flex-start;
+  grid-template-columns: calc(var(--sticky-body-size, 12px) * 1.35) minmax(0, 1fr);
+  align-items: baseline;
   gap: 12px;
   min-width: 0;
   overflow-wrap: anywhere;
   white-space: normal;
 }
 
-.mini-checklist span.done {
+.mini-checklist > span.done {
   color: var(--muted);
   text-decoration: line-through;
 }
 
 .mini-check-toggle {
-  width: 9px;
-  height: 9px;
-  margin: 3px 0 0;
+  width: calc(var(--sticky-body-size, 12px) * 1.12);
+  height: calc(var(--sticky-body-size, 12px) * 1.12);
+  margin: 0;
   padding: 0;
-  flex: 0 0 9px;
+  min-width: calc(var(--sticky-body-size, 12px) * 1.12);
   border: 1px solid #8c897f;
   border-radius: 2px;
   background: rgba(255, 255, 255, 0.34);
   cursor: pointer;
+  transform: translateY(0.12em);
 }
 
 .mini-checklist span.done .mini-check-toggle {
@@ -331,6 +332,16 @@ button {
 .create-actions {
   width: min(146px, calc(100% - 76px));
   bottom: max(76px, env(safe-area-inset-bottom));
+}
+
+.create-page:focus-within .create-actions {
+  width: min(180px, calc(100% - 76px));
+  position: relative;
+  left: auto;
+  bottom: auto;
+  transform: none;
+  margin: 18px auto 0;
+  z-index: 3;
 }
 
 .add-memo-button,
@@ -951,7 +962,7 @@ button {
   width: min(100%, 430px);
   min-height: 100dvh;
   margin: 0 auto;
-  padding: 54px 38px 144px;
+  padding: 42px 38px 144px;
   background: #fff;
   color: #8d8781;
 }
@@ -1022,7 +1033,7 @@ button {
   max-width: 238px;
   min-height: 198px;
   position: relative;
-  margin: 96px auto 0;
+  margin: 64px auto 0;
   padding: 45px 36px 28px;
   border: 1px solid rgba(139, 181, 153, 0.36);
   border-radius: 4px;
@@ -1197,8 +1208,8 @@ button {
 
 .checklist-form-row {
   display: grid;
-  grid-template-columns: 25px 1fr;
-  align-items: start;
+  grid-template-columns: calc(var(--sticky-body-size) * 1.35) 1fr;
+  align-items: baseline;
   gap: 12px;
 }
 
@@ -1207,13 +1218,14 @@ button {
 }
 
 .checklist-form-row input[type="checkbox"] {
-  width: 19px;
-  height: 19px;
+  width: calc(var(--sticky-body-size) * 1.12);
+  height: calc(var(--sticky-body-size) * 1.12);
   margin: 0;
   appearance: none;
   border: 2px solid var(--sticky-check);
   border-radius: 3px;
   background: rgba(255, 255, 255, 0.52);
+  transform: translateY(0.12em);
 }
 
 .checklist-form-row input[type="checkbox"]:checked {
@@ -2551,13 +2563,23 @@ body {
 }
 
 .mini-check-toggle {
-  width: 19px;
-  height: 19px;
-  flex: 0 0 19px;
+  width: calc(var(--sticky-body-size) * 1.12);
+  height: calc(var(--sticky-body-size) * 1.12);
+  min-width: calc(var(--sticky-body-size) * 1.12);
   margin-top: 0;
   border: 2px solid var(--sticky-check);
   border-radius: 3px;
   background: rgba(255, 255, 255, 0.52);
+  transform: translateY(0.12em);
+}
+
+.mini-checklist-text {
+  min-width: 0;
+  display: block;
+  padding-bottom: 1px;
+  border-bottom: 2px solid var(--sticky-rule);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .schedule-preview {
@@ -2801,7 +2823,7 @@ body {
 
 .photo-picker {
   width: 100%;
-  aspect-ratio: 1 / 0.75;
+  aspect-ratio: var(--photo-frame-ratio, 1 / 0.78);
   overflow: hidden;
   display: grid;
   place-items: center;
@@ -2811,7 +2833,7 @@ body {
 }
 
 .create-photo .photo-picker {
-  aspect-ratio: 1 / 0.78;
+  aspect-ratio: var(--photo-frame-ratio, 1 / 0.78);
   background: #f0e8dd;
   box-shadow: inset 0 0 0 1px rgba(130, 105, 82, 0.07);
   cursor: pointer;

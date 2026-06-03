@@ -2581,7 +2581,7 @@ function BoardMemo({
                 return <span key={item.id} className="mini-checklist-spacer" aria-hidden="true" />;
               }
               return (
-                <span key={item.id} className={item.completed ? 'done' : ''}>
+                <span key={item.id} className={`mini-checklist-row ${item.completed ? 'done' : ''}`}>
                   <button
                     type="button"
                     className="mini-check-toggle"
@@ -2593,7 +2593,7 @@ function BoardMemo({
                     }}
                     onKeyDown={(event) => event.stopPropagation()}
                   />
-                  {item.text}
+                  <span className="mini-checklist-text">{item.text}</span>
                 </span>
               );
             })}
@@ -3312,6 +3312,13 @@ function MemoCreatePage({
         )}
       </StickyNoteCard>
 
+      <footer className="create-actions">
+        <button type="button" onClick={cleanAndSave} disabled={!canSave || imageBusy}>
+          <Check size={23} strokeWidth={2.6} />
+          ホームに追加
+        </button>
+      </footer>
+
       <section className="memo-options">
         <div className="color-row" aria-label={paletteLabel}>
           {COLOR_OPTIONS.map(color => (
@@ -3364,13 +3371,6 @@ function MemoCreatePage({
           <img src={STICKER_MAP[draggingSticker.assetId].src} alt="" />
         </div>
       )}
-
-      <footer className="create-actions">
-        <button type="button" onClick={cleanAndSave} disabled={!canSave || imageBusy}>
-          <Check size={23} strokeWidth={2.6} />
-          ホームに追加
-        </button>
-      </footer>
     </section>
   );
 }
