@@ -62,6 +62,7 @@ export const createBoardItem = (patch = {}) => normalizeBoardItem({
   boardId: 'home',
   text: '',
   imageDataUrl: '',
+  imageId: '',
   imageMimeType: '',
   naturalWidth: 0,
   naturalHeight: 0,
@@ -111,6 +112,7 @@ export const createEmptyMemo = (patch = {}) => {
     text: '',
     checklist: [createChecklistItem()],
     photoDataUrl: '',
+    photoImageId: '',
     caption: '',
     photoCropRatio: 'custom',
     photoZoom: 1,
@@ -231,6 +233,7 @@ const migrateLegacyMemo = (memo, index) => {
     text: checklist.length > 0 ? '' : fallbackText,
     checklist,
     photoDataUrl: '',
+    photoImageId: '',
     caption: '',
     photoCropRatio: 'custom',
     photoZoom: 1,
@@ -276,6 +279,7 @@ export const normalizeMemo = (memo = {}, index = 0) => {
   const checklist = normalizeChecklist(memo.checklist);
   const text = typeof memo.text === 'string' ? memo.text.trim() : '';
   const photoDataUrl = typeof memo.photoDataUrl === 'string' ? memo.photoDataUrl : '';
+  const photoImageId = typeof memo.photoImageId === 'string' ? memo.photoImageId : '';
   const caption = typeof memo.caption === 'string' ? memo.caption.trim() : '';
   const photoCropRatio = PHOTO_CROP_RATIOS[memo.photoCropRatio] ? memo.photoCropRatio : 'custom';
   const photoZoom = Number.isFinite(Number(memo.photoZoom)) ? clamp(Number(memo.photoZoom), 1, 4) : 1;
@@ -315,6 +319,7 @@ export const normalizeMemo = (memo = {}, index = 0) => {
     text: type === 'note' ? text : '',
     checklist: type === 'checklist' ? checklist : [],
     photoDataUrl,
+    photoImageId,
     caption,
     photoCropRatio,
     photoZoom,
@@ -357,6 +362,7 @@ export const normalizeBoardItem = (item = {}, index = 0) => {
     boardId: typeof item.boardId === 'string' && item.boardId.trim() ? item.boardId.trim() : 'home',
     text: typeof item.text === 'string' ? item.text : '',
     imageDataUrl: typeof item.imageDataUrl === 'string' ? item.imageDataUrl : '',
+    imageId: typeof item.imageId === 'string' ? item.imageId : '',
     imageMimeType: typeof item.imageMimeType === 'string' ? item.imageMimeType : '',
     naturalWidth: Number.isFinite(Number(item.naturalWidth)) ? Number(item.naturalWidth) : 0,
     naturalHeight: Number.isFinite(Number(item.naturalHeight)) ? Number(item.naturalHeight) : 0,
@@ -373,6 +379,7 @@ export const normalizeBoardItem = (item = {}, index = 0) => {
 const normalizeDiaryPhoto = (photo = {}) => ({
   id: typeof photo.id === 'string' ? photo.id : createId(),
   url: typeof photo.url === 'string' ? photo.url : '',
+  imageId: typeof photo.imageId === 'string' ? photo.imageId : '',
   comment: typeof photo.comment === 'string' ? photo.comment : '',
   originalBytes: Number.isFinite(Number(photo.originalBytes)) ? Math.max(0, Number(photo.originalBytes)) : 0,
   compressedBytes: Number.isFinite(Number(photo.compressedBytes)) ? Math.max(0, Number(photo.compressedBytes)) : 0,
@@ -390,6 +397,7 @@ const normalizeDiaryBoardSnapshot = (snapshot = {}) => {
     archived: Boolean(snapshot.archived),
     capturedAt,
     snapshotDataUrl: typeof snapshot.snapshotDataUrl === 'string' ? snapshot.snapshotDataUrl : '',
+    snapshotImageId: typeof snapshot.snapshotImageId === 'string' ? snapshot.snapshotImageId : '',
     memoCount: Number.isFinite(Number(snapshot.memoCount)) ? Math.max(0, Number(snapshot.memoCount)) : 0,
     photoCount: Number.isFinite(Number(snapshot.photoCount)) ? Math.max(0, Number(snapshot.photoCount)) : 0,
     itemCount: Number.isFinite(Number(snapshot.itemCount)) ? Math.max(0, Number(snapshot.itemCount)) : 0
@@ -401,10 +409,10 @@ const normalizeDiaryRecord = (record = {}) => {
   return {
     text: typeof record.text === 'string' ? record.text : '',
     photos: Array.isArray(record.photos)
-      ? record.photos.map(normalizeDiaryPhoto).filter(photo => photo.url)
+      ? record.photos.map(normalizeDiaryPhoto).filter(photo => photo.url || photo.imageId)
       : [],
     boards: Array.isArray(record.boards)
-      ? record.boards.map(normalizeDiaryBoardSnapshot).filter(snapshot => snapshot.snapshotDataUrl)
+      ? record.boards.map(normalizeDiaryBoardSnapshot).filter(snapshot => snapshot.snapshotDataUrl || snapshot.snapshotImageId)
       : [],
     createdAt,
     updatedAt: typeof record.updatedAt === 'string' ? record.updatedAt : createdAt

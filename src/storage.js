@@ -30,8 +30,30 @@ const getImagePayloadBytes = (data = {}) => {
   return photoCards + boardImages + diaryPhotos + boardSnapshots;
 };
 
+const stripPersistedMediaPayloads = (data = {}) => ({
+  ...data,
+  memos: (data.memos || []).map(memo => (
+    memo.photoImageId ? { ...memo, photoDataUrl: '' } : memo
+  )),
+  boardItems: (data.boardItems || []).map(item => (
+    item.imageId ? { ...item, imageDataUrl: '' } : item
+  )),
+  diaryRecords: Object.fromEntries(Object.entries(data.diaryRecords || {}).map(([dateKey, record]) => [
+    dateKey,
+    {
+      ...record,
+      photos: (record.photos || []).map(photo => (
+        photo.imageId ? { ...photo, url: '' } : photo
+      )),
+      boards: (record.boards || []).map(snapshot => (
+        snapshot.snapshotImageId ? { ...snapshot, snapshotDataUrl: '' } : snapshot
+      ))
+    }
+  ]))
+});
+
 export const getMemoStorageDebugInfo = (data, extra = {}) => {
-  const normalized = normalizeData(data);
+  const normalized = stripPersistedMediaPayloads(normalizeData(data));
   const nextRaw = JSON.stringify(normalized);
   const currentRaw = localStorage.getItem(STORAGE_KEY) || '';
   const currentUsageBytes = getStringBytes(currentRaw);
@@ -64,7 +86,7 @@ export const loadMemoData = () => {
 };
 
 export const saveMemoData = (data, debugContext = {}) => {
-  const normalized = normalizeData(data);
+  const normalized = stripPersistedMediaPayloads(normalizeData(data));
   const debugInfo = getMemoStorageDebugInfo(normalized, debugContext);
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));

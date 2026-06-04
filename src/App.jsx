@@ -51,6 +51,13 @@ import {
   sortMemos
 } from './memoModel.js';
 import { LOCAL_STORAGE_QUOTA_BYTES, loadMemoData, saveMemoData } from './storage.js';
+import {
+  MEDIA_KINDS,
+  createMediaId,
+  getAllMediaRecords,
+  putMediaRecord,
+  putMediaRecords
+} from './mediaStorage.js';
 
 const BOARD_ICON_MAP = {
   home: Home,
@@ -155,7 +162,7 @@ const createDraft = (patch = {}) => {
 const MAX_PHOTO_DATA_URL_LENGTH = 620000;
 const PHOTO_CANVAS_BACKGROUND = '#f3eadc';
 const BACKUP_VERSION = 1;
-const STORAGE_FULL_MESSAGE = '保存容量がいっぱいです。写真カードを減らすか、小さめの写真に差し替えてください。';
+const STORAGE_FULL_MESSAGE = '写真保存処理に失敗しました。';
 const ENABLE_CREATE_SETTINGS_PANEL = false;
 const BOARD_SNAPSHOT_WIDTH = 800;
 const BOARD_SNAPSHOT_RETRY_WIDTH = 640;
@@ -364,6 +371,39 @@ const compressImageFile = async (file, options = {}) => {
 const resizeImageFile = async (file) => compressImageFile(file, { preserveTransparency: false, maxLongSide: 1200 });
 const resizeFreeImageFile = async (file) => compressImageFile(file, { preserveTransparency: true, maxLongSide: 1200 });
 
+const createThumbnailDataUrl = async (dataUrl, maxLongSide = 360) => {
+  if (!dataUrl) return '';
+  const image = await new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = dataUrl;
+  });
+  const scale = Math.min(1, maxLongSide / Math.max(image.width, image.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(image.width * scale));
+  canvas.height = Math.max(1, Math.round(image.height * scale));
+  const context = canvas.getContext('2d');
+  context.fillStyle = PHOTO_CANVAS_BACKGROUND;
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL('image/jpeg', 0.68);
+};
+
+const storeImageMedia = async (kind, image, preferredId) => {
+  const id = preferredId || createMediaId(kind);
+  const record = await putMediaRecord({
+    id,
+    kind,
+    dataUrl: image.dataUrl,
+    thumbnailDataUrl: await createThumbnailDataUrl(image.dataUrl),
+    mimeType: image.mimeType,
+    width: image.naturalWidth,
+    height: image.naturalHeight
+  });
+  return record;
+};
+
 const getPhotoCropClass = (ratio) => PHOTO_RATIO_CLASS[ratio] || PHOTO_RATIO_CLASS.landscape;
 const getPhotoFrameRatio = (memo) => {
   if (memo.photoCropRatio === 'square') return 1;
@@ -487,11 +527,102 @@ const getStorageBreakdown = (data = {}) => {
   };
 };
 
-const createBackupPayload = (data) => ({
+const createBackupPayload = (data, media = []) => ({
   version: BACKUP_VERSION,
   exportedAt: new Date().toISOString(),
-  data: normalizeData(data)
+  data: normalizeData(data),
+  media
 });
+
+const makeImageResultFromDataUrl = (dataUrl, mimeType = '') => ({
+  dataUrl,
+  mimeType: mimeType || dataUrl.slice(5, dataUrl.indexOf(';')) || '',
+  naturalWidth: 0,
+  naturalHeight: 0,
+  originalBytes: dataUrlByteLength(dataUrl),
+  compressedBytes: dataUrlByteLength(dataUrl)
+});
+
+const migrateLegacyMediaData = async (sourceData) => {
+  let changed = false;
+  const stats = {
+    photoCards: 0,
+    boardImages: 0,
+    diaryPhotos: 0,
+    boardSnapshots: 0,
+    bytes: 0,
+    failed: 0
+  };
+
+  const nextData = normalizeData({
+    ...sourceData,
+    memos: await Promise.all((sourceData.memos || []).map(async (memo) => {
+      if (!memo.photoDataUrl || memo.photoImageId) return memo;
+      const photoImageId = createMediaId(MEDIA_KINDS.photoCard);
+      try {
+        await storeImageMedia(MEDIA_KINDS.photoCard, makeImageResultFromDataUrl(memo.photoDataUrl, 'image/jpeg'), photoImageId);
+        stats.photoCards += 1;
+        stats.bytes += dataUrlByteLength(memo.photoDataUrl);
+        changed = true;
+        return { ...memo, photoImageId, photoDataUrl: '' };
+      } catch (error) {
+        stats.failed += 1;
+        console.warn('[usapon-memo media migration failed]', { kind: MEDIA_KINDS.photoCard, id: memo.id, error });
+        return memo;
+      }
+    })),
+    boardItems: await Promise.all((sourceData.boardItems || []).map(async (item) => {
+      if (!item.imageDataUrl || item.imageId) return item;
+      const imageId = createMediaId(MEDIA_KINDS.boardImage);
+      try {
+        await storeImageMedia(MEDIA_KINDS.boardImage, makeImageResultFromDataUrl(item.imageDataUrl, item.imageMimeType), imageId);
+        stats.boardImages += 1;
+        stats.bytes += dataUrlByteLength(item.imageDataUrl);
+        changed = true;
+        return { ...item, imageId, imageDataUrl: '' };
+      } catch (error) {
+        stats.failed += 1;
+        console.warn('[usapon-memo media migration failed]', { kind: MEDIA_KINDS.boardImage, id: item.id, error });
+        return item;
+      }
+    })),
+    diaryRecords: Object.fromEntries(await Promise.all(Object.entries(sourceData.diaryRecords || {}).map(async ([dateKey, record]) => {
+      const photos = await Promise.all((record.photos || []).map(async (photo) => {
+        if (!photo.url || photo.imageId) return photo;
+        const imageId = createMediaId(MEDIA_KINDS.diaryPhoto);
+        try {
+          await storeImageMedia(MEDIA_KINDS.diaryPhoto, makeImageResultFromDataUrl(photo.url, photo.mimeType), imageId);
+          stats.diaryPhotos += 1;
+          stats.bytes += dataUrlByteLength(photo.url);
+          changed = true;
+          return { ...photo, imageId, url: '' };
+        } catch (error) {
+          stats.failed += 1;
+          console.warn('[usapon-memo media migration failed]', { kind: MEDIA_KINDS.diaryPhoto, id: photo.id, error });
+          return photo;
+        }
+      }));
+      const boards = await Promise.all((record.boards || []).map(async (snapshot) => {
+        if (!snapshot.snapshotDataUrl || snapshot.snapshotImageId) return snapshot;
+        const snapshotImageId = createMediaId(MEDIA_KINDS.boardSnapshot);
+        try {
+          await storeImageMedia(MEDIA_KINDS.boardSnapshot, makeImageResultFromDataUrl(snapshot.snapshotDataUrl, 'image/jpeg'), snapshotImageId);
+          stats.boardSnapshots += 1;
+          stats.bytes += dataUrlByteLength(snapshot.snapshotDataUrl);
+          changed = true;
+          return { ...snapshot, snapshotImageId, snapshotDataUrl: '' };
+        } catch (error) {
+          stats.failed += 1;
+          console.warn('[usapon-memo media migration failed]', { kind: MEDIA_KINDS.boardSnapshot, id: snapshot.id, error });
+          return snapshot;
+        }
+      }));
+      return [dateKey, { ...record, photos, boards }];
+    })))
+  });
+
+  return { data: nextData, changed, stats };
+};
 
 const cloneMemoForBoard = (memo, boardId, position = {}) => normalizeMemo({
   ...memo,
@@ -525,6 +656,8 @@ export default function App() {
   const [hasUnreadNotifications, setHasUnreadNotifications] = useState(false);
   const [snapshotRequest, setSnapshotRequest] = useState(null);
   const [storageEstimate, setStorageEstimate] = useState(null);
+  const [mediaRecords, setMediaRecords] = useState([]);
+  const [mediaReady, setMediaReady] = useState(false);
   const initializedBoardRef = useRef(false);
   const snapshotStageRef = useRef(null);
   const appTitle = data.appTitle || DEFAULT_APP_TITLE;
@@ -539,19 +672,91 @@ export default function App() {
   }, [boards, now]);
   const managementBoards = useMemo(() => boards.filter(board => !board.archived), [boards]);
   const storageBreakdown = useMemo(() => getStorageBreakdown(data), [data]);
+  const mediaUrlsById = useMemo(
+    () => Object.fromEntries(mediaRecords.map(record => [record.id, record.dataUrl])),
+    [mediaRecords]
+  );
+  const mediaBreakdown = useMemo(() => mediaRecords.reduce((result, record) => {
+    const bytes = dataUrlByteLength(record.dataUrl) + dataUrlByteLength(record.thumbnailDataUrl);
+    result.total += bytes;
+    if (record.kind === MEDIA_KINDS.photoCard) result.photoCards += bytes;
+    else if (record.kind === MEDIA_KINDS.boardImage) result.boardImages += bytes;
+    else if (record.kind === MEDIA_KINDS.diaryPhoto) result.diaryPhotos += bytes;
+    else if (record.kind === MEDIA_KINDS.boardSnapshot) result.boardSnapshots += bytes;
+    return result;
+  }, {
+    total: 0,
+    photoCards: 0,
+    boardImages: 0,
+    diaryPhotos: 0,
+    boardSnapshots: 0
+  }), [mediaRecords]);
   const diaryAttachableBoards = useMemo(
     () => boards.filter(board => !board.isTimeCapsule || isTimeCapsuleOpen(board, now)),
     [boards, now]
   );
 
+  const saveMedia = async (kind, image, preferredId) => {
+    const record = await storeImageMedia(kind, image, preferredId);
+    setMediaRecords(current => [
+      record,
+      ...current.filter(item => item.id !== record.id)
+    ]);
+    console.log('[usapon-memo media save]', {
+      id: record.id,
+      kind,
+      imageBytes: dataUrlByteLength(record.dataUrl),
+      thumbnailBytes: dataUrlByteLength(record.thumbnailDataUrl),
+      localStorageBytes: storageBreakdown.total,
+      indexedDbImageBytes: mediaBreakdown.total + dataUrlByteLength(record.dataUrl) + dataUrlByteLength(record.thumbnailDataUrl)
+    });
+    return record;
+  };
+
   useEffect(() => {
+    if (!mediaReady) return;
     const ok = saveMemoData(data, { reason: 'autosave' });
     if (!ok) {
       setStorageError(STORAGE_FULL_MESSAGE);
     } else {
       setStorageError(current => current === STORAGE_FULL_MESSAGE ? '' : current);
     }
-  }, [data]);
+  }, [data, mediaReady]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const initializeMedia = async () => {
+      try {
+        const beforeBytes = storageBreakdown.total;
+        const migration = await migrateLegacyMediaData(data);
+        if (cancelled) return;
+        if (migration.changed) {
+          saveMemoData(migration.data, { reason: 'media-migration', logSuccess: true });
+          setData(migration.data);
+          console.log('[usapon-memo media migration]', {
+            beforeLocalStorageBytes: beforeBytes,
+            afterLocalStorageBytes: getStringBytes(JSON.stringify(migration.data)),
+            ...migration.stats
+          });
+        }
+        const records = await getAllMediaRecords();
+        if (!cancelled) {
+          setMediaRecords(records);
+          setMediaReady(true);
+        }
+      } catch (error) {
+        console.error('[usapon-memo media init failed]', error);
+        if (!cancelled) {
+          setMediaReady(true);
+          setStorageError(STORAGE_FULL_MESSAGE);
+        }
+      }
+    };
+    initializeMedia();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -631,8 +836,18 @@ export default function App() {
     if (!snapshotRequest || !snapshotBoard) return undefined;
     let cancelled = false;
 
-    const persistSnapshot = (snapshotResult) => {
+    const persistSnapshot = async (snapshotResult) => {
       const capturedAt = new Date().toISOString();
+      let mediaRecord;
+      try {
+        mediaRecord = await saveMedia(MEDIA_KINDS.boardSnapshot, snapshotResult);
+      } catch (error) {
+        console.error('[usapon-memo board snapshot media save failed]', {
+          imageBytes: snapshotResult.compressedBytes || dataUrlByteLength(snapshotResult.dataUrl),
+          error
+        });
+        return false;
+      }
       const record = data.diaryRecords?.[snapshotRequest.dateKey] || { text: '', photos: [], boards: [] };
       const nextSnapshot = {
         id: crypto.randomUUID(),
@@ -641,7 +856,8 @@ export default function App() {
         icon: snapshotBoard.icon,
         archived: Boolean(snapshotBoard.archived),
         capturedAt,
-        snapshotDataUrl: snapshotResult.dataUrl,
+        snapshotDataUrl: '',
+        snapshotImageId: mediaRecord.id,
         memoCount: snapshotMemos.length,
         photoCount: snapshotMemos.filter(memo => memo.cardType === 'photo').length,
         itemCount: snapshotBoardItems.length
@@ -683,16 +899,16 @@ export default function App() {
 
       try {
         const firstSnapshot = await captureBoardElement(boardElement);
-        if (!cancelled && persistSnapshot(firstSnapshot)) return;
+        if (!cancelled && await persistSnapshot(firstSnapshot)) return;
 
         const retrySnapshot = await captureBoardElement(boardElement, {
           maxWidth: BOARD_SNAPSHOT_RETRY_WIDTH,
           quality: 0.58
         });
-        if (!cancelled && persistSnapshot(retrySnapshot)) return;
+        if (!cancelled && await persistSnapshot(retrySnapshot)) return;
 
         setSnapshotRequest(null);
-        setStorageError('保存容量がいっぱいです。日記の写真やボード画像を減らしてから、もう一度試してください。');
+        setStorageError(STORAGE_FULL_MESSAGE);
       } catch (error) {
         console.error('Failed to capture board snapshot', error);
         setSnapshotRequest(null);
@@ -757,6 +973,7 @@ export default function App() {
     captureUndo('メモの保存');
     const nextMemo = normalizeMemo({
       ...memo,
+      photoDataUrl: memo.photoImageId ? '' : memo.photoDataUrl,
       updatedAt: new Date().toISOString()
     });
 
@@ -893,8 +1110,9 @@ export default function App() {
     }));
   };
 
-  const exportBackup = () => {
-    const payload = createBackupPayload(data);
+  const exportBackup = async () => {
+    const media = await getAllMediaRecords();
+    const payload = createBackupPayload(data, media);
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
@@ -913,16 +1131,32 @@ export default function App() {
       const text = await file.text();
       const parsed = JSON.parse(text);
       const importedData = parsed?.data && typeof parsed.data === 'object' ? parsed.data : parsed;
+      const importedMedia = Array.isArray(parsed?.media) ? parsed.media : [];
       const normalized = normalizeData(importedData);
       const confirmed = window.confirm('現在のデータをバックアップ内容で上書きします。よろしいですか？');
       if (!confirmed) return;
-      if (!saveMemoData(normalized, { reason: 'backup-import' })) {
+      if (importedMedia.length) {
+        await putMediaRecords(importedMedia);
+      }
+      const migration = await migrateLegacyMediaData(normalized);
+      const nextData = migration.data;
+      if (!saveMemoData(nextData, { reason: 'backup-import', logSuccess: true })) {
         setStorageError('バックアップの容量が大きすぎて読み込めませんでした。');
         return;
       }
+      const records = await getAllMediaRecords();
       setStorageError('');
-      setData(normalized);
-      setActiveBoardId(normalized.boards[0]?.id || 'home');
+      setData(nextData);
+      setMediaRecords(records);
+      setActiveBoardId(nextData.boards[0]?.id || 'home');
+      console.log('[usapon-memo backup import]', {
+        importedMediaCount: importedMedia.length,
+        migratedLegacyMedia: migration.stats,
+        localStorageBytes: getStringBytes(JSON.stringify(nextData)),
+        indexedDbMediaBytes: records.reduce((sum, record) => (
+          sum + dataUrlByteLength(record.dataUrl) + dataUrlByteLength(record.thumbnailDataUrl)
+        ), 0)
+      });
       setAppToast('バックアップを読み込みました。');
     } catch (error) {
       console.error('Backup import failed', error);
@@ -1092,7 +1326,11 @@ export default function App() {
   };
 
   const openEditMemo = (memo) => {
-    setDraft(normalizeMemo(memo));
+    const photoDataUrl = memo.photoDataUrl || (memo.photoImageId ? mediaUrlsById[memo.photoImageId] : '');
+    setDraft(normalizeMemo({
+      ...memo,
+      photoDataUrl
+    }));
     setPage('create');
   };
 
@@ -1118,12 +1356,14 @@ export default function App() {
           allBoardItems={allBoardItems}
           boardItems={visibleBoardItems}
           memos={visibleMemos}
+          mediaUrlsById={mediaUrlsById}
           notifications={notifications}
           hasUnreadNotification={hasUnreadNotifications}
           notificationsOpen={notificationsOpen}
           undoAction={undoAction}
           onAdd={openNewCard}
           onAddBoardItem={addBoardItem}
+          onSaveMedia={saveMedia}
           onBoardChange={setActiveBoardId}
           onOpenList={() => setPage('list')}
           onOpenPage={setPage}
@@ -1157,6 +1397,7 @@ export default function App() {
           setDraft={setDraft}
           onBack={() => setPage('home')}
           onSave={saveMemo}
+          onSaveMedia={saveMedia}
           onShowToast={setAppToast}
         />
       )}
@@ -1188,6 +1429,7 @@ export default function App() {
             && isBoardVisibleInLibrary(boardById[memo.boardId], now)
           ))}
           boards={boards}
+          mediaUrlsById={mediaUrlsById}
           onBack={() => setPage('home')}
           onOpen={openMemoFromList}
           onArchive={archiveMemo}
@@ -1224,6 +1466,7 @@ export default function App() {
           stickyTextSize={stickyTextSize}
           stickyTextWeight={stickyTextWeight}
           storageBreakdown={storageBreakdown}
+          mediaBreakdown={mediaBreakdown}
           storageEstimate={storageEstimate}
           onBack={() => setPage('home')}
           onUpdateAppTitle={updateAppTitle}
@@ -1246,9 +1489,11 @@ export default function App() {
         <DiaryPage
           boards={diaryAttachableBoards}
           records={data.diaryRecords || {}}
+          mediaUrlsById={mediaUrlsById}
           onBack={() => setPage('home')}
           onUpdateRecord={updateDiaryRecord}
           onAttachBoardSnapshot={attachBoardSnapshotToDiary}
+          onSaveMedia={saveMedia}
           onShowToast={setAppToast}
         />
       )}
@@ -1259,6 +1504,7 @@ export default function App() {
           board={snapshotBoard}
           memos={snapshotMemos}
           boardItems={snapshotBoardItems}
+          mediaUrlsById={mediaUrlsById}
           stickyTextSize={stickyTextSize}
           stickyTextWeight={stickyTextWeight}
         />
@@ -1267,7 +1513,7 @@ export default function App() {
   );
 }
 
-function BoardSnapshotStage({ refTarget, board, memos, boardItems, stickyTextSize, stickyTextWeight }) {
+function BoardSnapshotStage({ refTarget, board, memos, boardItems, mediaUrlsById, stickyTextSize, stickyTextWeight }) {
   return (
     <div className="snapshot-capture-stage" ref={refTarget} aria-hidden="true">
       <div className="sticky-board cork-board">
@@ -1277,6 +1523,7 @@ function BoardSnapshotStage({ refTarget, board, memos, boardItems, stickyTextSiz
             memo={memo}
             stickyTextSize={stickyTextSize}
             stickyTextWeight={stickyTextWeight}
+            mediaUrlsById={mediaUrlsById}
             isDragging={false}
             onPointerDown={() => {}}
             onEdit={() => {}}
@@ -1287,6 +1534,7 @@ function BoardSnapshotStage({ refTarget, board, memos, boardItems, stickyTextSiz
           <BoardFreeItem
             key={item.id}
             item={item}
+            mediaUrlsById={mediaUrlsById}
             isDragging={false}
             onPointerDown={() => {}}
           />
@@ -1314,12 +1562,14 @@ function HomePage({
   allBoardItems,
   boardItems,
   memos,
+  mediaUrlsById,
   notifications,
   hasUnreadNotification,
   notificationsOpen,
   undoAction,
   onAdd,
   onAddBoardItem,
+  onSaveMedia,
   onBoardChange,
   onOpenList,
   onOpenPage,
@@ -1715,10 +1965,22 @@ function HomePage({
     if (!file || !position) return;
     const image = await resizeFreeImageFile(file);
     logImageCompressionDebug('ボード画像', image);
+    let mediaRecord;
+    try {
+      mediaRecord = await onSaveMedia?.(MEDIA_KINDS.boardImage, image);
+    } catch (error) {
+      console.error('[usapon-memo board image media save failed]', {
+        imageBytes: image.compressedBytes || dataUrlByteLength(image.dataUrl),
+        error
+      });
+      onShowToast?.(STORAGE_FULL_MESSAGE);
+      return;
+    }
     onAddBoardItem({
       type: 'image',
       boardId: activeBoardId,
-      imageDataUrl: image.dataUrl,
+      imageDataUrl: '',
+      imageId: mediaRecord?.id || '',
       imageMimeType: image.mimeType,
       naturalWidth: image.naturalWidth,
       naturalHeight: image.naturalHeight,
@@ -2217,6 +2479,7 @@ function HomePage({
                 memo={memo}
                 stickyTextSize={stickyTextSize}
                 stickyTextWeight={stickyTextWeight}
+                mediaUrlsById={mediaUrlsById}
                 isDragging={draggingMemoId === memo.id}
                 onPointerDown={(event) => handlePointerDown(event, memo)}
                 onContextMenu={(event) => openMemoMenu(event, memo)}
@@ -2229,6 +2492,7 @@ function HomePage({
             <BoardFreeItem
               key={item.id}
               item={item}
+              mediaUrlsById={mediaUrlsById}
               isDragging={draggingBoardItemId === item.id}
               onPointerDown={(event) => handleBoardItemPointerDown(event, item)}
             />
@@ -2483,6 +2747,7 @@ function BoardMemo({
   memo,
   stickyTextSize,
   stickyTextWeight,
+  mediaUrlsById = {},
   isDragging,
   onPointerDown,
   onContextMenu,
@@ -2491,6 +2756,7 @@ function BoardMemo({
 }) {
   const hasTitle = memo.title.trim().length > 0;
   const cardType = memo.cardType || (memo.type === 'checklist' ? 'checklist' : 'note');
+  const photoSrc = memo.photoDataUrl || (memo.photoImageId ? mediaUrlsById[memo.photoImageId] : '');
   const style = {
     left: `${memo.x}%`,
     top: `${memo.y}%`,
@@ -2514,12 +2780,12 @@ function BoardMemo({
         <div className="photo-card-inner" role="button" tabIndex={0} onClick={onEdit} onKeyDown={(event) => {
           if (event.key === 'Enter' || event.key === ' ') onEdit();
         }}>
-          {memo.photoDataUrl ? (
+          {photoSrc ? (
             <span className={`photo-card-frame photo-crop-frame ${getPhotoCropClass(memo.photoCropRatio)}`} style={{ '--photo-frame-ratio': getPhotoFrameRatio(memo) }}>
-              <img className="photo-card-image" src={memo.photoDataUrl} alt={memo.caption || memo.title || '写真'} style={getPhotoImageStyle(memo)} />
+              <img className="photo-card-image" src={photoSrc} alt={memo.caption || memo.title || '写真'} style={getPhotoImageStyle(memo)} />
             </span>
           ) : (
-            <span className="photo-card-frame photo-placeholder"><Camera size={27} />写真</span>
+            <span className="photo-card-frame photo-placeholder"><Camera size={27} />画像を読み込めません</span>
           )}
           {memo.caption && <div className="photo-card-caption">{memo.caption}</div>}
         </div>
@@ -2606,13 +2872,15 @@ function BoardMemo({
   );
 }
 
-function BoardFreeItem({ item, isDragging, onPointerDown }) {
+function BoardFreeItem({ item, mediaUrlsById = {}, isDragging, onPointerDown }) {
   const style = {
     left: `${item.x}%`,
     top: `${item.y}%`,
     '--rotation': `${item.rotation || 0}deg`,
     '--scale': item.scale || 1
   };
+
+  const imageSrc = item.imageDataUrl || (item.imageId ? mediaUrlsById[item.imageId] : '');
 
   return (
     <article
@@ -2623,7 +2891,7 @@ function BoardFreeItem({ item, isDragging, onPointerDown }) {
       onPointerDown={onPointerDown}
     >
       {item.type === 'image' ? (
-        <img src={item.imageDataUrl} alt="" draggable={false} />
+        imageSrc ? <img src={imageSrc} alt="" draggable={false} /> : <span>画像を読み込めません</span>
       ) : (
         <span>{item.text}</span>
       )}
@@ -2687,6 +2955,7 @@ function MemoCreatePage({
   setDraft,
   onBack,
   onSave,
+  onSaveMedia,
   onShowToast
 }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -2704,7 +2973,7 @@ function MemoCreatePage({
   const checklistInputRefs = useRef({});
   const pendingFocusId = useRef(null);
   const canSave = draft.cardType === 'photo'
-    ? Boolean(draft.photoDataUrl || draft.caption.trim() || draft.title.trim())
+    ? Boolean(draft.photoDataUrl || draft.photoImageId || draft.caption.trim() || draft.title.trim())
     : draft.cardType === 'schedule'
       ? Boolean(draft.title.trim() || draft.scheduleDate || draft.scheduleTime || draft.schedulePlace || draft.stickers.length)
       : draft.cardType === 'link'
@@ -2816,9 +3085,11 @@ function MemoCreatePage({
     try {
       const image = await resizeImageFile(file);
       logImageCompressionDebug('写真', image);
+      const mediaRecord = await onSaveMedia?.(MEDIA_KINDS.photoCard, image);
       setDraft(current => ({
         ...current,
         photoDataUrl: image.dataUrl,
+        photoImageId: mediaRecord?.id || current.photoImageId,
         caption: current.caption || current.title,
         photoCropRatio: 'custom',
         photoZoom: 1,
@@ -2830,6 +3101,9 @@ function MemoCreatePage({
       }));
       onShowToast?.(formatCompressionMessage('写真', image));
       setPhotoToolsOpen(false);
+    } catch (error) {
+      console.error('[usapon-memo photo media save failed]', error);
+      onShowToast?.(STORAGE_FULL_MESSAGE);
     } finally {
       setImageBusy(false);
       event.target.value = '';
@@ -2840,6 +3114,7 @@ function MemoCreatePage({
     setDraft(current => ({
       ...current,
       photoDataUrl: '',
+      photoImageId: '',
       photoZoom: 1,
       photoOffsetX: 0,
       photoOffsetY: 0,
@@ -2888,7 +3163,7 @@ function MemoCreatePage({
   };
 
   const startPhotoDrag = (event) => {
-    if (!draft.photoDataUrl) return;
+    if (!draft.photoDataUrl && !draft.photoImageId) return;
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
     photoPointersRef.current.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
@@ -3043,6 +3318,7 @@ function MemoCreatePage({
   const cleanAndSave = () => {
     const nextDraft = normalizeMemo({
       ...draft,
+      photoDataUrl: draft.photoImageId ? '' : draft.photoDataUrl,
       linkUrl: draft.cardType === 'link' ? normalizeLinkUrl(draft.linkUrl) : draft.linkUrl,
       linkTitle: draft.cardType === 'link' ? (draft.linkTitle.trim() || getLinkHost(draft.linkUrl)) : draft.linkTitle,
       checklist: draft.cardType === 'checklist'
@@ -3058,7 +3334,7 @@ function MemoCreatePage({
       onPointerDown={(event) => {
         if (
           draft.cardType === 'photo'
-          && draft.photoDataUrl
+          && (draft.photoDataUrl || draft.photoImageId)
           && !event.target.closest('.photo-picker')
           && !event.target.closest('.photo-tools')
         ) {
@@ -3133,9 +3409,9 @@ function MemoCreatePage({
               style={{ '--photo-frame-ratio': getPhotoFrameRatio(draft) }}
               role="button"
               tabIndex={0}
-              aria-label={draft.photoDataUrl ? '写真の切り抜き位置を調整' : '写真を選ぶ'}
+              aria-label={draft.photoDataUrl || draft.photoImageId ? '写真の切り抜き位置を調整' : '写真を選ぶ'}
               onClick={() => {
-                if (draft.photoDataUrl) {
+                if (draft.photoDataUrl || draft.photoImageId) {
                   setPhotoToolsOpen(true);
                 } else {
                   photoInputRef.current?.click();
@@ -3144,7 +3420,7 @@ function MemoCreatePage({
               onKeyDown={(event) => {
                 if (event.key === 'Enter' || event.key === ' ') {
                   event.preventDefault();
-                  if (!draft.photoDataUrl) photoInputRef.current?.click();
+                  if (!draft.photoDataUrl && !draft.photoImageId) photoInputRef.current?.click();
                 }
               }}
               onPointerDown={startPhotoDrag}
@@ -3157,11 +3433,13 @@ function MemoCreatePage({
                 <>
                   <img src={draft.photoDataUrl} alt="選択した写真" style={getPhotoImageStyle(draft)} draggable="false" />
                 </>
+              ) : draft.photoImageId ? (
+                <span><Camera size={28} />画像を読み込み中</span>
               ) : (
                 <span><ImagePlus size={28} />{imageBusy ? '読み込み中' : '写真を選ぶ'}</span>
               )}
             </div>
-            {draft.photoDataUrl && photoToolsOpen && (
+            {(draft.photoDataUrl || draft.photoImageId) && photoToolsOpen && (
               <div className="photo-tools" aria-label="写真操作">
                 <div className="photo-tool-actions">
                   <button type="button" onClick={() => photoInputRef.current?.click()}>差し替え</button>
@@ -3502,7 +3780,7 @@ function MemoListPage({ title, memos, boards, onBack, onOpen, onArchive }) {
   );
 }
 
-function PhotoListPage({ memos, boards, onBack, onOpen, onArchive }) {
+function PhotoListPage({ memos, boards, mediaUrlsById = {}, onBack, onOpen, onArchive }) {
   const boardById = useMemo(() => Object.fromEntries(boards.map(board => [board.id, board])), [boards]);
   return (
     <section className="list-page">
@@ -3512,7 +3790,9 @@ function PhotoListPage({ memos, boards, onBack, onOpen, onArchive }) {
         {memos.map(memo => (
           <article key={memo.id} className="photo-list-card">
             <button type="button" onClick={() => onOpen(memo)}>
-              {memo.photoDataUrl ? <img src={memo.photoDataUrl} alt={memo.caption || '写真'} /> : <Camera size={28} />}
+              {memo.photoDataUrl || mediaUrlsById[memo.photoImageId]
+                ? <img src={memo.photoDataUrl || mediaUrlsById[memo.photoImageId]} alt={memo.caption || '写真'} />
+                : <Camera size={28} />}
               <strong>{getMemoPrimaryText(memo)}</strong>
               <small>{boardById[memo.boardId]?.label || 'ボードなし'}</small>
             </button>
@@ -3529,6 +3809,7 @@ function SettingsPage({
   stickyTextSize,
   stickyTextWeight,
   storageBreakdown,
+  mediaBreakdown,
   storageEstimate,
   onBack,
   onUpdateAppTitle,
@@ -3542,8 +3823,9 @@ function SettingsPage({
   const quota = LOCAL_STORAGE_QUOTA_BYTES;
   const remaining = Math.max(0, quota - storageBreakdown.total);
   const browserQuota = storageEstimate?.quota || 0;
-  const imagePercent = storageBreakdown.total
-    ? Math.round((storageBreakdown.imageTotal / storageBreakdown.total) * 100)
+  const totalAppBytes = storageBreakdown.total + mediaBreakdown.total;
+  const imagePercent = totalAppBytes
+    ? Math.round(((mediaBreakdown.total + storageBreakdown.imageTotal) / totalAppBytes) * 100)
     : 0;
 
   const saveTitle = () => {
@@ -3614,18 +3896,19 @@ function SettingsPage({
           <span style={{ width: `${Math.min(100, (storageBreakdown.total / quota) * 100)}%` }} />
         </div>
         <dl className="storage-stats">
-          <div><dt>現在の使用容量</dt><dd>{formatBytes(storageBreakdown.total)}</dd></div>
-          <div><dt>残り容量の目安</dt><dd>{formatBytes(remaining)}</dd></div>
+          <div><dt>localStorage使用量</dt><dd>{formatBytes(storageBreakdown.total)}</dd></div>
+          <div><dt>IndexedDB画像容量</dt><dd>{formatBytes(mediaBreakdown.total)}</dd></div>
+          <div><dt>localStorage残り目安</dt><dd>{formatBytes(remaining)}</dd></div>
           <div><dt>写真・画像の割合</dt><dd>{imagePercent}%</dd></div>
           {browserQuota > quota && (
             <div><dt>ブラウザ全体の保存枠</dt><dd>{formatBytes(browserQuota)}</dd></div>
           )}
         </dl>
         <div className="storage-breakdown">
-          <span>写真カード <b>{formatBytes(storageBreakdown.photoCards)}</b></span>
-          <span>日記写真 <b>{formatBytes(storageBreakdown.diaryPhotos)}</b></span>
-          <span>ボード画像 <b>{formatBytes(storageBreakdown.boardImages)}</b></span>
-          <span>ボードスクショ <b>{formatBytes(storageBreakdown.boardSnapshots)}</b></span>
+          <span>写真カード <b>{formatBytes(mediaBreakdown.photoCards + storageBreakdown.photoCards)}</b></span>
+          <span>日記写真 <b>{formatBytes(mediaBreakdown.diaryPhotos + storageBreakdown.diaryPhotos)}</b></span>
+          <span>ボード画像 <b>{formatBytes(mediaBreakdown.boardImages + storageBreakdown.boardImages)}</b></span>
+          <span>ボードスクショ <b>{formatBytes(mediaBreakdown.boardSnapshots + storageBreakdown.boardSnapshots)}</b></span>
           <span>その他 <b>{formatBytes(storageBreakdown.other)}</b></span>
         </div>
       </div>
@@ -3656,7 +3939,7 @@ function SettingsPage({
   );
 }
 
-function DiaryPage({ boards, records, onBack, onUpdateRecord, onAttachBoardSnapshot, onShowToast }) {
+function DiaryPage({ boards, records, mediaUrlsById = {}, onBack, onUpdateRecord, onAttachBoardSnapshot, onSaveMedia, onShowToast }) {
   const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [pasteOpen, setPasteOpen] = useState(false);
   const fileInputRef = useRef(null);
@@ -3680,19 +3963,27 @@ function DiaryPage({ boards, records, onBack, onUpdateRecord, onAttachBoardSnaps
     const nextPhotos = [];
     let originalBytes = 0;
     let compressedBytes = 0;
-    for (const file of files) {
-      const image = await compressImageFile(file, { preserveTransparency: false, maxLongSide: 1200 });
-      logImageCompressionDebug('日記写真', image);
-      originalBytes += image.originalBytes || 0;
-      compressedBytes += image.compressedBytes || 0;
-      nextPhotos.push({
-        id: crypto.randomUUID(),
-        url: image.dataUrl,
-        comment: '',
-        originalBytes: image.originalBytes,
-        compressedBytes: image.compressedBytes,
-        mimeType: image.mimeType
-      });
+    try {
+      for (const file of files) {
+        const image = await compressImageFile(file, { preserveTransparency: false, maxLongSide: 1200 });
+        logImageCompressionDebug('日記写真', image);
+        originalBytes += image.originalBytes || 0;
+        compressedBytes += image.compressedBytes || 0;
+        const mediaRecord = await onSaveMedia?.(MEDIA_KINDS.diaryPhoto, image);
+        nextPhotos.push({
+          id: crypto.randomUUID(),
+          url: '',
+          imageId: mediaRecord?.id || '',
+          comment: '',
+          originalBytes: image.originalBytes,
+          compressedBytes: image.compressedBytes,
+          mimeType: image.mimeType
+        });
+      }
+    } catch (error) {
+      console.error('[usapon-memo diary photo media save failed]', error);
+      onShowToast?.(STORAGE_FULL_MESSAGE);
+      return;
     }
     if (nextPhotos.length > 0) {
       onShowToast?.(formatCompressionMessage('日記写真', { originalBytes, compressedBytes }));
@@ -3742,7 +4033,9 @@ function DiaryPage({ boards, records, onBack, onUpdateRecord, onAttachBoardSnaps
         <div className="diary-photo-list">
           {(record.photos || []).map((photo, index) => (
             <article key={photo.id || index} className="diary-photo-card">
-              <img src={photo.url} alt="" />
+              {photo.url || mediaUrlsById[photo.imageId]
+                ? <img src={photo.url || mediaUrlsById[photo.imageId]} alt="" />
+                : <span className="image-missing">画像を読み込めません</span>}
               <input
                 value={photo.comment || ''}
                 placeholder="コメント"
@@ -3775,7 +4068,9 @@ function DiaryPage({ boards, records, onBack, onUpdateRecord, onAttachBoardSnaps
         <div className="diary-board-snapshot-list">
           {(record.boards || []).map(snapshot => (
             <article key={snapshot.id} className="diary-board-snapshot-card">
-              <img src={snapshot.snapshotDataUrl} alt={`${snapshot.label}のスクショ`} />
+              {snapshot.snapshotDataUrl || mediaUrlsById[snapshot.snapshotImageId]
+                ? <img src={snapshot.snapshotDataUrl || mediaUrlsById[snapshot.snapshotImageId]} alt={`${snapshot.label}のスクショ`} />
+                : <span className="image-missing">画像を読み込めません</span>}
               <div>
                 <strong>{snapshot.label}{snapshot.archived ? '（アーカイブ）' : ''}</strong>
                 <span>{formatDiaryCapturedAt(snapshot.capturedAt)}</span>
