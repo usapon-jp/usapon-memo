@@ -1038,6 +1038,7 @@ button {
   border: 1px solid rgba(139, 181, 153, 0.36);
   border-radius: 4px;
   box-shadow: 0 20px 34px rgba(87, 87, 74, 0.12);
+  touch-action: none;
 }
 
 .sticky-note-card {
@@ -1176,10 +1177,42 @@ button {
   font-weight: var(--sticky-title-weight);
   line-height: var(--sticky-line-height);
   outline: none;
+  touch-action: auto;
 }
 
 .memo-title-input::placeholder {
   color: rgba(141, 135, 129, 0.48);
+}
+
+.content-offset-layer {
+  transform: translate(var(--content-x, 0), var(--content-y, 0));
+  transition: transform 140ms ease;
+}
+
+.create-content-layer {
+  position: relative;
+  z-index: 3;
+}
+
+.content-center-button {
+  min-height: 28px;
+  position: absolute;
+  right: -24px;
+  top: -34px;
+  z-index: 10;
+  border: 0;
+  border-radius: 999px;
+  padding: 0 12px;
+  background: rgba(255, 250, 245, 0.94);
+  color: #8d7a64;
+  font-size: 11px;
+  font-weight: 800;
+  box-shadow: 0 8px 14px rgba(90, 76, 58, 0.12);
+  cursor: pointer;
+}
+
+.content-center-button[hidden] {
+  display: none;
 }
 
 .create-card textarea {
@@ -1197,6 +1230,7 @@ button {
   font-weight: var(--sticky-font-weight);
   line-height: var(--sticky-line-height);
   outline: none;
+  touch-action: auto;
 }
 
 .checklist-form {
@@ -1254,6 +1288,7 @@ button {
   outline: none;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
+  touch-action: auto;
 }
 
 .checklist-add-empty {
@@ -2365,13 +2400,7 @@ body {
 }
 
 .link-preview small {
-  max-width: 100%;
-  color: rgba(109, 81, 55, 0.56);
-  font-size: 7px;
-  font-weight: 800;
-  line-height: 1.25;
-  overflow-wrap: anywhere;
-  text-align: center;
+  display: none;
 }
 
 .board-item {

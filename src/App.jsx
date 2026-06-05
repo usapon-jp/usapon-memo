@@ -166,6 +166,7 @@ const STORAGE_FULL_MESSAGE = '写真保存処理に失敗しました。';
 const ENABLE_CREATE_SETTINGS_PANEL = false;
 const BOARD_SNAPSHOT_WIDTH = 800;
 const BOARD_SNAPSHOT_RETRY_WIDTH = 640;
+const CONTENT_OFFSET_LIMIT = 90;
 
 const nextFrame = () => new Promise(resolve => requestAnimationFrame(() => resolve()));
 
@@ -425,6 +426,11 @@ const getPhotoImageStyle = (memo) => {
     '--photo-fit-height': imageRatio >= frameRatio ? 'auto' : '100%'
   };
 };
+
+const getContentOffsetStyle = (memo) => ({
+  '--content-x': `${memo.contentOffsetX || 0}px`,
+  '--content-y': `${memo.contentOffsetY || 0}px`
+});
 
 const getPointerDistance = (first, second) => Math.hypot(second.clientX - first.clientX, second.clientY - first.clientY);
 const getPointerAngle = (first, second) => Math.atan2(second.clientY - first.clientY, second.clientX - first.clientX) * 180 / Math.PI;
@@ -2757,6 +2763,16 @@ function BoardMemo({
   const hasTitle = memo.title.trim().length > 0;
   const cardType = memo.cardType || (memo.type === 'checklist' ? 'checklist' : 'note');
   const photoSrc = memo.photoDataUrl || (memo.photoImageId ? mediaUrlsById[memo.photoImageId] : '');
+  const openMemoLink = () => {
+    if (memo.linkUrl) window.open(normalizeLinkUrl(memo.linkUrl), '_blank', 'noopener,noreferrer');
+  };
+  const handleMemoBodyOpen = () => {
+    if (cardType === 'link') {
+      openMemoLink();
+      return;
+    }
+    onEdit();
+  };
   const style = {
     left: `${memo.x}%`,
     top: `${memo.y}%`,
@@ -2808,8 +2824,8 @@ function BoardMemo({
       onContextMenu={onContextMenu}
       stickerLayer={<StickerLayer stickers={memo.stickers} />}
     >
-      <div className="board-memo-body" role="button" tabIndex={0} onClick={onEdit} onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') onEdit();
+      <div className="board-memo-body content-offset-layer" style={getContentOffsetStyle(memo)} role="button" tabIndex={0} onClick={handleMemoBodyOpen} onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') handleMemoBodyOpen();
       }}>
         {hasTitle && <strong className="board-memo-title">{memo.title}</strong>}
         {cardType === 'schedule' ? (
@@ -2825,19 +2841,18 @@ function BoardMemo({
             tabIndex={0}
             onClick={(event) => {
               event.stopPropagation();
-              if (memo.linkUrl) window.open(normalizeLinkUrl(memo.linkUrl), '_blank', 'noopener,noreferrer');
+              openMemoLink();
             }}
             onKeyDown={(event) => {
               if (event.key === 'Enter' || event.key === ' ') {
                 event.preventDefault();
                 event.stopPropagation();
-                if (memo.linkUrl) window.open(normalizeLinkUrl(memo.linkUrl), '_blank', 'noopener,noreferrer');
+                openMemoLink();
               }
             }}
           >
             <LinkIcon size={18} />
             <span>{memo.linkTitle || getLinkHost(memo.linkUrl)}</span>
-            <small>{memo.linkUrl}</small>
           </span>
         ) : cardType === 'checklist' ? (
           <span className="mini-checklist">
@@ -2970,6 +2985,8 @@ function MemoCreatePage({
   const createCardRef = useRef(null);
   const photoPointersRef = useRef(new globalThis.Map());
   const photoGestureRef = useRef(null);
+  const contentPointersRef = useRef(new globalThis.Map());
+  const contentGestureRef = useRef(null);
   const checklistInputRefs = useRef({});
   const pendingFocusId = useRef(null);
   const canSave = draft.cardType === 'photo'
@@ -3204,6 +3221,68 @@ function MemoCreatePage({
     resetPhotoGesture();
   };
 
+  const resetContentGesture = () => {
+    const pointers = [...contentPointersRef.current.values()];
+    if (draft.cardType === 'photo' || pointers.length < 2) {
+      contentGestureRef.current = null;
+      return;
+    }
+
+    const [first, second] = pointers;
+    contentGestureRef.current = {
+      center: getPointerCenter(first, second),
+      offsetX: draft.contentOffsetX || 0,
+      offsetY: draft.contentOffsetY || 0
+    };
+  };
+
+  const startContentAdjust = (event) => {
+    if (
+      draft.cardType === 'photo'
+      || event.target.closest('button')
+      || event.target.closest('.photo-editor')
+      || event.target.closest('.memo-sticker-wrap')
+      || event.target.closest('.sticker-delete')
+      || event.target.closest('.content-center-button')
+    ) return;
+
+    contentPointersRef.current.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
+    if (contentPointersRef.current.size >= 2) {
+      event.preventDefault();
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+      resetContentGesture();
+    }
+  };
+
+  const moveContentAdjust = (event) => {
+    if (!contentPointersRef.current.has(event.pointerId)) return;
+    contentPointersRef.current.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
+    const pointers = [...contentPointersRef.current.values()];
+    if (draft.cardType === 'photo' || pointers.length < 2) return;
+
+    event.preventDefault();
+    if (!contentGestureRef.current) resetContentGesture();
+    const gesture = contentGestureRef.current;
+    if (!gesture) return;
+
+    const [first, second] = pointers;
+    const center = getPointerCenter(first, second);
+    setDraft(current => ({
+      ...current,
+      contentOffsetX: clamp(gesture.offsetX + center.x - gesture.center.x, -CONTENT_OFFSET_LIMIT, CONTENT_OFFSET_LIMIT),
+      contentOffsetY: clamp(gesture.offsetY + center.y - gesture.center.y, -CONTENT_OFFSET_LIMIT, CONTENT_OFFSET_LIMIT)
+    }));
+  };
+
+  const stopContentAdjust = (event) => {
+    contentPointersRef.current.delete(event.pointerId);
+    if (contentPointersRef.current.size < 2) {
+      contentGestureRef.current = null;
+      return;
+    }
+    resetContentGesture();
+  };
+
   const addSticker = (assetId, position = {}) => {
     const sticker = createSticker(assetId, position);
     setDraft(current => ({
@@ -3372,6 +3451,11 @@ function MemoCreatePage({
         textWeight={stickyTextWeight}
         className={`create-card create-${draft.cardType}`}
         style={createCardStyle}
+        onPointerDown={startContentAdjust}
+        onPointerMove={moveContentAdjust}
+        onPointerUp={stopContentAdjust}
+        onPointerCancel={stopContentAdjust}
+        onPointerLeave={stopContentAdjust}
         onDragOver={(event) => draft.cardType !== 'photo' && event.preventDefault()}
         onDrop={(event) => draft.cardType !== 'photo' && dropSticker(event)}
         stickerLayer={draft.cardType !== 'photo' ? (
@@ -3384,24 +3468,6 @@ function MemoCreatePage({
           />
         ) : null}
       >
-        {draft.cardType !== 'photo' && (
-          <input
-            ref={titleInputRef}
-            className="memo-title-input"
-            type="text"
-            value={draft.title}
-            placeholder="見出し"
-            aria-label="メモの見出し"
-            onChange={(event) => setDraft(current => ({ ...current, title: event.target.value }))}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                event.preventDefault();
-                primaryInputRef.current?.focus();
-              }
-            }}
-          />
-        )}
-
         {draft.cardType === 'photo' ? (
           <div className="photo-editor">
             <div
@@ -3456,136 +3522,166 @@ function MemoCreatePage({
               onChange={(event) => setDraft(current => ({ ...current, caption: event.target.value }))}
             />
           </div>
-        ) : draft.cardType === 'link' ? (
-          <div className="link-editor">
-            <label>
-              <LinkIcon size={17} />
-              <input
-                ref={primaryInputRef}
-                type="url"
-                value={draft.linkUrl}
-                placeholder="https://example.com"
-                aria-label="リンクURL"
-                onChange={(event) => setDraft(current => ({
-                  ...current,
-                  linkUrl: event.target.value,
-                  linkTitle: current.linkTitle || getLinkHost(event.target.value)
-                }))}
-                onBlur={(event) => setDraft(current => ({
-                  ...current,
-                  linkUrl: normalizeLinkUrl(event.target.value),
-                  linkTitle: current.linkTitle || getLinkHost(event.target.value)
-                }))}
-              />
-            </label>
-            <input
-              type="text"
-              value={draft.linkTitle}
-              placeholder="リンクのタイトル"
-              aria-label="リンクタイトル"
-              onChange={(event) => setDraft(current => ({ ...current, linkTitle: event.target.value }))}
-            />
-          </div>
-        ) : draft.cardType === 'schedule' ? (
-          <div className="schedule-editor">
-            <label>
-              <CalendarDays size={16} />
-              <input
-                ref={primaryInputRef}
-                type="date"
-                value={draft.scheduleDate}
-                onChange={(event) => setDraft(current => ({ ...current, scheduleDate: event.target.value }))}
-                aria-label="日付"
-              />
-            </label>
-            <label>
-              <Clock size={16} />
-              <input
-                type="time"
-                value={draft.scheduleTime}
-                onChange={(event) => setDraft(current => ({ ...current, scheduleTime: event.target.value }))}
-                aria-label="時間"
-              />
-            </label>
-            <input
-              type="text"
-              value={draft.schedulePlace}
-              placeholder="場所"
-              aria-label="場所"
-              onChange={(event) => setDraft(current => ({ ...current, schedulePlace: event.target.value }))}
-            />
-          </div>
-        ) : draft.cardType === 'note' ? (
-          <textarea
-            ref={primaryInputRef}
-            value={draft.text}
-            placeholder=""
-            aria-label="メモ本文"
-            onChange={(event) => setDraft(current => ({ ...current, text: event.target.value }))}
-          />
         ) : (
-          <div className="checklist-form">
-            {firstChecklistItem ? (
-              <label className="checklist-form-row">
+          <div className="create-content-layer content-offset-layer" style={getContentOffsetStyle(draft)}>
+            <button
+              type="button"
+              className="content-center-button"
+              onClick={(event) => {
+                event.stopPropagation();
+                setDraft(current => ({ ...current, contentOffsetX: 0, contentOffsetY: 0 }));
+              }}
+              hidden={!draft.contentOffsetX && !draft.contentOffsetY}
+            >
+              中央に戻す
+            </button>
+            <input
+              ref={titleInputRef}
+              className="memo-title-input"
+              type="text"
+              value={draft.title}
+              placeholder="見出し"
+              aria-label="メモの見出し"
+              onChange={(event) => setDraft(current => ({ ...current, title: event.target.value }))}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  primaryInputRef.current?.focus();
+                }
+              }}
+            />
+            {draft.cardType === 'link' ? (
+              <div className="link-editor">
+                <label>
+                  <LinkIcon size={17} />
+                  <input
+                    ref={primaryInputRef}
+                    type="url"
+                    value={draft.linkUrl}
+                    placeholder="https://example.com"
+                    aria-label="リンクURL"
+                    onChange={(event) => setDraft(current => ({
+                      ...current,
+                      linkUrl: event.target.value,
+                      linkTitle: current.linkTitle || getLinkHost(event.target.value)
+                    }))}
+                    onBlur={(event) => setDraft(current => ({
+                      ...current,
+                      linkUrl: normalizeLinkUrl(event.target.value),
+                      linkTitle: current.linkTitle || getLinkHost(event.target.value)
+                    }))}
+                  />
+                </label>
                 <input
-                  type="checkbox"
-                  checked={firstChecklistItem.completed}
-                  onChange={(event) => updateChecklistItem(firstChecklistItem.id, { completed: event.target.checked })}
-                  aria-label="1行目を完了"
+                  type="text"
+                  value={draft.linkTitle}
+                  placeholder="リンクのタイトル"
+                  aria-label="リンクタイトル"
+                  onChange={(event) => setDraft(current => ({ ...current, linkTitle: event.target.value }))}
                 />
-                <textarea
-                  ref={primaryInputRef}
-                  rows={1}
-                  value={firstChecklistItem.text}
-                  placeholder=""
-                  aria-label="やること"
-                  onChange={(event) => {
-                    resizeChecklistTextarea(event.currentTarget);
-                    updateChecklistItem(firstChecklistItem.id, { text: event.target.value });
-                  }}
-                  onKeyDown={(event) => {
-                    if (handleChecklistEnter(event)) return;
-                    handleChecklistBackspace(event, firstChecklistItem);
-                  }}
+              </div>
+            ) : draft.cardType === 'schedule' ? (
+              <div className="schedule-editor">
+                <label>
+                  <CalendarDays size={16} />
+                  <input
+                    ref={primaryInputRef}
+                    type="date"
+                    value={draft.scheduleDate}
+                    onChange={(event) => setDraft(current => ({ ...current, scheduleDate: event.target.value }))}
+                    aria-label="日付"
+                  />
+                </label>
+                <label>
+                  <Clock size={16} />
+                  <input
+                    type="time"
+                    value={draft.scheduleTime}
+                    onChange={(event) => setDraft(current => ({ ...current, scheduleTime: event.target.value }))}
+                    aria-label="時間"
+                  />
+                </label>
+                <input
+                  type="text"
+                  value={draft.schedulePlace}
+                  placeholder="場所"
+                  aria-label="場所"
+                  onChange={(event) => setDraft(current => ({ ...current, schedulePlace: event.target.value }))}
                 />
-              </label>
+              </div>
+            ) : draft.cardType === 'note' ? (
+              <textarea
+                ref={primaryInputRef}
+                value={draft.text}
+                placeholder=""
+                aria-label="メモ本文"
+                onChange={(event) => setDraft(current => ({ ...current, text: event.target.value }))}
+              />
             ) : (
-              <button type="button" className="checklist-add-empty" onClick={addChecklistItem}>
-                <Plus size={18} />
-                項目を追加
-              </button>
+              <div className="checklist-form">
+                {firstChecklistItem ? (
+                  <label className="checklist-form-row">
+                    <input
+                      type="checkbox"
+                      checked={firstChecklistItem.completed}
+                      onChange={(event) => updateChecklistItem(firstChecklistItem.id, { completed: event.target.checked })}
+                      aria-label="1行目を完了"
+                    />
+                    <textarea
+                      ref={primaryInputRef}
+                      rows={1}
+                      value={firstChecklistItem.text}
+                      placeholder=""
+                      aria-label="やること"
+                      onChange={(event) => {
+                        resizeChecklistTextarea(event.currentTarget);
+                        updateChecklistItem(firstChecklistItem.id, { text: event.target.value });
+                      }}
+                      onKeyDown={(event) => {
+                        if (handleChecklistEnter(event)) return;
+                        handleChecklistBackspace(event, firstChecklistItem);
+                      }}
+                    />
+                  </label>
+                ) : (
+                  <button type="button" className="checklist-add-empty" onClick={addChecklistItem}>
+                    <Plus size={18} />
+                    項目を追加
+                  </button>
+                )}
+                {draft.checklist.slice(1).map((item, index) => (
+                  <label key={item.id} className="checklist-form-row is-secondary">
+                    <input
+                      type="checkbox"
+                      checked={item.completed}
+                      onChange={(event) => updateChecklistItem(item.id, { completed: event.target.checked })}
+                      aria-label={`${index + 2}行目を完了`}
+                    />
+                    <textarea
+                      ref={(element) => {
+                        if (element) {
+                          checklistInputRefs.current[item.id] = element;
+                        } else {
+                          delete checklistInputRefs.current[item.id];
+                        }
+                      }}
+                      rows={1}
+                      value={item.text}
+                      placeholder=""
+                      aria-label={`${index + 2}行目のやること`}
+                      onChange={(event) => {
+                        resizeChecklistTextarea(event.currentTarget);
+                        updateChecklistItem(item.id, { text: event.target.value });
+                      }}
+                      onKeyDown={(event) => {
+                        if (handleChecklistEnter(event)) return;
+                        handleChecklistBackspace(event, item);
+                      }}
+                    />
+                  </label>
+                ))}
+              </div>
             )}
-            {draft.checklist.slice(1).map((item, index) => (
-              <label key={item.id} className="checklist-form-row is-secondary">
-                <input
-                  type="checkbox"
-                  checked={item.completed}
-                  onChange={(event) => updateChecklistItem(item.id, { completed: event.target.checked })}
-                  aria-label={`${index + 2}行目を完了`}
-                />
-                <textarea
-                  ref={(element) => {
-                    if (element) {
-                      checklistInputRefs.current[item.id] = element;
-                    } else {
-                      delete checklistInputRefs.current[item.id];
-                    }
-                  }}
-                  rows={1}
-                  value={item.text}
-                  placeholder=""
-                  aria-label={`${index + 2}行目のやること`}
-                  onChange={(event) => {
-                    resizeChecklistTextarea(event.currentTarget);
-                    updateChecklistItem(item.id, { text: event.target.value });
-                  }}
-                  onKeyDown={(event) => {
-                    if (handleChecklistEnter(event)) return;
-                    handleChecklistBackspace(event, item);
-                  }}
-                />
-              </label>
-            ))}
           </div>
         )}
       </StickyNoteCard>

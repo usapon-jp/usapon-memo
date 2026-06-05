@@ -132,6 +132,8 @@ export const createEmptyMemo = (patch = {}) => {
     y: 12,
     scale: 1,
     rotation: 0,
+    contentOffsetX: 0,
+    contentOffsetY: 0,
     pinned: false,
     isToday: false,
     completed: false,
@@ -253,6 +255,8 @@ const migrateLegacyMemo = (memo, index) => {
     y: position.y,
     scale: 1,
     rotation: 0,
+    contentOffsetX: 0,
+    contentOffsetY: 0,
     pinned: false,
     isToday: false,
     completed: memo.status === 'completed',
@@ -309,6 +313,12 @@ export const normalizeMemo = (memo = {}, index = 0) => {
       .map(sticker => createSticker(sticker.assetId, sticker))
       .filter(sticker => STICKER_ASSETS.has(sticker.assetId))
     : [];
+  const contentOffsetX = Number.isFinite(Number(memo.contentOffsetX))
+    ? clamp(Number(memo.contentOffsetX), -90, 90)
+    : 0;
+  const contentOffsetY = Number.isFinite(Number(memo.contentOffsetY))
+    ? clamp(Number(memo.contentOffsetY), -90, 90)
+    : 0;
 
   return {
     id: typeof memo.id === 'string' ? memo.id : createId(),
@@ -339,6 +349,8 @@ export const normalizeMemo = (memo = {}, index = 0) => {
     y: Number.isFinite(Number(memo.y)) ? clamp(Number(memo.y)) : position.y,
     scale: Number.isFinite(Number(memo.scale)) ? clamp(Number(memo.scale), 0.55, 2.4) : 1,
     rotation: Number.isFinite(Number(memo.rotation)) ? clamp(Number(memo.rotation), -180, 180) : 0,
+    contentOffsetX,
+    contentOffsetY,
     pinned: Boolean(memo.pinned),
     isToday: Boolean(memo.isToday),
     completed: Boolean(memo.completed),
