@@ -1349,10 +1349,18 @@ export default function App() {
   };
 
   const moveBoard = (boardId, direction) => {
+    const directionOffsets = {
+      prev: -1,
+      up: -1,
+      next: 1,
+      down: 1
+    };
+    const offset = directionOffsets[direction];
+    if (!offset) return;
+
     captureUndo('ボードの並び替え');
     setData(current => {
       const index = current.boards.findIndex(board => board.id === boardId);
-      const offset = direction === 'prev' || direction === 'up' ? -1 : 1;
       if (index < 0 || current.boards.length < 2) return current;
       const nextIndex = (index + offset + current.boards.length) % current.boards.length;
       const nextBoards = [...current.boards];
@@ -1693,6 +1701,8 @@ function HomePage({
   const [selectedBoardItemId, setSelectedBoardItemId] = useState('');
   const [pasteMenu, setPasteMenu] = useState(null);
   const boardRef = useRef(null);
+  const boardTabsScrollRef = useRef(null);
+  const boardTabRefsRef = useRef(new globalThis.Map());
   const trashRef = useRef(null);
   const directImageInputRef = useRef(null);
   const activeCardRef = useRef(null);
@@ -1704,7 +1714,6 @@ function HomePage({
   const dragMemoRef = useRef(null);
   const trashActiveRef = useRef(false);
   const swipeStartRef = useRef(null);
-  const boardTabsSwipeStartRef = useRef(null);
   const longPressTimerRef = useRef(null);
   const boardPressTimerRef = useRef(null);
   const boardPressOriginRef = useRef(null);
@@ -1724,6 +1733,31 @@ function HomePage({
   useEffect(() => {
     if (!titleEditing) setTitleDraft(appTitle);
   }, [appTitle, titleEditing]);
+
+  const scrollBoardTabIntoView = (boardId = activeBoardIdRef.current, behavior = 'smooth') => {
+    const activeTab = boardTabRefsRef.current.get(boardId);
+    if (!activeTab) return;
+    activeTab.scrollIntoView({
+      behavior,
+      block: 'nearest',
+      inline: 'center'
+    });
+  };
+
+  const markCurrentBoardActive = () => {
+    scrollBoardTabIntoView(activeBoardIdRef.current);
+  };
+
+  useEffect(() => {
+    const activeTab = boardTabRefsRef.current.get(activeBoardId);
+    if (!activeTab) return undefined;
+
+    const frameId = window.requestAnimationFrame(() => {
+      scrollBoardTabIntoView(activeBoardId);
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [activeBoardId, boards]);
 
   const consumeSuppressedCardTap = () => {
     if (!suppressCardTapRef.current) return false;
@@ -1768,6 +1802,7 @@ function HomePage({
 
   const patchSelectedBoardText = (patch) => {
     if (!selectedBoardItem) return;
+    markCurrentBoardActive();
     onBeginMove('テキストの装飾');
     onMoveBoardItem(selectedBoardItem.id, patch);
   };
@@ -1867,6 +1902,7 @@ function HomePage({
 
   const handlePointerDown = (event, memo) => {
     if (!boardRef.current || event.target.closest('input, textarea, button')) return;
+    markCurrentBoardActive();
     window.clearTimeout(memoLongPressTimerRef.current);
     memoLongPressFiredRef.current = false;
     memoLongPressOriginRef.current = { clientX: event.clientX, clientY: event.clientY };
@@ -1886,6 +1922,7 @@ function HomePage({
     const startMemoDrag = () => {
       if (cardDragStartedRef.current) return;
       cardDragStartedRef.current = true;
+      markCurrentBoardActive();
       onBeginMove('メモの移動');
       setDraggingMemoId(memo.id);
     };
@@ -1996,6 +2033,7 @@ function HomePage({
 
   const handleBoardItemPointerDown = (event, item) => {
     if (!boardRef.current || event.target.closest('input, textarea, button')) return;
+    markCurrentBoardActive();
     event.preventDefault();
     event.stopPropagation();
     const origin = { clientX: event.clientX, clientY: event.clientY };
@@ -2016,6 +2054,7 @@ function HomePage({
     const startItemDrag = () => {
       if (cardDragStartedRef.current) return;
       cardDragStartedRef.current = true;
+      markCurrentBoardActive();
       setSelectedBoardItemId('');
       onBeginMove(item.type === 'image' ? '画像の移動' : 'テキストの移動');
       setDraggingBoardItemId(item.id);
@@ -2070,6 +2109,7 @@ function HomePage({
         onDeleteBoardItem(item.id);
         setSelectedBoardItemId('');
       } else if (!cardDragStartedRef.current && item.type === 'text') {
+        markCurrentBoardActive();
         setSelectedBoardItemId(item.id);
         setQuickAdd(null);
         setPasteMenu(null);
@@ -2098,6 +2138,7 @@ function HomePage({
     const position = getBoardPositionFromEvent(event);
     boardPressOriginRef.current = { clientX: event.clientX, clientY: event.clientY };
     boardPressTimerRef.current = window.setTimeout(() => {
+      markCurrentBoardActive();
       boardLongPressFiredRef.current = true;
       setQuickAdd(null);
       setPasteMenu({ ...position, clientX: event.clientX, clientY: event.clientY });
@@ -2120,6 +2161,7 @@ function HomePage({
   const commitDirectText = () => {
     const text = directText?.text?.trim();
     if (text && directText?.id) {
+      markCurrentBoardActive();
       onBeginMove('テキストの編集');
       onMoveBoardItem(directText.id, {
         text,
@@ -2129,6 +2171,7 @@ function HomePage({
       });
       setSelectedBoardItemId(directText.id);
     } else if (text) {
+      markCurrentBoardActive();
       onAddBoardItem({
         type: 'text',
         boardId: activeBoardId,
@@ -2146,6 +2189,7 @@ function HomePage({
   const startDirectText = () => {
     const position = quickAdd || pasteMenu;
     if (!position) return;
+    markCurrentBoardActive();
     setDirectText({
       x: clamp(position.x, 32, 68),
       y: position.y,
@@ -2161,6 +2205,7 @@ function HomePage({
 
   const editSelectedBoardText = () => {
     if (!selectedBoardItem) return;
+    markCurrentBoardActive();
     setDirectText({
       id: selectedBoardItem.id,
       x: selectedBoardItem.x,
@@ -2176,6 +2221,7 @@ function HomePage({
 
   const createImageBoardItem = async (file, position = quickAdd) => {
     if (!file || !position) return;
+    markCurrentBoardActive();
     const image = await resizeFreeImageFile(file);
     logImageCompressionDebug('ボード画像', image);
     let mediaRecord;
@@ -2208,6 +2254,7 @@ function HomePage({
   const pasteFromClipboard = async () => {
     const position = pasteMenu || quickAdd;
     if (!position) return;
+    markCurrentBoardActive();
     if (copiedMemo) {
       onPasteMemoCopy(copiedMemo, activeBoardId, {
         x: position.x,
@@ -2230,6 +2277,7 @@ function HomePage({
       }
       const text = await navigator.clipboard?.readText?.();
       if (text?.trim()) {
+        markCurrentBoardActive();
         onAddBoardItem({
           type: 'text',
           boardId: activeBoardId,
@@ -2293,33 +2341,8 @@ function HomePage({
     changeBoardBySwipeDistance(distance);
   };
 
-  const handleBoardTabsTouchStart = (event) => {
-    if (boardReorderMode || boardMenu || event.touches.length !== 1) return;
-    const touch = event.touches[0];
-    boardTabsSwipeStartRef.current = {
-      x: touch.clientX,
-      y: touch.clientY,
-      time: Date.now()
-    };
-  };
-
-  const handleBoardTabsTouchEnd = (event) => {
-    if (boardTabsSwipeStartRef.current === null) return;
-    const touch = event.changedTouches[0];
-    const distance = touch.clientX - boardTabsSwipeStartRef.current.x;
-    const verticalDistance = touch.clientY - boardTabsSwipeStartRef.current.y;
-    const elapsed = Date.now() - boardTabsSwipeStartRef.current.time;
-    boardTabsSwipeStartRef.current = null;
-    if (
-      Math.abs(distance) < 74
-      || Math.abs(verticalDistance) > 42
-      || Math.abs(distance) < Math.abs(verticalDistance) * 1.8
-      || elapsed > 850
-    ) return;
-    changeBoardBySwipeDistance(distance);
-  };
-
   const chooseAddType = (cardType) => {
+    markCurrentBoardActive();
     setAddMenuOpen(false);
     onAdd(cardType);
   };
@@ -2347,7 +2370,6 @@ function HomePage({
   };
 
   const startBoardLongPress = (event, board) => {
-    event.preventDefault();
     if (boardReorderMode) {
       if (!event.target.closest('.board-tab-label')) setBoardReorderMode(false);
       return;
@@ -2551,16 +2573,21 @@ function HomePage({
       <nav
         className="board-tabs"
         aria-label="ボード切替"
-        onTouchStart={handleBoardTabsTouchStart}
-        onTouchEnd={handleBoardTabsTouchEnd}
       >
-        <div className="board-tabs-scroll">
+        <div className="board-tabs-scroll" ref={boardTabsScrollRef}>
           {boards.map((board, index) => {
             const Icon = BOARD_ICON_MAP[board.icon] || Folder;
             return (
               <button
                 key={board.id}
                 type="button"
+                ref={(element) => {
+                  if (element) {
+                    boardTabRefsRef.current.set(board.id, element);
+                  } else {
+                    boardTabRefsRef.current.delete(board.id);
+                  }
+                }}
                 className={`${board.id === activeBoardId ? 'active' : ''} ${boardReorderMode ? 'is-wiggling' : ''}`}
                 onPointerDown={(event) => startBoardLongPress(event, board)}
                 onPointerUp={clearBoardLongPress}
@@ -2734,10 +2761,12 @@ function HomePage({
             boardLongPressFiredRef.current = false;
             return;
           }
+          markCurrentBoardActive();
         }}>
           {memos.length === 0 && boardItems.length === 0 ? (
             <button type="button" className="board-empty cork-empty" onClick={(event) => {
               event.stopPropagation();
+              markCurrentBoardActive();
               closeBoardFloatingMenus();
               setSelectedBoardItemId('');
             }}>
@@ -2756,7 +2785,10 @@ function HomePage({
                 isDragging={draggingMemoId === memo.id}
                 onPointerDown={(event) => handlePointerDown(event, memo)}
                 onContextMenu={(event) => openMemoMenu(event, memo)}
-                onEdit={() => onEdit(memo)}
+                onEdit={() => {
+                  markCurrentBoardActive();
+                  onEdit(memo);
+                }}
                 onToggleChecklistItem={onToggleChecklistItem}
                 shouldSuppressTap={consumeSuppressedCardTap}
               />

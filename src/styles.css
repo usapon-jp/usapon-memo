@@ -2188,9 +2188,18 @@ body {
   gap: 10px;
   overflow-x: auto;
   padding: 0 2px;
+  scroll-padding-inline: max(2px, calc(50% - 52px));
   scrollbar-width: none;
+  touch-action: pan-x;
+  -webkit-overflow-scrolling: touch;
   -webkit-user-select: none;
   user-select: none;
+}
+
+.board-tabs-scroll::before,
+.board-tabs-scroll::after {
+  content: "";
+  flex: 0 0 max(0px, calc(50% - 52px));
 }
 
 .board-tabs::-webkit-scrollbar,
@@ -2232,7 +2241,7 @@ body {
 .board-tab-label {
   display: inline-flex;
   align-items: center;
-  touch-action: none;
+  touch-action: pan-x;
   -webkit-user-select: none;
   user-select: none;
 }
