@@ -38,6 +38,8 @@ export const DEFAULT_NOTE_WIDTH = 238;
 export const DEFAULT_NOTE_HEIGHT = 198;
 export const DEFAULT_PHOTO_CARD_WIDTH = 238;
 export const DEFAULT_PHOTO_CARD_HEIGHT = 300;
+export const BOARD_ITEM_MAX_Y = 64;
+export const MEMO_CARD_MAX_Y = 58;
 export const STICKY_TEXT_SIZES = new Set(['small', 'standard', 'large']);
 export const STICKY_TEXT_WEIGHTS = new Set(['soft', 'standard', 'bold']);
 export const BOARD_TEXT_COLORS = {
@@ -391,7 +393,7 @@ export const normalizeMemo = (memo = {}, index = 0) => {
     color: MEMO_COLORS[memo.color] ? memo.color : 'yellow',
     tapeColor,
     x: Number.isFinite(Number(memo.x)) ? clamp(Number(memo.x)) : position.x,
-    y: Number.isFinite(Number(memo.y)) ? clamp(Number(memo.y)) : position.y,
+    y: Number.isFinite(Number(memo.y)) ? clamp(Number(memo.y), 0, MEMO_CARD_MAX_Y) : position.y,
     scale: Number.isFinite(Number(memo.scale)) ? clamp(Number(memo.scale), 0.55, 2.4) : 1,
     rotation: Number.isFinite(Number(memo.rotation)) ? clamp(Number(memo.rotation), -180, 180) : 0,
     noteWidth,
@@ -435,7 +437,7 @@ export const normalizeBoardItem = (item = {}, index = 0) => {
     naturalWidth: Number.isFinite(Number(item.naturalWidth)) ? Number(item.naturalWidth) : 0,
     naturalHeight: Number.isFinite(Number(item.naturalHeight)) ? Number(item.naturalHeight) : 0,
     x: Number.isFinite(Number(item.x)) ? clamp(Number(item.x), -8, 88) : position.x,
-    y: Number.isFinite(Number(item.y)) ? clamp(Number(item.y), -8, 88) : position.y,
+    y: Number.isFinite(Number(item.y)) ? clamp(Number(item.y), -8, BOARD_ITEM_MAX_Y) : position.y,
     scale: Number.isFinite(Number(item.scale)) ? clamp(Number(item.scale), 0.3, 3.2) : 1,
     rotation: Number.isFinite(Number(item.rotation)) ? clamp(Number(item.rotation), -180, 180) : 0,
     textColor,

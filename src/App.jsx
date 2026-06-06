@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import {
   BOARD_TEXT_COLORS,
+  BOARD_ITEM_MAX_Y,
   MEMO_COLORS,
   PHOTO_CROP_RATIOS,
   clamp,
@@ -43,6 +44,7 @@ import {
   DEFAULT_BOARD_TEXT_COLOR,
   DEFAULT_BOARD_TEXT_SIZE,
   DEFAULT_BOARD_TEXT_WEIGHT,
+  MEMO_CARD_MAX_Y,
   DEFAULT_NOTE_HEIGHT,
   DEFAULT_NOTE_WIDTH,
   DEFAULT_PHOTO_CARD_HEIGHT,
@@ -1752,23 +1754,43 @@ function HomePage({
     onMoveBoardItem(selectedBoardItem.id, patch);
   };
 
+  const closeBoardFloatingMenus = () => {
+    setQuickAdd(null);
+    setPasteMenu(null);
+  };
+
   const getBoardPoint = (clientX, clientY, boardRect) => ({
     x: ((clientX - boardRect.left) / boardRect.width) * 100,
     y: ((clientY - boardRect.top) / boardRect.height) * 100
   });
 
-  const getMemoPointPatch = (clientX, clientY, gesture) => {
+  const getMemoPointPatch = (clientX, clientY, gesture, maxY = MEMO_CARD_MAX_Y) => {
     const point = getBoardPoint(clientX, clientY, gesture.boardRect);
     return {
       x: clamp(point.x - gesture.grabOffsetX, 1, 70),
-      y: clamp(point.y - gesture.grabOffsetY, 1, 80)
+      y: clamp(point.y - gesture.grabOffsetY, 1, maxY)
     };
   };
 
-  const updateTrashHover = () => {
+  const updateTrashHover = (clientX = null, clientY = null) => {
     const trashRect = trashRef.current?.getBoundingClientRect();
     const cardRect = activeCardRef.current?.getBoundingClientRect();
-    if (!trashRect || !cardRect) {
+    if (!trashRect) {
+      setTrashHover(false);
+      return;
+    }
+
+    if (Number.isFinite(clientX) && Number.isFinite(clientY)) {
+      setTrashHover(
+        clientX >= trashRect.left
+        && clientX <= trashRect.right
+        && clientY >= trashRect.top
+        && clientY <= trashRect.bottom
+      );
+      return;
+    }
+
+    if (!cardRect) {
       setTrashHover(false);
       return;
     }
@@ -1891,7 +1913,7 @@ function HomePage({
         const nextRotation = clamp(gesture.rotation + getPointerAngle(points[0], points[1]) - gesture.angle, -180, 180);
         const patch = {
           x: clamp(gesture.x + ((center.x - gesture.center.x) / gesture.boardRect.width) * 100, -8, 88),
-          y: clamp(gesture.y + ((center.y - gesture.center.y) / gesture.boardRect.height) * 100, -8, 88),
+          y: clamp(gesture.y + ((center.y - gesture.center.y) / gesture.boardRect.height) * 100, -8, MEMO_CARD_MAX_Y),
           scale: nextScale,
           rotation: nextRotation
         };
@@ -1902,7 +1924,7 @@ function HomePage({
         startMemoDrag();
         patchDraggedMemo(memo.id, getMemoPointPatch(moveEvent.clientX, moveEvent.clientY, cardGestureRef.current));
       }
-      window.requestAnimationFrame(updateTrashHover);
+      window.requestAnimationFrame(() => updateTrashHover(moveEvent.clientX, moveEvent.clientY));
     };
 
     const stopMove = (stopEvent) => {
@@ -1989,7 +2011,7 @@ function HomePage({
         const center = getPointerCenter(points[0], points[1]);
         patchDraggedBoardItem(item.id, {
           x: clamp(gesture.x + ((center.x - gesture.center.x) / gesture.boardRect.width) * 100, -8, 88),
-          y: clamp(gesture.y + ((center.y - gesture.center.y) / gesture.boardRect.height) * 100, -8, 88),
+          y: clamp(gesture.y + ((center.y - gesture.center.y) / gesture.boardRect.height) * 100, -8, BOARD_ITEM_MAX_Y),
           scale: clamp(gesture.scale * (getPointerDistance(points[0], points[1]) / gesture.distance), 0.3, 3.2),
           rotation: clamp(gesture.rotation + getPointerAngle(points[0], points[1]) - gesture.angle, -180, 180)
         });
@@ -1998,9 +2020,9 @@ function HomePage({
         if (!cardDragStartedRef.current && moveDistance <= 8) return;
         moveEvent.preventDefault();
         startItemDrag();
-        patchDraggedBoardItem(item.id, getMemoPointPatch(moveEvent.clientX, moveEvent.clientY, cardGestureRef.current));
+        patchDraggedBoardItem(item.id, getMemoPointPatch(moveEvent.clientX, moveEvent.clientY, cardGestureRef.current, BOARD_ITEM_MAX_Y));
       }
-      window.requestAnimationFrame(updateTrashHover);
+      window.requestAnimationFrame(() => updateTrashHover(moveEvent.clientX, moveEvent.clientY));
     };
 
     const stopItem = (stopEvent) => {
@@ -2036,7 +2058,7 @@ function HomePage({
     if (!rect) return { x: 18, y: 18 };
     return {
       x: clamp(((event.clientX - rect.left) / rect.width) * 100, 0, 88),
-      y: clamp(((event.clientY - rect.top) / rect.height) * 100, 0, 88)
+      y: clamp(((event.clientY - rect.top) / rect.height) * 100, 4, BOARD_ITEM_MAX_Y)
     };
   };
 
@@ -2096,7 +2118,7 @@ function HomePage({
     const position = quickAdd || pasteMenu;
     if (!position) return;
     setDirectText({
-      x: position.x,
+      x: clamp(position.x, 32, 68),
       y: position.y,
       text: '',
       textColor: DEFAULT_BOARD_TEXT_COLOR,
@@ -2436,6 +2458,9 @@ function HomePage({
       onClick={(event) => {
         if (boardMenu) setBoardMenu(null);
         if (memoMenu) setMemoMenu(null);
+        if (!event.target.closest('.quick-add-menu, .board-item, .direct-text-toolbar, .direct-text-editor')) {
+          closeBoardFloatingMenus();
+        }
         if (!event.target.closest('.board-item, .direct-text-toolbar, .direct-text-editor')) {
           setSelectedBoardItemId('');
         }
@@ -2676,6 +2701,7 @@ function HomePage({
       >
         <div ref={boardRef} className="sticky-board cork-board" onClick={(event) => {
           if (boardLongPressFiredRef.current) {
+            event.stopPropagation();
             boardLongPressFiredRef.current = false;
             return;
           }
@@ -2683,6 +2709,8 @@ function HomePage({
           {memos.length === 0 && boardItems.length === 0 ? (
             <button type="button" className="board-empty cork-empty" onClick={(event) => {
               event.stopPropagation();
+              closeBoardFloatingMenus();
+              setSelectedBoardItemId('');
             }}>
               <StickyNote size={28} />
               <strong>ここに貼っていこう</strong>
@@ -3196,14 +3224,16 @@ function BoardTextToolbar({ item, onEdit, onPatch, onDelete }) {
 }
 
 function BoardFreeItem({ item, mediaUrlsById = {}, isDragging, isSelected = false, onPointerDown }) {
+  const textColor = getBoardTextColor(item.textColor || DEFAULT_BOARD_TEXT_COLOR);
   const style = {
     left: `${item.x}%`,
     top: `${item.y}%`,
     '--rotation': `${item.rotation || 0}deg`,
     '--scale': item.scale || 1,
-    '--board-text-color': getBoardTextColor(item.textColor),
+    '--board-text-color': textColor,
     '--board-text-size': `${getBoardTextSize(item.textSize)}px`,
-    '--board-text-weight': getBoardTextWeight(item.textWeight)
+    '--board-text-weight': getBoardTextWeight(item.textWeight),
+    color: textColor
   };
 
   const imageSrc = item.imageDataUrl || (item.imageId ? mediaUrlsById[item.imageId] : '');

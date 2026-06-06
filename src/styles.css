@@ -2380,8 +2380,8 @@ body {
 }
 
 .cork-board-wrap {
-  height: calc(100dvh - 140px);
-  min-height: 0;
+  height: calc(100dvh - 218px);
+  min-height: 320px;
   position: relative;
   padding: 0;
   overflow: hidden;
@@ -2506,13 +2506,14 @@ body {
 .board-free-text {
   max-width: 210px;
   color: var(--board-text-color, #fff8ea);
+  -webkit-text-fill-color: var(--board-text-color, #fff8ea);
   font-family: "HuiFontP", "ふい字Ｐ", "ふい字P", "Klee One", "Hiragino Sans", sans-serif;
   font-size: var(--board-text-size, 30px);
   font-weight: var(--board-text-weight, 650);
   line-height: 1.35;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
-  text-shadow: 0 2px 4px rgba(74, 45, 24, 0.45), 0 0 1px rgba(74, 45, 24, 0.55);
+  text-shadow: 0 1px 2px rgba(74, 45, 24, 0.32);
 }
 
 .board-free-image img {
@@ -2527,21 +2528,23 @@ body {
 .direct-text-editor {
   position: absolute;
   z-index: 1100;
+  transform: translateX(-50%);
 }
 
 .direct-text-editor textarea {
-  width: 220px;
+  width: min(280px, calc(100vw - 76px));
   min-height: 54px;
   border: 0;
   padding: 0;
   resize: none;
   background: transparent;
   color: var(--board-text-color, #fff8ea);
+  -webkit-text-fill-color: var(--board-text-color, #fff8ea);
   font-family: "HuiFontP", "ふい字Ｐ", "ふい字P", "Klee One", "Hiragino Sans", sans-serif;
   font-size: var(--board-text-size, 30px);
   font-weight: var(--board-text-weight, 650);
   line-height: 1.35;
-  text-shadow: 0 2px 4px rgba(74, 45, 24, 0.45), 0 0 1px rgba(74, 45, 24, 0.55);
+  text-shadow: 0 1px 2px rgba(74, 45, 24, 0.32);
   outline: 2px dashed rgba(255, 248, 234, 0.62);
   outline-offset: 6px;
 }
