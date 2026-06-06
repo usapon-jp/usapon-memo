@@ -485,6 +485,17 @@ const getMemoCardSizeStyle = (memo) => {
   };
 };
 
+const getCreateCardSizeStyle = (memo) => {
+  if (memo.cardType === 'photo') return getMemoCardSizeStyle(memo);
+  const width = memo.noteWidth || DEFAULT_NOTE_WIDTH;
+  const minHeight = memo.noteHeight || DEFAULT_NOTE_HEIGHT;
+  return {
+    width: `${width}px`,
+    maxWidth: 'none',
+    minHeight: `${minHeight}px`
+  };
+};
+
 const getPhotoFrameRatioFromSize = (width, height) => {
   const frameWidth = Math.max(1, width - 30);
   const frameHeight = Math.max(1, height - 120);
@@ -3356,7 +3367,7 @@ function MemoCreatePage({
   const selectedPaletteColor = draft.cardType === 'photo' ? draft.tapeColor : draft.color;
   const paletteLabel = draft.cardType === 'photo' ? 'マステ色' : 'メモ色';
   const createCardStyle = {
-    ...getMemoCardSizeStyle(draft),
+    ...getCreateCardSizeStyle(draft),
     '--memo-tape-color': getTapeColor(draft.cardType === 'photo' ? draft.tapeColor : draft.color),
     '--photo-tape-color': getTapeColor(draft.tapeColor || draft.color)
   };

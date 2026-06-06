@@ -1202,10 +1202,6 @@ button {
   position: relative;
   z-index: 3;
   width: 100%;
-  min-height: 0;
-  flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
 }
 
 .content-center-button {
@@ -1233,7 +1229,7 @@ button {
   position: relative;
   z-index: 3;
   width: 100%;
-  min-height: 0;
+  min-height: 96px;
   resize: none;
   border: 0;
   border-bottom: 2px solid var(--sticky-rule);
@@ -1247,8 +1243,10 @@ button {
   touch-action: auto;
 }
 
-.create-content-layer > textarea {
-  flex: 1 1 auto;
+.create-card.card-note textarea {
+  height: auto;
+  field-sizing: content;
+  overflow: hidden;
 }
 
 .card-resize-handle {
