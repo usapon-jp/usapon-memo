@@ -1030,18 +1030,26 @@ button {
 
 .create-card {
   width: 100%;
-  max-width: 238px;
+  max-width: none;
   min-height: 198px;
   position: relative;
+  display: flex;
+  flex-direction: column;
   margin: 64px auto 0;
   padding: 45px 36px 28px;
   border: 1px solid rgba(139, 181, 153, 0.36);
   border-radius: 4px;
   box-shadow: 0 20px 34px rgba(87, 87, 74, 0.12);
   touch-action: none;
+  transition: width 160ms ease, height 160ms ease, box-shadow 160ms ease;
+}
+
+.create-card.is-resizing {
+  transition: none;
 }
 
 .sticky-note-card {
+  box-sizing: border-box;
   --sticky-title-size: 15px;
   --sticky-body-size: 16px;
   --sticky-line-height: 1.55;
@@ -1176,6 +1184,7 @@ button {
   font-size: var(--sticky-title-size);
   font-weight: var(--sticky-title-weight);
   line-height: var(--sticky-line-height);
+  text-align: center;
   outline: none;
   touch-action: auto;
 }
@@ -1192,6 +1201,11 @@ button {
 .create-content-layer {
   position: relative;
   z-index: 3;
+  width: 100%;
+  min-height: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
 }
 
 .content-center-button {
@@ -1219,7 +1233,7 @@ button {
   position: relative;
   z-index: 3;
   width: 100%;
-  min-height: 96px;
+  min-height: 0;
   resize: none;
   border: 0;
   border-bottom: 2px solid var(--sticky-rule);
@@ -1231,6 +1245,36 @@ button {
   line-height: var(--sticky-line-height);
   outline: none;
   touch-action: auto;
+}
+
+.create-content-layer > textarea {
+  flex: 1 1 auto;
+}
+
+.card-resize-handle {
+  width: 34px;
+  height: 34px;
+  position: absolute;
+  right: -15px;
+  bottom: -15px;
+  z-index: 20;
+  border: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 250, 244, 0.96);
+  box-shadow: 0 10px 22px rgba(80, 61, 43, 0.16);
+  cursor: nwse-resize;
+  touch-action: none;
+}
+
+.card-resize-handle::before {
+  width: 14px;
+  height: 14px;
+  content: "";
+  border-right: 3px solid rgba(125, 101, 78, 0.62);
+  border-bottom: 3px solid rgba(125, 101, 78, 0.62);
+  border-radius: 1px;
 }
 
 .checklist-form {
@@ -2124,17 +2168,34 @@ body {
 
 .board-tabs {
   display: flex;
+  align-items: center;
   gap: 10px;
-  overflow-x: auto;
   padding: 0 18px 12px;
+  overflow: visible;
   scrollbar-width: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
-.board-tabs::-webkit-scrollbar {
+.board-tabs-scroll {
+  min-width: 0;
+  display: flex;
+  flex: 1 1 auto;
+  gap: 10px;
+  overflow-x: auto;
+  padding: 0 2px;
+  scrollbar-width: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.board-tabs::-webkit-scrollbar,
+.board-tabs-scroll::-webkit-scrollbar {
   display: none;
 }
 
-.board-tabs button {
+.board-tabs button,
+.board-tabs-scroll button {
   min-height: 46px;
   border: 0;
   border-radius: 999px;
@@ -2149,14 +2210,18 @@ body {
   font-weight: 800;
   cursor: pointer;
   box-shadow: 0 10px 20px rgba(143, 108, 72, 0.07);
+  -webkit-user-select: none;
+  user-select: none;
 }
 
-.board-tabs button.active {
+.board-tabs button.active,
+.board-tabs-scroll button.active {
   background: #f2dfc9;
   color: #4d3928;
 }
 
-.board-tabs button.is-wiggling {
+.board-tabs button.is-wiggling,
+.board-tabs-scroll button.is-wiggling {
   animation: board-wiggle 0.28s ease-in-out infinite alternate;
 }
 
@@ -2164,6 +2229,8 @@ body {
   display: inline-flex;
   align-items: center;
   touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .board-reorder-done {
@@ -2206,6 +2273,7 @@ body {
 .board-tabs .board-add-tab {
   width: 46px;
   min-width: 46px;
+  flex: 0 0 46px;
   justify-content: center;
   padding: 0;
   background: rgba(255, 255, 255, 0.74);
@@ -2411,6 +2479,7 @@ body {
   transition: transform 150ms ease, filter 150ms ease;
   touch-action: none;
   user-select: none;
+  cursor: grab;
 }
 
 .board-item.is-dragging {
@@ -2419,16 +2488,31 @@ body {
   filter: drop-shadow(0 18px 22px rgba(72, 45, 24, 0.22));
 }
 
+.board-item.is-selected {
+  z-index: 1002;
+  filter: drop-shadow(0 16px 22px rgba(72, 45, 24, 0.2));
+}
+
+.board-item.is-selected::after {
+  content: "";
+  position: absolute;
+  inset: -8px;
+  border: 2px solid rgba(255, 248, 234, 0.86);
+  border-radius: 12px;
+  box-shadow: 0 0 0 2px rgba(74, 45, 24, 0.22);
+  pointer-events: none;
+}
+
 .board-free-text {
   max-width: 210px;
-  color: #6f5640;
+  color: var(--board-text-color, #fff8ea);
   font-family: "HuiFontP", "ふい字Ｐ", "ふい字P", "Klee One", "Hiragino Sans", sans-serif;
-  font-size: 28px;
-  font-weight: 400;
+  font-size: var(--board-text-size, 30px);
+  font-weight: var(--board-text-weight, 650);
   line-height: 1.35;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5);
+  text-shadow: 0 2px 4px rgba(74, 45, 24, 0.45), 0 0 1px rgba(74, 45, 24, 0.55);
 }
 
 .board-free-image img {
@@ -2452,12 +2536,80 @@ body {
   padding: 0;
   resize: none;
   background: transparent;
-  color: #6f5640;
+  color: var(--board-text-color, #fff8ea);
   font-family: "HuiFontP", "ふい字Ｐ", "ふい字P", "Klee One", "Hiragino Sans", sans-serif;
-  font-size: 28px;
+  font-size: var(--board-text-size, 30px);
+  font-weight: var(--board-text-weight, 650);
   line-height: 1.35;
-  outline: 2px dashed rgba(111, 86, 64, 0.18);
+  text-shadow: 0 2px 4px rgba(74, 45, 24, 0.45), 0 0 1px rgba(74, 45, 24, 0.55);
+  outline: 2px dashed rgba(255, 248, 234, 0.62);
   outline-offset: 6px;
+}
+
+.direct-text-toolbar {
+  position: fixed;
+  left: 50% !important;
+  top: auto !important;
+  bottom: calc(env(safe-area-inset-bottom) + 96px);
+  z-index: 1250;
+  display: grid;
+  gap: 7px;
+  transform: translateX(-50%);
+  padding: 8px;
+  border: 1px solid rgba(114, 86, 59, 0.14);
+  border-radius: 16px;
+  background: rgba(255, 252, 246, 0.96);
+  box-shadow: 0 18px 36px rgba(76, 48, 28, 0.2);
+}
+
+.direct-text-toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.direct-text-toolbar-row button {
+  min-width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  padding: 0 10px;
+  background: rgba(242, 223, 201, 0.58);
+  color: #6e5338;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.direct-text-toolbar-row button.active {
+  background: #72563b;
+  color: #fff8ea;
+}
+
+.direct-text-toolbar-row.color-row button {
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 2px solid rgba(255, 255, 255, 0.78);
+  background: var(--swatch);
+  box-shadow: 0 0 0 1px rgba(79, 51, 37, 0.18);
+}
+
+.direct-text-toolbar-row.color-row button.selected {
+  border-color: #72563b;
+  box-shadow: 0 0 0 2px rgba(255, 248, 234, 0.95), 0 0 0 4px rgba(114, 86, 59, 0.38);
+}
+
+.direct-text-toolbar-row .icon-tool {
+  min-width: 38px;
+  background: rgba(255, 248, 234, 0.9);
+}
+
+.direct-text-toolbar-row .icon-tool.danger {
+  color: #b45c4d;
 }
 
 .quick-add-menu {
@@ -2746,6 +2898,8 @@ body {
   background: rgba(255, 251, 244, 0.92);
   box-shadow: 0 18px 42px rgba(99, 64, 29, 0.16);
   backdrop-filter: blur(12px);
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .cork-footer button {
@@ -2759,6 +2913,8 @@ body {
   font-size: 11px;
   font-weight: 800;
   cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .add-sheet {
@@ -2823,7 +2979,7 @@ body {
 }
 
 .create-photo {
-  max-width: 264px;
+  max-width: none;
   min-height: 318px;
   padding: 15px 15px 26px;
   border: 0;
@@ -2845,8 +3001,10 @@ body {
 }
 
 .create-photo .photo-editor {
+  min-height: 0;
+  flex: 1 1 auto;
   height: 100%;
-  grid-template-rows: auto auto auto;
+  grid-template-rows: minmax(0, 1fr) auto auto;
   gap: 13px;
 }
 
@@ -2895,6 +3053,7 @@ body {
 
 .photo-tools {
   display: grid;
+  gap: 7px;
 }
 
 .photo-tool-actions {
@@ -2912,6 +3071,28 @@ body {
   font-size: 11px;
   font-weight: 800;
   cursor: pointer;
+}
+
+.photo-fit-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.photo-fit-actions button {
+  min-height: 28px;
+  border: 0;
+  border-radius: 999px;
+  background: #f2eee5;
+  color: #817264;
+  font-size: 11px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.photo-fit-actions button.active {
+  background: #dfead7;
+  color: #617451;
 }
 
 .photo-editor input[type="text"],

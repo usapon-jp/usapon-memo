@@ -31,8 +31,24 @@ export const DEFAULT_BOARDS = [
 export const DEFAULT_APP_TITLE = 'うさぽんメモ';
 export const DEFAULT_STICKY_TEXT_SIZE = 'standard';
 export const DEFAULT_STICKY_TEXT_WEIGHT = 'standard';
+export const DEFAULT_BOARD_TEXT_COLOR = 'milkWhite';
+export const DEFAULT_BOARD_TEXT_SIZE = 'standard';
+export const DEFAULT_BOARD_TEXT_WEIGHT = 'standard';
+export const DEFAULT_NOTE_WIDTH = 238;
+export const DEFAULT_NOTE_HEIGHT = 198;
+export const DEFAULT_PHOTO_CARD_WIDTH = 238;
+export const DEFAULT_PHOTO_CARD_HEIGHT = 300;
 export const STICKY_TEXT_SIZES = new Set(['small', 'standard', 'large']);
 export const STICKY_TEXT_WEIGHTS = new Set(['soft', 'standard', 'bold']);
+export const BOARD_TEXT_COLORS = {
+  milkWhite: { label: 'ミルクホワイト', value: '#fff8ea' },
+  forest: { label: '深緑', value: '#2f5f4a' },
+  rose: { label: 'ピンク', value: '#f28aa6' },
+  sky: { label: '水色', value: '#83cbe4' },
+  cocoa: { label: 'こげ茶', value: '#4f3325' }
+};
+export const BOARD_TEXT_SIZES = new Set(['small', 'standard', 'large']);
+export const BOARD_TEXT_WEIGHTS = new Set(['soft', 'standard', 'bold']);
 
 const BOARD_ICONS = new Set(['home', 'book', 'map', 'camera', 'folder']);
 const STICKER_ASSETS = new Set(['usa', 'piyo', 'pon', 'lemon']);
@@ -70,6 +86,9 @@ export const createBoardItem = (patch = {}) => normalizeBoardItem({
   y: 24,
   scale: 1,
   rotation: 0,
+  textColor: DEFAULT_BOARD_TEXT_COLOR,
+  textSize: DEFAULT_BOARD_TEXT_SIZE,
+  textWeight: DEFAULT_BOARD_TEXT_WEIGHT,
   archived: false,
   createdAt: nowIso(),
   updatedAt: nowIso(),
@@ -121,6 +140,9 @@ export const createEmptyMemo = (patch = {}) => {
     photoRotation: 0,
     photoAspectRatio: 1,
     photoFrameRatio: 1,
+    cardWidth: DEFAULT_PHOTO_CARD_WIDTH,
+    cardHeight: DEFAULT_PHOTO_CARD_HEIGHT,
+    imageFit: 'cover',
     scheduleDate: '',
     scheduleTime: '',
     schedulePlace: '',
@@ -132,6 +154,8 @@ export const createEmptyMemo = (patch = {}) => {
     y: 12,
     scale: 1,
     rotation: 0,
+    noteWidth: DEFAULT_NOTE_WIDTH,
+    noteHeight: DEFAULT_NOTE_HEIGHT,
     contentOffsetX: 0,
     contentOffsetY: 0,
     pinned: false,
@@ -244,6 +268,9 @@ const migrateLegacyMemo = (memo, index) => {
     photoRotation: 0,
     photoAspectRatio: 1,
     photoFrameRatio: 1,
+    cardWidth: DEFAULT_PHOTO_CARD_WIDTH,
+    cardHeight: DEFAULT_PHOTO_CARD_HEIGHT,
+    imageFit: 'cover',
     scheduleDate: '',
     scheduleTime: '',
     schedulePlace: '',
@@ -255,6 +282,8 @@ const migrateLegacyMemo = (memo, index) => {
     y: position.y,
     scale: 1,
     rotation: 0,
+    noteWidth: DEFAULT_NOTE_WIDTH,
+    noteHeight: DEFAULT_NOTE_HEIGHT,
     contentOffsetX: 0,
     contentOffsetY: 0,
     pinned: false,
@@ -296,6 +325,19 @@ export const normalizeMemo = (memo = {}, index = 0) => {
   const photoFrameRatio = Number.isFinite(Number(memo.photoFrameRatio)) && Number(memo.photoFrameRatio) > 0
     ? clamp(Number(memo.photoFrameRatio), 0.35, 2.2)
     : (photoCropRatio === 'custom' ? photoAspectRatio : 1);
+  const cardWidth = Number.isFinite(Number(memo.cardWidth))
+    ? clamp(Number(memo.cardWidth), 190, 360)
+    : DEFAULT_PHOTO_CARD_WIDTH;
+  const cardHeight = Number.isFinite(Number(memo.cardHeight))
+    ? clamp(Number(memo.cardHeight), 230, 540)
+    : DEFAULT_PHOTO_CARD_HEIGHT;
+  const imageFit = memo.imageFit === 'contain' ? 'contain' : 'cover';
+  const noteWidth = Number.isFinite(Number(memo.noteWidth))
+    ? clamp(Number(memo.noteWidth), 190, 340)
+    : DEFAULT_NOTE_WIDTH;
+  const noteHeight = Number.isFinite(Number(memo.noteHeight))
+    ? clamp(Number(memo.noteHeight), 160, 460)
+    : DEFAULT_NOTE_HEIGHT;
   const scheduleDate = typeof memo.scheduleDate === 'string' ? memo.scheduleDate.trim() : '';
   const scheduleTime = typeof memo.scheduleTime === 'string' ? memo.scheduleTime.trim() : '';
   const schedulePlace = typeof memo.schedulePlace === 'string' ? memo.schedulePlace.trim() : '';
@@ -338,6 +380,9 @@ export const normalizeMemo = (memo = {}, index = 0) => {
     photoRotation,
     photoAspectRatio,
     photoFrameRatio,
+    cardWidth,
+    cardHeight,
+    imageFit,
     scheduleDate,
     scheduleTime,
     schedulePlace,
@@ -349,6 +394,8 @@ export const normalizeMemo = (memo = {}, index = 0) => {
     y: Number.isFinite(Number(memo.y)) ? clamp(Number(memo.y)) : position.y,
     scale: Number.isFinite(Number(memo.scale)) ? clamp(Number(memo.scale), 0.55, 2.4) : 1,
     rotation: Number.isFinite(Number(memo.rotation)) ? clamp(Number(memo.rotation), -180, 180) : 0,
+    noteWidth,
+    noteHeight,
     contentOffsetX,
     contentOffsetY,
     pinned: Boolean(memo.pinned),
@@ -367,6 +414,15 @@ export const normalizeBoardItem = (item = {}, index = 0) => {
   const type = item.type === 'image' ? 'image' : 'text';
   const createdAt = typeof item.createdAt === 'string' ? item.createdAt : nowIso();
   const updatedAt = typeof item.updatedAt === 'string' ? item.updatedAt : createdAt;
+  const textColor = BOARD_TEXT_COLORS[item.textColor]
+    ? item.textColor
+    : DEFAULT_BOARD_TEXT_COLOR;
+  const textSize = BOARD_TEXT_SIZES.has(item.textSize)
+    ? item.textSize
+    : DEFAULT_BOARD_TEXT_SIZE;
+  const textWeight = BOARD_TEXT_WEIGHTS.has(item.textWeight)
+    ? item.textWeight
+    : DEFAULT_BOARD_TEXT_WEIGHT;
 
   return {
     id: typeof item.id === 'string' ? item.id : createId(),
@@ -382,6 +438,9 @@ export const normalizeBoardItem = (item = {}, index = 0) => {
     y: Number.isFinite(Number(item.y)) ? clamp(Number(item.y), -8, 88) : position.y,
     scale: Number.isFinite(Number(item.scale)) ? clamp(Number(item.scale), 0.3, 3.2) : 1,
     rotation: Number.isFinite(Number(item.rotation)) ? clamp(Number(item.rotation), -180, 180) : 0,
+    textColor,
+    textSize,
+    textWeight,
     archived: Boolean(item.archived),
     createdAt,
     updatedAt

@@ -29,6 +29,7 @@ import {
   X
 } from 'lucide-react';
 import {
+  BOARD_TEXT_COLORS,
   MEMO_COLORS,
   PHOTO_CROP_RATIOS,
   clamp,
@@ -39,6 +40,13 @@ import {
   createSticker,
   DEFAULT_BOARDS,
   DEFAULT_APP_TITLE,
+  DEFAULT_BOARD_TEXT_COLOR,
+  DEFAULT_BOARD_TEXT_SIZE,
+  DEFAULT_BOARD_TEXT_WEIGHT,
+  DEFAULT_NOTE_HEIGHT,
+  DEFAULT_NOTE_WIDTH,
+  DEFAULT_PHOTO_CARD_HEIGHT,
+  DEFAULT_PHOTO_CARD_WIDTH,
   DEFAULT_STICKY_TEXT_SIZE,
   DEFAULT_STICKY_TEXT_WEIGHT,
   isBoardItemVisible,
@@ -93,6 +101,18 @@ const STICKY_TEXT_WEIGHT_OPTIONS = [
   { id: 'standard', label: '標準' },
   { id: 'bold', label: 'はっきり' }
 ];
+const BOARD_TEXT_COLOR_OPTIONS = ['milkWhite', 'forest', 'rose', 'sky', 'cocoa']
+  .map(id => ({ id, ...BOARD_TEXT_COLORS[id] }));
+const BOARD_TEXT_SIZE_OPTIONS = [
+  { id: 'small', label: '小', value: 24 },
+  { id: 'standard', label: '中', value: 30 },
+  { id: 'large', label: '大', value: 38 }
+];
+const BOARD_TEXT_WEIGHT_OPTIONS = [
+  { id: 'soft', label: '細', value: 400 },
+  { id: 'standard', label: '中', value: 650 },
+  { id: 'bold', label: '太', value: 900 }
+];
 const TAPE_COLOR_MAP = {
   white: 'rgba(214, 203, 188, 0.66)',
   green: 'rgba(178, 204, 170, 0.76)',
@@ -101,6 +121,17 @@ const TAPE_COLOR_MAP = {
   pink: 'rgba(231, 178, 184, 0.76)'
 };
 const getTapeColor = (color = 'yellow') => TAPE_COLOR_MAP[color] || TAPE_COLOR_MAP.yellow;
+const getBoardTextColor = (color = DEFAULT_BOARD_TEXT_COLOR) => (
+  BOARD_TEXT_COLORS[color]?.value || BOARD_TEXT_COLORS[DEFAULT_BOARD_TEXT_COLOR].value
+);
+const getBoardTextSize = (size = DEFAULT_BOARD_TEXT_SIZE) => (
+  BOARD_TEXT_SIZE_OPTIONS.find(option => option.id === size)?.value
+  || BOARD_TEXT_SIZE_OPTIONS.find(option => option.id === DEFAULT_BOARD_TEXT_SIZE).value
+);
+const getBoardTextWeight = (weight = DEFAULT_BOARD_TEXT_WEIGHT) => (
+  BOARD_TEXT_WEIGHT_OPTIONS.find(option => option.id === weight)?.value
+  || BOARD_TEXT_WEIGHT_OPTIONS.find(option => option.id === DEFAULT_BOARD_TEXT_WEIGHT).value
+);
 const PHOTO_RATIO_CLASS = {
   square: 'is-square',
   custom: 'is-custom',
@@ -416,14 +447,18 @@ const getPhotoFrameRatio = (memo) => {
 const getPhotoImageStyle = (memo) => {
   const imageRatio = memo.photoAspectRatio || 1;
   const frameRatio = getPhotoFrameRatio(memo);
+  const imageFit = memo.imageFit === 'contain' ? 'contain' : 'cover';
+  const fitWidth = imageFit === 'contain'
+    ? imageRatio >= frameRatio
+    : imageRatio < frameRatio;
   return {
     '--photo-zoom': memo.photoZoom || 1,
     '--photo-x': `${memo.photoOffsetX || 0}px`,
     '--photo-y': `${memo.photoOffsetY || 0}px`,
     '--photo-rotation': `${memo.photoRotation || 0}deg`,
     '--photo-frame-ratio': frameRatio,
-    '--photo-fit-width': imageRatio >= frameRatio ? '100%' : 'auto',
-    '--photo-fit-height': imageRatio >= frameRatio ? 'auto' : '100%'
+    '--photo-fit-width': fitWidth ? '100%' : 'auto',
+    '--photo-fit-height': fitWidth ? 'auto' : '100%'
   };
 };
 
@@ -431,6 +466,28 @@ const getContentOffsetStyle = (memo) => ({
   '--content-x': `${memo.contentOffsetX || 0}px`,
   '--content-y': `${memo.contentOffsetY || 0}px`
 });
+
+const getMemoCardSizeStyle = (memo) => {
+  const isPhoto = memo.cardType === 'photo';
+  const width = isPhoto
+    ? (memo.cardWidth || DEFAULT_PHOTO_CARD_WIDTH)
+    : (memo.noteWidth || DEFAULT_NOTE_WIDTH);
+  const height = isPhoto
+    ? (memo.cardHeight || DEFAULT_PHOTO_CARD_HEIGHT)
+    : (memo.noteHeight || DEFAULT_NOTE_HEIGHT);
+  return {
+    width: `${width}px`,
+    height: `${height}px`,
+    maxWidth: 'none',
+    minHeight: '0'
+  };
+};
+
+const getPhotoFrameRatioFromSize = (width, height) => {
+  const frameWidth = Math.max(1, width - 30);
+  const frameHeight = Math.max(1, height - 120);
+  return clamp(frameWidth / frameHeight, 0.35, 2.2);
+};
 
 const getPointerDistance = (first, second) => Math.hypot(second.clientX - first.clientX, second.clientY - first.clientY);
 const getPointerAngle = (first, second) => Math.atan2(second.clientY - first.clientY, second.clientX - first.clientX) * 180 / Math.PI;
@@ -1276,8 +1333,8 @@ export default function App() {
     setData(current => {
       const index = current.boards.findIndex(board => board.id === boardId);
       const offset = direction === 'prev' || direction === 'up' ? -1 : 1;
-      const nextIndex = index + offset;
-      if (index < 0 || nextIndex < 0 || nextIndex >= current.boards.length) return current;
+      if (index < 0 || current.boards.length < 2) return current;
+      const nextIndex = (index + offset + current.boards.length) % current.boards.length;
       const nextBoards = [...current.boards];
       const [board] = nextBoards.splice(index, 1);
       nextBoards.splice(nextIndex, 0, board);
@@ -1613,6 +1670,7 @@ function HomePage({
   const [trashActive, setTrashActive] = useState(false);
   const [quickAdd, setQuickAdd] = useState(null);
   const [directText, setDirectText] = useState(null);
+  const [selectedBoardItemId, setSelectedBoardItemId] = useState('');
   const [pasteMenu, setPasteMenu] = useState(null);
   const boardRef = useRef(null);
   const trashRef = useRef(null);
@@ -1620,11 +1678,13 @@ function HomePage({
   const activeCardRef = useRef(null);
   const cardPointersRef = useRef(new globalThis.Map());
   const cardGestureRef = useRef(null);
+  const cardDragStartedRef = useRef(false);
   const activeBoardIdRef = useRef(activeBoardId);
   const boardsRef = useRef(boards);
   const dragMemoRef = useRef(null);
   const trashActiveRef = useRef(false);
   const swipeStartRef = useRef(null);
+  const boardTabsSwipeStartRef = useRef(null);
   const longPressTimerRef = useRef(null);
   const boardPressTimerRef = useRef(null);
   const boardPressOriginRef = useRef(null);
@@ -1633,8 +1693,10 @@ function HomePage({
   const memoLongPressTimerRef = useRef(null);
   const memoLongPressOriginRef = useRef(null);
   const memoLongPressFiredRef = useRef(false);
+  const suppressCardTapRef = useRef(false);
   const boardReorderDragRef = useRef(null);
   const activeBoard = boards.find(board => board.id === activeBoardId) || boards[0] || { id: 'home', label: 'ホーム' };
+  const selectedBoardItem = boardItems.find(item => item.id === selectedBoardItemId && item.type === 'text') || null;
 
   activeBoardIdRef.current = activeBoardId;
   boardsRef.current = boards;
@@ -1642,6 +1704,12 @@ function HomePage({
   useEffect(() => {
     if (!titleEditing) setTitleDraft(appTitle);
   }, [appTitle, titleEditing]);
+
+  const consumeSuppressedCardTap = () => {
+    if (!suppressCardTapRef.current) return false;
+    suppressCardTapRef.current = false;
+    return true;
+  };
 
   useEffect(() => () => {
     window.clearTimeout(longPressTimerRef.current);
@@ -1678,10 +1746,24 @@ function HomePage({
     onMoveBoardItem(id, patch);
   };
 
-  const getMemoPointPatch = (clientX, clientY, gesture) => ({
-    x: clamp(((clientX - gesture.grabOffsetX - gesture.boardRect.left) / gesture.boardRect.width) * 100, 1, 70),
-    y: clamp(((clientY - gesture.grabOffsetY - gesture.boardRect.top) / gesture.boardRect.height) * 100, 1, 80)
+  const patchSelectedBoardText = (patch) => {
+    if (!selectedBoardItem) return;
+    onBeginMove('テキストの装飾');
+    onMoveBoardItem(selectedBoardItem.id, patch);
+  };
+
+  const getBoardPoint = (clientX, clientY, boardRect) => ({
+    x: ((clientX - boardRect.left) / boardRect.width) * 100,
+    y: ((clientY - boardRect.top) / boardRect.height) * 100
   });
+
+  const getMemoPointPatch = (clientX, clientY, gesture) => {
+    const point = getBoardPoint(clientX, clientY, gesture.boardRect);
+    return {
+      x: clamp(point.x - gesture.grabOffsetX, 1, 70),
+      y: clamp(point.y - gesture.grabOffsetY, 1, 80)
+    };
+  };
 
   const updateTrashHover = () => {
     const trashRect = trashRef.current?.getBoundingClientRect();
@@ -1701,14 +1783,15 @@ function HomePage({
 
   const createDragGesture = (event, memo) => {
     if (!boardRef.current) return null;
+    const currentMemo = dragMemoRef.current || memo;
     const boardRect = boardRef.current.getBoundingClientRect();
-    const cardRect = event.currentTarget.getBoundingClientRect();
+    const point = getBoardPoint(event.clientX, event.clientY, boardRect);
     return {
       type: 'drag',
-      memoId: memo.id,
+      memoId: currentMemo.id,
       boardRect,
-      grabOffsetX: event.clientX - cardRect.left,
-      grabOffsetY: event.clientY - cardRect.top
+      grabOffsetX: point.x - (currentMemo.x || 0),
+      grabOffsetY: point.y - (currentMemo.y || 0)
     };
   };
 
@@ -1733,13 +1816,14 @@ function HomePage({
 
   const handlePointerDown = (event, memo) => {
     if (!boardRef.current || event.target.closest('input, textarea, button')) return;
-    event.preventDefault();
     window.clearTimeout(memoLongPressTimerRef.current);
     memoLongPressFiredRef.current = false;
     memoLongPressOriginRef.current = { clientX: event.clientX, clientY: event.clientY };
-    onBeginMove('メモの移動');
-    setDraggingMemoId(memo.id);
-    dragMemoRef.current = { ...memo };
+    const isContinuingCardGesture = cardGestureRef.current?.memoId === memo.id && cardPointersRef.current.size > 0;
+    if (!isContinuingCardGesture) {
+      cardDragStartedRef.current = false;
+      dragMemoRef.current = { ...memo };
+    }
     activeCardRef.current = event.currentTarget;
     cardPointersRef.current.set(event.pointerId, {
       pointerId: event.pointerId,
@@ -1748,19 +1832,29 @@ function HomePage({
     });
     event.currentTarget.setPointerCapture(event.pointerId);
 
-    if (cardGestureRef.current?.memoId === memo.id) {
+    const startMemoDrag = () => {
+      if (cardDragStartedRef.current) return;
+      cardDragStartedRef.current = true;
+      onBeginMove('メモの移動');
+      setDraggingMemoId(memo.id);
+    };
+
+    if (isContinuingCardGesture) {
       if (cardPointersRef.current.size >= 2) {
         cardGestureRef.current = createPinchGesture(memo);
+        startMemoDrag();
       }
       return;
     }
 
-    cardGestureRef.current = cardPointersRef.current.size >= 2
-      ? createPinchGesture(memo)
-      : createDragGesture(event, memo);
+    cardGestureRef.current = createDragGesture(event, memo);
 
     memoLongPressTimerRef.current = window.setTimeout(() => {
       memoLongPressFiredRef.current = true;
+      suppressCardTapRef.current = true;
+      window.setTimeout(() => {
+        suppressCardTapRef.current = false;
+      }, 500);
       setDraggingMemoId(null);
       setTrashHover(false);
       activeCardRef.current = null;
@@ -1774,7 +1868,8 @@ function HomePage({
     const moveMemo = (moveEvent) => {
       if (!cardPointersRef.current.has(moveEvent.pointerId)) return;
       const origin = memoLongPressOriginRef.current;
-      if (origin && Math.hypot(moveEvent.clientX - origin.clientX, moveEvent.clientY - origin.clientY) > 10) {
+      const moveDistance = origin ? Math.hypot(moveEvent.clientX - origin.clientX, moveEvent.clientY - origin.clientY) : 0;
+      if (origin && moveDistance > 10) {
         window.clearTimeout(memoLongPressTimerRef.current);
       }
       cardPointersRef.current.set(moveEvent.pointerId, {
@@ -1784,6 +1879,8 @@ function HomePage({
       });
 
       if (cardPointersRef.current.size >= 2) {
+        moveEvent.preventDefault();
+        startMemoDrag();
         if (cardGestureRef.current?.type !== 'pinch') {
           cardGestureRef.current = createPinchGesture(memo);
         }
@@ -1800,6 +1897,9 @@ function HomePage({
         };
         patchDraggedMemo(memo.id, patch);
       } else if (cardGestureRef.current?.type === 'drag') {
+        if (!cardDragStartedRef.current && moveDistance <= 8) return;
+        moveEvent.preventDefault();
+        startMemoDrag();
         patchDraggedMemo(memo.id, getMemoPointPatch(moveEvent.clientX, moveEvent.clientY, cardGestureRef.current));
       }
       window.requestAnimationFrame(updateTrashHover);
@@ -1815,16 +1915,7 @@ function HomePage({
       }
       if (cardPointersRef.current.size === 1) {
         const point = Array.from(cardPointersRef.current.values())[0];
-        const cardRect = activeCardRef.current?.getBoundingClientRect();
-        if (boardRef.current && cardRect) {
-          cardGestureRef.current = {
-            type: 'drag',
-            memoId: memo.id,
-            boardRect: boardRef.current.getBoundingClientRect(),
-            grabOffsetX: point.clientX - cardRect.left,
-            grabOffsetY: point.clientY - cardRect.top
-          };
-        }
+        cardGestureRef.current = createDragGesture(point, dragMemoRef.current || memo);
         return;
       }
 
@@ -1837,7 +1928,14 @@ function HomePage({
       window.removeEventListener('pointermove', moveMemo);
       window.removeEventListener('pointerup', stopMove);
       window.removeEventListener('pointercancel', stopMove);
-      if (shouldDelete) onDeleteMemo(memo.id);
+      if (cardDragStartedRef.current) {
+        suppressCardTapRef.current = true;
+        window.setTimeout(() => {
+          suppressCardTapRef.current = false;
+        }, 350);
+      }
+      if (cardDragStartedRef.current && shouldDelete) onDeleteMemo(memo.id);
+      cardDragStartedRef.current = false;
     };
 
     window.addEventListener('pointermove', moveMemo);
@@ -1848,8 +1946,9 @@ function HomePage({
   const handleBoardItemPointerDown = (event, item) => {
     if (!boardRef.current || event.target.closest('input, textarea, button')) return;
     event.preventDefault();
-    onBeginMove(item.type === 'image' ? '画像の移動' : 'テキストの移動');
-    setDraggingBoardItemId(item.id);
+    event.stopPropagation();
+    const origin = { clientX: event.clientX, clientY: event.clientY };
+    cardDragStartedRef.current = false;
     dragMemoRef.current = { ...item };
     activeCardRef.current = event.currentTarget;
     cardPointersRef.current.set(event.pointerId, {
@@ -1863,6 +1962,14 @@ function HomePage({
       ? createPinchGesture(item)
       : createDragGesture(event, item);
 
+    const startItemDrag = () => {
+      if (cardDragStartedRef.current) return;
+      cardDragStartedRef.current = true;
+      setSelectedBoardItemId('');
+      onBeginMove(item.type === 'image' ? '画像の移動' : 'テキストの移動');
+      setDraggingBoardItemId(item.id);
+    };
+
     const moveItem = (moveEvent) => {
       if (!cardPointersRef.current.has(moveEvent.pointerId)) return;
       cardPointersRef.current.set(moveEvent.pointerId, {
@@ -1872,6 +1979,8 @@ function HomePage({
       });
 
       if (cardPointersRef.current.size >= 2) {
+        moveEvent.preventDefault();
+        startItemDrag();
         if (cardGestureRef.current?.type !== 'pinch') {
           cardGestureRef.current = createPinchGesture(item);
         }
@@ -1885,6 +1994,10 @@ function HomePage({
           rotation: clamp(gesture.rotation + getPointerAngle(points[0], points[1]) - gesture.angle, -180, 180)
         });
       } else if (cardGestureRef.current?.type === 'drag') {
+        const moveDistance = Math.hypot(moveEvent.clientX - origin.clientX, moveEvent.clientY - origin.clientY);
+        if (!cardDragStartedRef.current && moveDistance <= 8) return;
+        moveEvent.preventDefault();
+        startItemDrag();
         patchDraggedBoardItem(item.id, getMemoPointPatch(moveEvent.clientX, moveEvent.clientY, cardGestureRef.current));
       }
       window.requestAnimationFrame(updateTrashHover);
@@ -1902,7 +2015,15 @@ function HomePage({
       window.removeEventListener('pointermove', moveItem);
       window.removeEventListener('pointerup', stopItem);
       window.removeEventListener('pointercancel', stopItem);
-      if (shouldDelete) onDeleteBoardItem(item.id);
+      if (cardDragStartedRef.current && shouldDelete) {
+        onDeleteBoardItem(item.id);
+        setSelectedBoardItemId('');
+      } else if (!cardDragStartedRef.current && item.type === 'text') {
+        setSelectedBoardItemId(item.id);
+        setQuickAdd(null);
+        setPasteMenu(null);
+      }
+      cardDragStartedRef.current = false;
     };
 
     window.addEventListener('pointermove', moveItem);
@@ -1947,13 +2068,25 @@ function HomePage({
 
   const commitDirectText = () => {
     const text = directText?.text?.trim();
-    if (text) {
+    if (text && directText?.id) {
+      onBeginMove('テキストの編集');
+      onMoveBoardItem(directText.id, {
+        text,
+        textColor: directText.textColor,
+        textSize: directText.textSize,
+        textWeight: directText.textWeight
+      });
+      setSelectedBoardItemId(directText.id);
+    } else if (text) {
       onAddBoardItem({
         type: 'text',
         boardId: activeBoardId,
         text,
         x: directText.x,
-        y: directText.y
+        y: directText.y,
+        textColor: directText.textColor || DEFAULT_BOARD_TEXT_COLOR,
+        textSize: directText.textSize || DEFAULT_BOARD_TEXT_SIZE,
+        textWeight: directText.textWeight || DEFAULT_BOARD_TEXT_WEIGHT
       });
     }
     setDirectText(null);
@@ -1962,7 +2095,30 @@ function HomePage({
   const startDirectText = () => {
     const position = quickAdd || pasteMenu;
     if (!position) return;
-    setDirectText({ x: position.x, y: position.y, text: '' });
+    setDirectText({
+      x: position.x,
+      y: position.y,
+      text: '',
+      textColor: DEFAULT_BOARD_TEXT_COLOR,
+      textSize: DEFAULT_BOARD_TEXT_SIZE,
+      textWeight: DEFAULT_BOARD_TEXT_WEIGHT
+    });
+    setQuickAdd(null);
+    setPasteMenu(null);
+    setSelectedBoardItemId('');
+  };
+
+  const editSelectedBoardText = () => {
+    if (!selectedBoardItem) return;
+    setDirectText({
+      id: selectedBoardItem.id,
+      x: selectedBoardItem.x,
+      y: selectedBoardItem.y,
+      text: selectedBoardItem.text,
+      textColor: selectedBoardItem.textColor,
+      textSize: selectedBoardItem.textSize,
+      textWeight: selectedBoardItem.textWeight
+    });
     setQuickAdd(null);
     setPasteMenu(null);
   };
@@ -2028,7 +2184,10 @@ function HomePage({
           boardId: activeBoardId,
           text: text.trim(),
           x: position.x,
-          y: position.y
+          y: position.y,
+          textColor: DEFAULT_BOARD_TEXT_COLOR,
+          textSize: DEFAULT_BOARD_TEXT_SIZE,
+          textWeight: DEFAULT_BOARD_TEXT_WEIGHT
         });
         setPasteMenu(null);
       } else {
@@ -2040,8 +2199,25 @@ function HomePage({
     }
   };
 
+  const changeBoardBySwipeDistance = (distance) => {
+    const currentIndex = boards.findIndex(board => board.id === activeBoardId);
+    if (currentIndex < 0 || boards.length < 2) return;
+    const nextIndex = distance < 0
+      ? (currentIndex + 1) % boards.length
+      : (currentIndex - 1 + boards.length) % boards.length;
+    if (boards[nextIndex]) onBoardChange(boards[nextIndex].id);
+  };
+
   const handleTouchStart = (event) => {
-    if (boardReorderMode || event.target.closest('.board-card, .board-item, input, textarea')) return;
+    if (
+      boardReorderMode
+      || draggingMemoId
+      || draggingBoardItemId
+      || quickAdd
+      || pasteMenu
+      || directText
+      || event.target.closest('.board-card, .board-item, input, textarea, button')
+    ) return;
     const touch = event.touches[0];
     swipeStartRef.current = {
       x: touch.clientX,
@@ -2063,11 +2239,33 @@ function HomePage({
       || Math.abs(distance) < Math.abs(verticalDistance) * 1.8
       || elapsed > 850
     ) return;
-    const currentIndex = boards.findIndex(board => board.id === activeBoardId);
-    const nextIndex = distance < 0
-      ? Math.min(boards.length - 1, currentIndex + 1)
-      : Math.max(0, currentIndex - 1);
-    onBoardChange(boards[nextIndex].id);
+    changeBoardBySwipeDistance(distance);
+  };
+
+  const handleBoardTabsTouchStart = (event) => {
+    if (boardReorderMode || boardMenu || event.touches.length !== 1) return;
+    const touch = event.touches[0];
+    boardTabsSwipeStartRef.current = {
+      x: touch.clientX,
+      y: touch.clientY,
+      time: Date.now()
+    };
+  };
+
+  const handleBoardTabsTouchEnd = (event) => {
+    if (boardTabsSwipeStartRef.current === null) return;
+    const touch = event.changedTouches[0];
+    const distance = touch.clientX - boardTabsSwipeStartRef.current.x;
+    const verticalDistance = touch.clientY - boardTabsSwipeStartRef.current.y;
+    const elapsed = Date.now() - boardTabsSwipeStartRef.current.time;
+    boardTabsSwipeStartRef.current = null;
+    if (
+      Math.abs(distance) < 74
+      || Math.abs(verticalDistance) > 42
+      || Math.abs(distance) < Math.abs(verticalDistance) * 1.8
+      || elapsed > 850
+    ) return;
+    changeBoardBySwipeDistance(distance);
   };
 
   const chooseAddType = (cardType) => {
@@ -2098,6 +2296,7 @@ function HomePage({
   };
 
   const startBoardLongPress = (event, board) => {
+    event.preventDefault();
     if (boardReorderMode) {
       if (!event.target.closest('.board-tab-label')) setBoardReorderMode(false);
       return;
@@ -2149,10 +2348,11 @@ function HomePage({
       const index = currentBoards.findIndex(item => item.id === board.id);
       if (index < 0) return;
       const delta = moveEvent.clientX - state.lastClientX;
-      if (delta > chipWidth * 0.45 && index < currentBoards.length - 1) {
+      if (currentBoards.length < 2) return;
+      if (delta > chipWidth * 0.45) {
         onMoveBoard(board.id, 'next');
         state.lastClientX = moveEvent.clientX;
-      } else if (delta < -chipWidth * 0.45 && index > 0) {
+      } else if (delta < -chipWidth * 0.45) {
         onMoveBoard(board.id, 'prev');
         state.lastClientX = moveEvent.clientX;
       }
@@ -2236,6 +2436,9 @@ function HomePage({
       onClick={(event) => {
         if (boardMenu) setBoardMenu(null);
         if (memoMenu) setMemoMenu(null);
+        if (!event.target.closest('.board-item, .direct-text-toolbar, .direct-text-editor')) {
+          setSelectedBoardItemId('');
+        }
         maybeFinishBoardReorder(event);
       }}
     >
@@ -2291,34 +2494,41 @@ function HomePage({
         </div>
       </header>
 
-      <nav className="board-tabs" aria-label="ボード切替">
-        {boards.map((board, index) => {
-          const Icon = BOARD_ICON_MAP[board.icon] || Folder;
-          return (
-            <button
-              key={board.id}
-              type="button"
-              className={`${board.id === activeBoardId ? 'active' : ''} ${boardReorderMode ? 'is-wiggling' : ''}`}
-              onPointerDown={(event) => startBoardLongPress(event, board)}
-              onPointerUp={clearBoardLongPress}
-              onPointerLeave={clearBoardLongPress}
-              onPointerCancel={clearBoardLongPress}
-              onContextMenu={(event) => openBoardMenu(event, board)}
-              onClick={(event) => {
-                event.stopPropagation();
-                handleBoardClick(event, board);
-              }}
-            >
-              <Icon size={18} />
-              <span
-                className="board-tab-label"
-                onPointerDown={(event) => startBoardReorderDrag(event, board)}
+      <nav
+        className="board-tabs"
+        aria-label="ボード切替"
+        onTouchStart={handleBoardTabsTouchStart}
+        onTouchEnd={handleBoardTabsTouchEnd}
+      >
+        <div className="board-tabs-scroll">
+          {boards.map((board, index) => {
+            const Icon = BOARD_ICON_MAP[board.icon] || Folder;
+            return (
+              <button
+                key={board.id}
+                type="button"
+                className={`${board.id === activeBoardId ? 'active' : ''} ${boardReorderMode ? 'is-wiggling' : ''}`}
+                onPointerDown={(event) => startBoardLongPress(event, board)}
+                onPointerUp={clearBoardLongPress}
+                onPointerLeave={clearBoardLongPress}
+                onPointerCancel={clearBoardLongPress}
+                onContextMenu={(event) => openBoardMenu(event, board)}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  handleBoardClick(event, board);
+                }}
               >
-                {board.label}
-              </span>
-            </button>
-          );
-        })}
+                <Icon size={18} />
+                <span
+                  className="board-tab-label"
+                  onPointerDown={(event) => startBoardReorderDrag(event, board)}
+                >
+                  {board.label}
+                </span>
+              </button>
+            );
+          })}
+        </div>
         <button
           type="button"
           className="board-add-tab"
@@ -2491,6 +2701,7 @@ function HomePage({
                 onContextMenu={(event) => openMemoMenu(event, memo)}
                 onEdit={() => onEdit(memo)}
                 onToggleChecklistItem={onToggleChecklistItem}
+                shouldSuppressTap={consumeSuppressedCardTap}
               />
             ))
           )}
@@ -2500,13 +2711,31 @@ function HomePage({
               item={item}
               mediaUrlsById={mediaUrlsById}
               isDragging={draggingBoardItemId === item.id}
+              isSelected={selectedBoardItemId === item.id}
               onPointerDown={(event) => handleBoardItemPointerDown(event, item)}
             />
           ))}
+          {selectedBoardItem && !directText && (
+            <BoardTextToolbar
+              item={selectedBoardItem}
+              onEdit={editSelectedBoardText}
+              onPatch={patchSelectedBoardText}
+              onDelete={() => {
+                onDeleteBoardItem(selectedBoardItem.id);
+                setSelectedBoardItemId('');
+              }}
+            />
+          )}
           {directText && (
             <form
               className="direct-text-editor"
-              style={{ left: `${directText.x}%`, top: `${directText.y}%` }}
+              style={{
+                left: `${directText.x}%`,
+                top: `${directText.y}%`,
+                '--board-text-color': getBoardTextColor(directText.textColor),
+                '--board-text-size': `${getBoardTextSize(directText.textSize)}px`,
+                '--board-text-weight': getBoardTextWeight(directText.textWeight)
+              }}
               onSubmit={(event) => {
                 event.preventDefault();
                 commitDirectText();
@@ -2758,7 +2987,8 @@ function BoardMemo({
   onPointerDown,
   onContextMenu,
   onEdit,
-  onToggleChecklistItem
+  onToggleChecklistItem,
+  shouldSuppressTap = () => false
 }) {
   const hasTitle = memo.title.trim().length > 0;
   const cardType = memo.cardType || (memo.type === 'checklist' ? 'checklist' : 'note');
@@ -2766,7 +2996,12 @@ function BoardMemo({
   const openMemoLink = () => {
     if (memo.linkUrl) window.open(normalizeLinkUrl(memo.linkUrl), '_blank', 'noopener,noreferrer');
   };
+  const handlePhotoOpen = () => {
+    if (shouldSuppressTap()) return;
+    onEdit();
+  };
   const handleMemoBodyOpen = () => {
+    if (shouldSuppressTap()) return;
     if (cardType === 'link') {
       openMemoLink();
       return;
@@ -2774,6 +3009,7 @@ function BoardMemo({
     onEdit();
   };
   const style = {
+    ...getMemoCardSizeStyle(memo),
     left: `${memo.x}%`,
     top: `${memo.y}%`,
     '--rotation': `${memo.rotation || 0}deg`,
@@ -2793,8 +3029,8 @@ function BoardMemo({
         onContextMenu={onContextMenu}
       >
         <span className="photo-tape" aria-hidden="true" />
-        <div className="photo-card-inner" role="button" tabIndex={0} onClick={onEdit} onKeyDown={(event) => {
-          if (event.key === 'Enter' || event.key === ' ') onEdit();
+        <div className="photo-card-inner" role="button" tabIndex={0} onClick={handlePhotoOpen} onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') handlePhotoOpen();
         }}>
           {photoSrc ? (
             <span className={`photo-card-frame photo-crop-frame ${getPhotoCropClass(memo.photoCropRatio)}`} style={{ '--photo-frame-ratio': getPhotoFrameRatio(memo) }}>
@@ -2822,9 +3058,16 @@ function BoardMemo({
       style={style}
       onPointerDown={onPointerDown}
       onContextMenu={onContextMenu}
+      onClick={cardType === 'link' ? (event) => {
+        if (event.target.closest('.board-memo-body')) return;
+        handleMemoBodyOpen();
+      } : undefined}
       stickerLayer={<StickerLayer stickers={memo.stickers} />}
     >
-      <div className="board-memo-body content-offset-layer" style={getContentOffsetStyle(memo)} role="button" tabIndex={0} onClick={handleMemoBodyOpen} onKeyDown={(event) => {
+      <div className="board-memo-body content-offset-layer" style={getContentOffsetStyle(memo)} role="button" tabIndex={0} onClick={(event) => {
+        event.stopPropagation();
+        handleMemoBodyOpen();
+      }} onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === ' ') handleMemoBodyOpen();
       }}>
         {hasTitle && <strong className="board-memo-title">{memo.title}</strong>}
@@ -2841,12 +3084,14 @@ function BoardMemo({
             tabIndex={0}
             onClick={(event) => {
               event.stopPropagation();
+              if (shouldSuppressTap()) return;
               openMemoLink();
             }}
             onKeyDown={(event) => {
               if (event.key === 'Enter' || event.key === ' ') {
                 event.preventDefault();
                 event.stopPropagation();
+                if (shouldSuppressTap()) return;
                 openMemoLink();
               }
             }}
@@ -2887,19 +3132,85 @@ function BoardMemo({
   );
 }
 
-function BoardFreeItem({ item, mediaUrlsById = {}, isDragging, onPointerDown }) {
+function BoardTextToolbar({ item, onEdit, onPatch, onDelete }) {
+  const style = {
+    left: `${item.x}%`,
+    top: `${item.y}%`
+  };
+
+  return (
+    <div
+      className="direct-text-toolbar"
+      style={style}
+      role="toolbar"
+      aria-label="文字の編集"
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
+    >
+      <div className="direct-text-toolbar-row color-row" aria-label="文字色">
+        {BOARD_TEXT_COLOR_OPTIONS.map(option => (
+          <button
+            key={option.id}
+            type="button"
+            className={item.textColor === option.id ? 'selected' : ''}
+            style={{ '--swatch': option.value }}
+            onClick={() => onPatch({ textColor: option.id })}
+            aria-label={option.label}
+          />
+        ))}
+      </div>
+      <div className="direct-text-toolbar-row">
+        {BOARD_TEXT_SIZE_OPTIONS.map(option => (
+          <button
+            key={option.id}
+            type="button"
+            className={item.textSize === option.id ? 'active' : ''}
+            onClick={() => onPatch({ textSize: option.id })}
+            aria-label={`文字サイズ ${option.label}`}
+          >
+            {option.label}
+          </button>
+        ))}
+        {BOARD_TEXT_WEIGHT_OPTIONS.map(option => (
+          <button
+            key={option.id}
+            type="button"
+            className={item.textWeight === option.id ? 'active' : ''}
+            onClick={() => onPatch({ textWeight: option.id })}
+            aria-label={`文字の太さ ${option.label}`}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+      <div className="direct-text-toolbar-row">
+        <button type="button" className="icon-tool" onClick={onEdit} aria-label="文字を編集">
+          <Pencil size={17} />
+        </button>
+        <button type="button" className="icon-tool danger" onClick={onDelete} aria-label="文字を削除">
+          <Trash2 size={17} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function BoardFreeItem({ item, mediaUrlsById = {}, isDragging, isSelected = false, onPointerDown }) {
   const style = {
     left: `${item.x}%`,
     top: `${item.y}%`,
     '--rotation': `${item.rotation || 0}deg`,
-    '--scale': item.scale || 1
+    '--scale': item.scale || 1,
+    '--board-text-color': getBoardTextColor(item.textColor),
+    '--board-text-size': `${getBoardTextSize(item.textSize)}px`,
+    '--board-text-weight': getBoardTextWeight(item.textWeight)
   };
 
   const imageSrc = item.imageDataUrl || (item.imageId ? mediaUrlsById[item.imageId] : '');
 
   return (
     <article
-      className={`board-item board-free-${item.type} ${isDragging ? 'is-dragging' : ''}`}
+      className={`board-item board-free-${item.type} ${isDragging ? 'is-dragging' : ''} ${isSelected ? 'is-selected' : ''}`}
       data-memo-id={item.id}
       data-board-item-id={item.id}
       style={style}
@@ -2979,6 +3290,7 @@ function MemoCreatePage({
   const [movingStickerId, setMovingStickerId] = useState('');
   const [draggingSticker, setDraggingSticker] = useState(null);
   const [photoToolsOpen, setPhotoToolsOpen] = useState(true);
+  const [resizingCard, setResizingCard] = useState(false);
   const primaryInputRef = useRef(null);
   const titleInputRef = useRef(null);
   const photoInputRef = useRef(null);
@@ -2987,6 +3299,7 @@ function MemoCreatePage({
   const photoGestureRef = useRef(null);
   const contentPointersRef = useRef(new globalThis.Map());
   const contentGestureRef = useRef(null);
+  const cardResizeRef = useRef(null);
   const checklistInputRefs = useRef({});
   const pendingFocusId = useRef(null);
   const canSave = draft.cardType === 'photo'
@@ -3002,6 +3315,7 @@ function MemoCreatePage({
   const selectedPaletteColor = draft.cardType === 'photo' ? draft.tapeColor : draft.color;
   const paletteLabel = draft.cardType === 'photo' ? 'マステ色' : 'メモ色';
   const createCardStyle = {
+    ...getMemoCardSizeStyle(draft),
     '--memo-tape-color': getTapeColor(draft.cardType === 'photo' ? draft.tapeColor : draft.color),
     '--photo-tape-color': getTapeColor(draft.tapeColor || draft.color)
   };
@@ -3145,6 +3459,76 @@ function MemoCreatePage({
       ...current,
       ...patch
     }));
+  };
+
+  const updateImageFit = (imageFit) => {
+    setDraft(current => ({
+      ...current,
+      imageFit
+    }));
+  };
+
+  const startCardResize = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const isPhoto = draft.cardType === 'photo';
+    const startWidth = isPhoto
+      ? (draft.cardWidth || DEFAULT_PHOTO_CARD_WIDTH)
+      : (draft.noteWidth || DEFAULT_NOTE_WIDTH);
+    const startHeight = isPhoto
+      ? (draft.cardHeight || DEFAULT_PHOTO_CARD_HEIGHT)
+      : (draft.noteHeight || DEFAULT_NOTE_HEIGHT);
+    cardResizeRef.current = {
+      isPhoto,
+      startX: event.clientX,
+      startY: event.clientY,
+      startWidth,
+      startHeight
+    };
+    setResizingCard(true);
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+
+    const moveCardResize = (moveEvent) => {
+      const state = cardResizeRef.current;
+      if (!state) return;
+      const nextWidth = clamp(
+        state.startWidth + moveEvent.clientX - state.startX,
+        state.isPhoto ? 190 : 190,
+        state.isPhoto ? 360 : 340
+      );
+      const nextHeight = clamp(
+        state.startHeight + moveEvent.clientY - state.startY,
+        state.isPhoto ? 230 : 160,
+        state.isPhoto ? 540 : 460
+      );
+      setDraft(current => (
+        state.isPhoto
+          ? {
+            ...current,
+            cardWidth: nextWidth,
+            cardHeight: nextHeight,
+            photoCropRatio: 'custom',
+            photoFrameRatio: getPhotoFrameRatioFromSize(nextWidth, nextHeight)
+          }
+          : {
+            ...current,
+            noteWidth: nextWidth,
+            noteHeight: nextHeight
+          }
+      ));
+    };
+
+    const stopCardResize = () => {
+      cardResizeRef.current = null;
+      setResizingCard(false);
+      window.removeEventListener('pointermove', moveCardResize);
+      window.removeEventListener('pointerup', stopCardResize);
+      window.removeEventListener('pointercancel', stopCardResize);
+    };
+
+    window.addEventListener('pointermove', moveCardResize);
+    window.addEventListener('pointerup', stopCardResize);
+    window.addEventListener('pointercancel', stopCardResize);
   };
 
   const resetPhotoGesture = () => {
@@ -3449,7 +3833,7 @@ function MemoCreatePage({
         cardType={draft.cardType}
         textSize={stickyTextSize}
         textWeight={stickyTextWeight}
-        className={`create-card create-${draft.cardType}`}
+        className={`create-card create-${draft.cardType} ${resizingCard ? 'is-resizing' : ''}`}
         style={createCardStyle}
         onPointerDown={startContentAdjust}
         onPointerMove={moveContentAdjust}
@@ -3510,6 +3894,22 @@ function MemoCreatePage({
                 <div className="photo-tool-actions">
                   <button type="button" onClick={() => photoInputRef.current?.click()}>差し替え</button>
                   <button type="button" onClick={removePhoto}>削除</button>
+                </div>
+                <div className="photo-fit-actions" aria-label="写真の表示方法">
+                  <button
+                    type="button"
+                    className={draft.imageFit !== 'contain' ? 'active' : ''}
+                    onClick={() => updateImageFit('cover')}
+                  >
+                    枠いっぱい
+                  </button>
+                  <button
+                    type="button"
+                    className={draft.imageFit === 'contain' ? 'active' : ''}
+                    onClick={() => updateImageFit('contain')}
+                  >
+                    全体表示
+                  </button>
                 </div>
               </div>
             )}
@@ -3684,6 +4084,12 @@ function MemoCreatePage({
             )}
           </div>
         )}
+        <button
+          type="button"
+          className="card-resize-handle"
+          onPointerDown={startCardResize}
+          aria-label="カードサイズを変更"
+        />
       </StickyNoteCard>
 
       <footer className="create-actions">
