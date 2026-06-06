@@ -2196,10 +2196,24 @@ body {
   user-select: none;
 }
 
+.board-tabs-scroll.is-looping {
+  gap: 0;
+}
+
 .board-tabs-scroll::before,
 .board-tabs-scroll::after {
   content: "";
   flex: 0 0 max(0px, calc(50% - 52px));
+}
+
+.board-tabs-segment {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 10px;
+}
+
+.board-tabs-segment + .board-tabs-segment {
+  margin-left: 10px;
 }
 
 .board-tabs::-webkit-scrollbar,

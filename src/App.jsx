@@ -1702,7 +1702,11 @@ function HomePage({
   const [pasteMenu, setPasteMenu] = useState(null);
   const boardRef = useRef(null);
   const boardTabsScrollRef = useRef(null);
+  const boardTabMainSegmentRef = useRef(null);
+  const boardTabBeforeSegmentRef = useRef(null);
+  const boardTabAfterSegmentRef = useRef(null);
   const boardTabRefsRef = useRef(new globalThis.Map());
+  const boardTabLoopingRef = useRef(false);
   const trashRef = useRef(null);
   const directImageInputRef = useRef(null);
   const activeCardRef = useRef(null);
@@ -1726,6 +1730,15 @@ function HomePage({
   const boardReorderDragRef = useRef(null);
   const activeBoard = boards.find(board => board.id === activeBoardId) || boards[0] || { id: 'home', label: 'ホーム' };
   const selectedBoardItem = boardItems.find(item => item.id === selectedBoardItemId && item.type === 'text') || null;
+  const shouldLoopBoardTabs = boards.length > 1 && !boardReorderMode;
+  const boardTabSegments = useMemo(() => {
+    if (!shouldLoopBoardTabs) return [{ id: 'main', boards, isClone: false }];
+    return [
+      { id: 'before', boards, isClone: true },
+      { id: 'main', boards, isClone: false },
+      { id: 'after', boards, isClone: true }
+    ];
+  }, [boards, shouldLoopBoardTabs]);
 
   activeBoardIdRef.current = activeBoardId;
   boardsRef.current = boards;
@@ -1746,6 +1759,36 @@ function HomePage({
 
   const markCurrentBoardActive = () => {
     scrollBoardTabIntoView(activeBoardIdRef.current);
+  };
+
+  const handleBoardTabsScroll = () => {
+    if (!shouldLoopBoardTabs || boardTabLoopingRef.current) return;
+    const scrollElement = boardTabsScrollRef.current;
+    const mainSegment = boardTabMainSegmentRef.current;
+    const beforeSegment = boardTabBeforeSegmentRef.current;
+    const afterSegment = boardTabAfterSegmentRef.current;
+    if (!scrollElement || !mainSegment || !beforeSegment || !afterSegment) return;
+
+    const beforeStart = beforeSegment.offsetLeft;
+    const mainStart = mainSegment.offsetLeft;
+    const afterStart = afterSegment.offsetLeft;
+    const segmentStep = afterStart - mainStart;
+    if (segmentStep <= 0) return;
+
+    let nextScrollLeft = scrollElement.scrollLeft;
+    if (nextScrollLeft <= beforeStart + 1) {
+      nextScrollLeft += segmentStep;
+    } else if (nextScrollLeft >= afterStart - 1) {
+      nextScrollLeft -= segmentStep;
+    } else {
+      return;
+    }
+
+    boardTabLoopingRef.current = true;
+    scrollElement.scrollLeft = nextScrollLeft;
+    window.requestAnimationFrame(() => {
+      boardTabLoopingRef.current = false;
+    });
   };
 
   useEffect(() => {
@@ -2298,13 +2341,17 @@ function HomePage({
     }
   };
 
-  const changeBoardBySwipeDistance = (distance) => {
+  const getAdjacentBoard = (direction) => {
     const currentIndex = boards.findIndex(board => board.id === activeBoardId);
-    if (currentIndex < 0 || boards.length < 2) return;
-    const nextIndex = distance < 0
-      ? (currentIndex + 1) % boards.length
-      : (currentIndex - 1 + boards.length) % boards.length;
-    if (boards[nextIndex]) onBoardChange(boards[nextIndex].id);
+    if (currentIndex < 0 || boards.length < 2) return null;
+    const offset = direction === 'next' ? 1 : -1;
+    const nextIndex = (currentIndex + offset + boards.length) % boards.length;
+    return boards[nextIndex] || null;
+  };
+
+  const changeBoardBySwipeDistance = (distance) => {
+    const nextBoard = getAdjacentBoard(distance < 0 ? 'next' : 'prev');
+    if (nextBoard) onBoardChange(nextBoard.id);
   };
 
   const handleTouchStart = (event) => {
@@ -2574,41 +2621,59 @@ function HomePage({
         className="board-tabs"
         aria-label="ボード切替"
       >
-        <div className="board-tabs-scroll" ref={boardTabsScrollRef}>
-          {boards.map((board, index) => {
-            const Icon = BOARD_ICON_MAP[board.icon] || Folder;
-            return (
-              <button
-                key={board.id}
-                type="button"
-                ref={(element) => {
-                  if (element) {
-                    boardTabRefsRef.current.set(board.id, element);
-                  } else {
-                    boardTabRefsRef.current.delete(board.id);
-                  }
-                }}
-                className={`${board.id === activeBoardId ? 'active' : ''} ${boardReorderMode ? 'is-wiggling' : ''}`}
-                onPointerDown={(event) => startBoardLongPress(event, board)}
-                onPointerUp={clearBoardLongPress}
-                onPointerLeave={clearBoardLongPress}
-                onPointerCancel={clearBoardLongPress}
-                onContextMenu={(event) => openBoardMenu(event, board)}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  handleBoardClick(event, board);
-                }}
-              >
-                <Icon size={18} />
-                <span
-                  className="board-tab-label"
-                  onPointerDown={(event) => startBoardReorderDrag(event, board)}
-                >
-                  {board.label}
-                </span>
-              </button>
-            );
-          })}
+        <div
+          className={`board-tabs-scroll ${shouldLoopBoardTabs ? 'is-looping' : ''}`}
+          ref={boardTabsScrollRef}
+          onScroll={handleBoardTabsScroll}
+        >
+          {boardTabSegments.map((segment) => (
+            <div
+              key={segment.id}
+              className={`board-tabs-segment ${segment.isClone ? 'is-clone' : ''}`}
+              ref={(element) => {
+                if (segment.id === 'before') boardTabBeforeSegmentRef.current = element;
+                if (segment.id === 'main') boardTabMainSegmentRef.current = element;
+                if (segment.id === 'after') boardTabAfterSegmentRef.current = element;
+              }}
+            >
+              {segment.boards.map((board) => {
+                const Icon = BOARD_ICON_MAP[board.icon] || Folder;
+                return (
+                  <button
+                    key={`${segment.id}-${board.id}`}
+                    type="button"
+                    ref={segment.id === 'main'
+                      ? (element) => {
+                        if (element) {
+                          boardTabRefsRef.current.set(board.id, element);
+                        } else {
+                          boardTabRefsRef.current.delete(board.id);
+                        }
+                      }
+                      : undefined}
+                    className={`${board.id === activeBoardId ? 'active' : ''} ${boardReorderMode ? 'is-wiggling' : ''}`}
+                    onPointerDown={(event) => startBoardLongPress(event, board)}
+                    onPointerUp={clearBoardLongPress}
+                    onPointerLeave={clearBoardLongPress}
+                    onPointerCancel={clearBoardLongPress}
+                    onContextMenu={(event) => openBoardMenu(event, board)}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      handleBoardClick(event, board);
+                    }}
+                  >
+                    <Icon size={18} />
+                    <span
+                      className="board-tab-label"
+                      onPointerDown={(event) => startBoardReorderDrag(event, board)}
+                    >
+                      {board.label}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          ))}
         </div>
         <button
           type="button"
@@ -2749,6 +2814,9 @@ function HomePage({
         aria-label={`${activeBoard.label}のコルクボード`}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
+        onTouchCancel={() => {
+          swipeStartRef.current = null;
+        }}
         onPointerDown={startBoardPress}
         onPointerMove={moveBoardPress}
         onPointerUp={clearBoardPress}
