@@ -477,6 +477,13 @@ const getMemoCardSizeStyle = (memo) => {
   const height = isPhoto
     ? (memo.cardHeight || DEFAULT_PHOTO_CARD_HEIGHT)
     : (memo.noteHeight || DEFAULT_NOTE_HEIGHT);
+  if (!isPhoto) {
+    return {
+      width: `${width}px`,
+      maxWidth: 'none',
+      minHeight: `${height}px`
+    };
+  }
   return {
     width: `${width}px`,
     height: `${height}px`,
