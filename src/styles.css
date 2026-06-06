@@ -2380,8 +2380,8 @@ body {
 }
 
 .cork-board-wrap {
-  height: calc(100dvh - 218px);
-  min-height: 320px;
+  height: calc(100dvh - 140px);
+  min-height: 0;
   position: relative;
   padding: 0;
   overflow: hidden;

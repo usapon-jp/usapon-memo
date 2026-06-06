@@ -1803,6 +1803,17 @@ function HomePage({
     );
   };
 
+  const isPointInTrash = (clientX, clientY) => {
+    const trashRect = trashRef.current?.getBoundingClientRect();
+    if (!trashRect || !Number.isFinite(clientX) || !Number.isFinite(clientY)) return false;
+    return (
+      clientX >= trashRect.left
+      && clientX <= trashRect.right
+      && clientY >= trashRect.top
+      && clientY <= trashRect.bottom
+    );
+  };
+
   const createDragGesture = (event, memo) => {
     if (!boardRef.current) return null;
     const currentMemo = dragMemoRef.current || memo;
@@ -1941,7 +1952,7 @@ function HomePage({
         return;
       }
 
-      const shouldDelete = trashActiveRef.current;
+      const shouldDelete = trashActiveRef.current || isPointInTrash(stopEvent.clientX, stopEvent.clientY);
       setDraggingMemoId(null);
       setTrashHover(false);
       activeCardRef.current = null;
@@ -2028,7 +2039,7 @@ function HomePage({
     const stopItem = (stopEvent) => {
       cardPointersRef.current.delete(stopEvent.pointerId);
       if (cardPointersRef.current.size > 0) return;
-      const shouldDelete = trashActiveRef.current;
+      const shouldDelete = trashActiveRef.current || isPointInTrash(stopEvent.clientX, stopEvent.clientY);
       setDraggingBoardItemId(null);
       setTrashHover(false);
       activeCardRef.current = null;
