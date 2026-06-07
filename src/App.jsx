@@ -26,6 +26,7 @@ import {
   Upload,
   ArrowUp,
   ArrowDown,
+  ArrowRight,
   X
 } from 'lucide-react';
 import {
@@ -505,7 +506,7 @@ const getCreateCardSizeStyle = (memo) => {
 
 const getPhotoFrameRatioFromSize = (width, height) => {
   const frameWidth = Math.max(1, width - 30);
-  const frameHeight = Math.max(1, height - 120);
+  const frameHeight = Math.max(1, height - 91);
   return clamp(frameWidth / frameHeight, 0.35, 2.2);
 };
 
@@ -1794,13 +1795,14 @@ function HomePage({
   useEffect(() => {
     const activeTab = boardTabRefsRef.current.get(activeBoardId);
     if (!activeTab) return undefined;
+    if (boardReorderDragRef.current) return undefined;
 
     const frameId = window.requestAnimationFrame(() => {
       scrollBoardTabIntoView(activeBoardId);
     });
 
     return () => window.cancelAnimationFrame(frameId);
-  }, [activeBoardId, boards]);
+  }, [activeBoardId, boardReorderMode]);
 
   const consumeSuppressedCardTap = () => {
     if (!suppressCardTapRef.current) return false;
@@ -2418,7 +2420,6 @@ function HomePage({
 
   const startBoardLongPress = (event, board) => {
     if (boardReorderMode) {
-      if (!event.target.closest('.board-tab-label')) setBoardReorderMode(false);
       return;
     }
     clearBoardLongPress();
@@ -2445,6 +2446,7 @@ function HomePage({
   };
 
   const reorderFromMenu = () => {
+    if (boardMenu?.id) onBoardChange(boardMenu.id);
     setBoardReorderMode(true);
     setBoardMenu(null);
   };
@@ -2638,6 +2640,57 @@ function HomePage({
             >
               {segment.boards.map((board) => {
                 const Icon = BOARD_ICON_MAP[board.icon] || Folder;
+                if (boardReorderMode) {
+                  return (
+                    <div
+                      key={`${segment.id}-${board.id}`}
+                      ref={segment.id === 'main'
+                        ? (element) => {
+                          if (element) {
+                            boardTabRefsRef.current.set(board.id, element);
+                          } else {
+                            boardTabRefsRef.current.delete(board.id);
+                          }
+                        }
+                        : undefined}
+                      className={`board-sort-chip ${board.id === activeBoardId ? 'active' : ''} is-wiggling`}
+                      onPointerDown={(event) => {
+                        if (event.target.closest('.board-chip-move-button')) return;
+                        startBoardReorderDrag(event, board);
+                      }}
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <button
+                        type="button"
+                        className="board-chip-move-button"
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onMoveBoard(board.id, 'prev');
+                        }}
+                        aria-label={`${board.label}を左へ移動`}
+                      >
+                        <ArrowLeft size={16} />
+                      </button>
+                      <span className="board-tab-label">
+                        <Icon size={18} />
+                        {board.label}
+                      </span>
+                      <button
+                        type="button"
+                        className="board-chip-move-button"
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onMoveBoard(board.id, 'next');
+                        }}
+                        aria-label={`${board.label}を右へ移動`}
+                      >
+                        <ArrowRight size={16} />
+                      </button>
+                    </div>
+                  );
+                }
                 return (
                   <button
                     key={`${segment.id}-${board.id}`}
@@ -2652,7 +2705,13 @@ function HomePage({
                       }
                       : undefined}
                     className={`${board.id === activeBoardId ? 'active' : ''} ${boardReorderMode ? 'is-wiggling' : ''}`}
-                    onPointerDown={(event) => startBoardLongPress(event, board)}
+                    onPointerDown={(event) => {
+                      if (boardReorderMode) {
+                        startBoardReorderDrag(event, board);
+                      } else {
+                        startBoardLongPress(event, board);
+                      }
+                    }}
                     onPointerUp={clearBoardLongPress}
                     onPointerLeave={clearBoardLongPress}
                     onPointerCancel={clearBoardLongPress}
@@ -2663,10 +2722,7 @@ function HomePage({
                     }}
                   >
                     <Icon size={18} />
-                    <span
-                      className="board-tab-label"
-                      onPointerDown={(event) => startBoardReorderDrag(event, board)}
-                    >
+                    <span className="board-tab-label">
                       {board.label}
                     </span>
                   </button>
