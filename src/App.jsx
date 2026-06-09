@@ -3221,7 +3221,8 @@ function StickerLayer({
             style={{
               left: `${sticker.x}%`,
               top: `${sticker.y}%`,
-              width: `${sticker.size}px`
+              width: `${sticker.size}px`,
+              '--sticker-rotation': `${sticker.rotation || 0}deg`
             }}
             onPointerDown={onStickerPointerDown ? (event) => onStickerPointerDown(event, sticker) : undefined}
           >
@@ -3610,6 +3611,8 @@ function MemoCreatePage({
   const photoGestureRef = useRef(null);
   const contentPointersRef = useRef(new globalThis.Map());
   const contentGestureRef = useRef(null);
+  const stickerGestureRef = useRef(null);
+  const draftRef = useRef(draft);
   const cardResizeRef = useRef(null);
   const checklistInputRefs = useRef({});
   const pendingFocusId = useRef(null);
@@ -3634,6 +3637,10 @@ function MemoCreatePage({
     '--memo-tape-color': getTapeColor(draft.cardType === 'photo' ? draft.tapeColor : draft.color),
     '--photo-tape-color': getTapeColor(draft.tapeColor || draft.color)
   };
+
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
 
   const resizeChecklistTextarea = (element) => {
     if (!element) return;
@@ -4013,42 +4020,130 @@ function MemoCreatePage({
     event.stopPropagation();
     setSelectedStickerId(sticker.id);
     setMovingStickerId(sticker.id);
-    event.currentTarget.setPointerCapture(event.pointerId);
-    const rect = createCardRef.current?.getBoundingClientRect();
-    const stickerCenter = rect
-      ? {
-        x: rect.left + (sticker.x / 100) * rect.width,
-        y: rect.top + (sticker.y / 100) * rect.height
+
+    const getCurrentSticker = () => (
+      draftRef.current.stickers.find(item => item.id === sticker.id) || sticker
+    );
+    const getStickerCenter = (targetSticker = getCurrentSticker()) => {
+      const rect = createCardRef.current?.getBoundingClientRect();
+      return rect
+        ? {
+          x: rect.left + (targetSticker.x / 100) * rect.width,
+          y: rect.top + (targetSticker.y / 100) * rect.height
+        }
+        : { x: event.clientX, y: event.clientY };
+    };
+    const resetStickerGesture = () => {
+      const session = stickerGestureRef.current;
+      if (!session) return;
+      const activePointers = [...session.pointers.values()];
+      const currentSticker = getCurrentSticker();
+      if (activePointers.length >= 2) {
+        const [first, second] = activePointers.slice(0, 2);
+        session.gesture = {
+          mode: 'pinch',
+          center: getPointerCenter(first, second),
+          distance: Math.max(getPointerDistance(first, second), 1),
+          angle: getPointerAngle(first, second),
+          x: currentSticker.x,
+          y: currentSticker.y,
+          size: currentSticker.size || 42,
+          rotation: currentSticker.rotation || 0
+        };
+      } else if (activePointers.length === 1) {
+        const center = getStickerCenter(currentSticker);
+        const pointer = activePointers[0];
+        session.gesture = {
+          mode: 'drag',
+          grabOffsetX: pointer.clientX - center.x,
+          grabOffsetY: pointer.clientY - center.y
+        };
+      } else {
+        session.gesture = null;
       }
-      : { x: event.clientX, y: event.clientY };
-    const grabOffset = {
-      x: event.clientX - stickerCenter.x,
-      y: event.clientY - stickerCenter.y
+    };
+    const updateStickerPointer = (pointerEvent) => {
+      stickerGestureRef.current?.pointers.set(pointerEvent.pointerId, {
+        pointerId: pointerEvent.pointerId,
+        clientX: pointerEvent.clientX,
+        clientY: pointerEvent.clientY
+      });
     };
 
     const moveSticker = (moveEvent) => {
-      const position = getStickerPositionFromPoint(
-        moveEvent.clientX - grabOffset.x,
-        moveEvent.clientY - grabOffset.y
-      );
-      setDraft(current => ({
-        ...current,
-        stickers: current.stickers.map(item => (
-          item.id === sticker.id ? { ...item, ...position } : item
-        ))
-      }));
+      const session = stickerGestureRef.current;
+      if (!session || session.stickerId !== sticker.id || !session.pointers.has(moveEvent.pointerId)) return;
+      moveEvent.preventDefault();
+      updateStickerPointer(moveEvent);
+      setDraft(current => {
+        const currentSticker = current.stickers.find(item => item.id === sticker.id) || sticker;
+        const activePointers = [...session.pointers.values()];
+        let patch = {};
+        if (activePointers.length >= 2) {
+          if (session.gesture?.mode !== 'pinch') resetStickerGesture();
+          const gesture = session.gesture;
+          if (!gesture) return current;
+          const [first, second] = activePointers.slice(0, 2);
+          const center = getPointerCenter(first, second);
+          const baseCenter = getStickerCenter({ ...currentSticker, x: gesture.x, y: gesture.y });
+          const position = getStickerPositionFromPoint(
+            baseCenter.x + center.x - gesture.center.x,
+            baseCenter.y + center.y - gesture.center.y
+          );
+          patch = {
+            ...position,
+            size: clamp(gesture.size * (getPointerDistance(first, second) / Math.max(gesture.distance, 1)), 28, 120),
+            rotation: clamp(gesture.rotation + getPointerAngle(first, second) - gesture.angle, -180, 180)
+          };
+        } else if (activePointers.length === 1) {
+          if (session.gesture?.mode !== 'drag') resetStickerGesture();
+          const gesture = session.gesture;
+          if (!gesture) return current;
+          patch = getStickerPositionFromPoint(
+            activePointers[0].clientX - gesture.grabOffsetX,
+            activePointers[0].clientY - gesture.grabOffsetY
+          );
+        }
+        const nextStickers = current.stickers.map(item => (
+          item.id === sticker.id ? { ...item, ...patch } : item
+        ));
+        draftRef.current = { ...current, stickers: nextStickers };
+        return {
+          ...current,
+          stickers: nextStickers
+        };
+      });
     };
 
-    const stopStickerMove = () => {
+    const stopStickerMove = (stopEvent) => {
+      const session = stickerGestureRef.current;
+      if (!session || session.stickerId !== sticker.id) return;
+      session.pointers.delete(stopEvent.pointerId);
+      if (session.pointers.size > 0) {
+        resetStickerGesture();
+        return;
+      }
+      stickerGestureRef.current = null;
       setMovingStickerId('');
       window.removeEventListener('pointermove', moveSticker);
       window.removeEventListener('pointerup', stopStickerMove);
       window.removeEventListener('pointercancel', stopStickerMove);
     };
 
-    window.addEventListener('pointermove', moveSticker);
-    window.addEventListener('pointerup', stopStickerMove);
-    window.addEventListener('pointercancel', stopStickerMove);
+    if (!stickerGestureRef.current || stickerGestureRef.current.stickerId !== sticker.id) {
+      stickerGestureRef.current = {
+        stickerId: sticker.id,
+        pointers: new globalThis.Map(),
+        gesture: null
+      };
+      window.addEventListener('pointermove', moveSticker);
+      window.addEventListener('pointerup', stopStickerMove);
+      window.addEventListener('pointercancel', stopStickerMove);
+    }
+
+    updateStickerPointer(event);
+    event.currentTarget.setPointerCapture(event.pointerId);
+    resetStickerGesture();
   };
 
   const startStickerAdd = (event, assetId) => {
@@ -4855,10 +4950,12 @@ function StickerPage({ unlockedStickerIds, visibleStickerIds, onBack, onUpdate, 
       <SimplePageHeader title="ステッカー" eyebrow="素材" onBack={onBack} />
       <div className="archive-tabs sticker-tabs" role="tablist" aria-label="ステッカー">
         <button type="button" className={tab === 'manage' ? 'active' : ''} onClick={() => setTab('manage')}>
-          ステッカー管理
+          <span>ステッカー</span>
+          <span>管理</span>
         </button>
         <button type="button" className={tab === 'add' ? 'active' : ''} onClick={() => setTab('add')}>
-          ステッカーの追加
+          <span>ステッカー</span>
+          <span>追加</span>
         </button>
       </div>
 
