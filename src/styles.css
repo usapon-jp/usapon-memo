@@ -588,7 +588,10 @@ button {
 
 .storage-info-card > strong,
 .backup-card > strong,
-.sticky-display-card > strong {
+.sticky-display-card > strong,
+.sticker-manage-card > strong,
+.sticker-library-card > strong,
+.sticker-add-card > strong {
   color: #5b442e;
   font-size: 15px;
   font-weight: 900;
@@ -684,6 +687,135 @@ button {
   font-size: 12px;
   font-weight: 800;
   line-height: 1.6;
+}
+
+.sticker-page {
+  padding-bottom: 40px;
+}
+
+.sticker-tabs {
+  margin-top: 22px;
+}
+
+.sticker-count {
+  justify-self: start;
+  border-radius: 999px;
+  padding: 5px 10px;
+  background: rgba(240, 227, 209, 0.78);
+  color: rgba(91, 68, 46, 0.64);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.sticker-visible-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.sticker-manage-item,
+.sticker-empty-slot,
+.sticker-library-grid button {
+  min-width: 0;
+  border: 1px solid rgba(150, 118, 80, 0.12);
+  border-radius: 14px;
+  background: rgba(255, 253, 248, 0.78);
+}
+
+.sticker-manage-item {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  padding: 6px;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  transition: transform 140ms ease, box-shadow 140ms ease, opacity 140ms ease;
+}
+
+.sticker-manage-item.is-dragging {
+  z-index: 2;
+  opacity: 0.78;
+  cursor: grabbing;
+  transform: scale(1.04);
+  box-shadow: 0 16px 24px rgba(83, 50, 24, 0.16);
+}
+
+.sticker-manage-item img,
+.sticker-library-grid img {
+  width: 100%;
+  height: 54px;
+  object-fit: contain;
+}
+
+.sticker-manage-item span,
+.sticker-library-grid span {
+  overflow: hidden;
+  color: #6d5137;
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1.2;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sticker-manage-item .subtle-action {
+  min-height: 24px;
+  border: 0;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  background: rgba(240, 227, 209, 0.82);
+  color: #72563b;
+  cursor: pointer;
+}
+
+.sticker-manage-item .subtle-action {
+  min-height: 26px;
+  font-size: 10px;
+}
+
+.sticker-empty-slot {
+  min-height: 118px;
+  border-style: dashed;
+  background: rgba(255, 253, 248, 0.36);
+}
+
+.sticker-library-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.sticker-library-grid button {
+  display: grid;
+  place-items: center;
+  min-height: 82px;
+  padding: 8px;
+  color: #6d5137;
+  cursor: pointer;
+}
+
+.sticker-library-grid button.active {
+  border-color: rgba(159, 186, 147, 0.62);
+  background: rgba(227, 241, 229, 0.72);
+  box-shadow: 0 0 0 3px rgba(159, 186, 147, 0.16);
+}
+
+.sticker-library-card small,
+.sticker-add-card p {
+  margin: 0;
+  color: rgba(91, 68, 46, 0.62);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.6;
+}
+
+.sticker-add-card form {
+  display: grid;
+  gap: 12px;
 }
 
 .backup-actions {
@@ -1410,7 +1542,9 @@ button {
 }
 
 .sticker-palette {
-  display: flex;
+  width: min(390px, calc(100vw - 68px));
+  display: grid;
+  grid-template-columns: repeat(5, 56px);
   justify-content: center;
   gap: 14px;
   margin-top: -6px;
@@ -2598,6 +2732,26 @@ body {
   filter: drop-shadow(0 10px 14px rgba(84, 54, 28, 0.16));
 }
 
+.board-free-sticker img {
+  display: block;
+  max-width: 86px;
+  max-height: 86px;
+  object-fit: contain;
+  pointer-events: none;
+  filter: drop-shadow(0 10px 12px rgba(84, 54, 28, 0.18));
+}
+
+.board-free-sticker span {
+  display: inline-block;
+  min-width: 64px;
+  padding: 8px;
+  border-radius: 12px;
+  background: rgba(255, 248, 234, 0.9);
+  color: #72563b;
+  font-size: 12px;
+  font-weight: 900;
+}
+
 .direct-text-editor {
   position: absolute;
   z-index: 1100;
@@ -2718,6 +2872,28 @@ body {
 
 .quick-add-menu button:hover {
   background: rgba(242, 223, 201, 0.58);
+}
+
+.board-sticker-picker {
+  width: min(280px, calc(100vw - 44px));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  transform: translate(-50%, 12px);
+}
+
+.board-sticker-picker button {
+  min-height: 76px;
+  justify-content: center;
+  flex-direction: column;
+  gap: 4px;
+  padding: 7px 4px;
+  text-align: center;
+}
+
+.board-sticker-picker img {
+  max-width: 46px;
+  max-height: 46px;
+  object-fit: contain;
+  pointer-events: none;
 }
 
 .visually-hidden-file {

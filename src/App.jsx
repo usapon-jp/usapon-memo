@@ -52,11 +52,15 @@ import {
   DEFAULT_PHOTO_CARD_WIDTH,
   DEFAULT_STICKY_TEXT_SIZE,
   DEFAULT_STICKY_TEXT_WEIGHT,
+  DEFAULT_STICKER_IDS,
+  MAX_VISIBLE_STICKERS,
   isBoardItemVisible,
   isMemoVisibleOnBoard,
   normalizeBoardItem,
   normalizeData,
   normalizeMemo,
+  STICKER_CATALOG,
+  STICKER_PACKS,
   STICKY_TEXT_SIZES,
   STICKY_TEXT_WEIGHTS,
   sortMemos
@@ -84,13 +88,7 @@ const BOARD_ICON_OPTIONS = [
   { id: 'camera', label: '写真' },
   { id: 'folder', label: 'フォルダ' }
 ];
-const STICKER_OPTIONS = [
-  { id: 'usa', label: 'うさぎ', src: '/usapon-memo/assets/usa.png' },
-  { id: 'piyo', label: 'ひよこ', src: '/usapon-memo/assets/piyo.png' },
-  { id: 'pon', label: 'ぽん', src: '/usapon-memo/assets/pon.png' },
-  { id: 'lemon', label: 'レモン', src: '/usapon-memo/assets/lemon.png' }
-];
-const STICKER_MAP = Object.fromEntries(STICKER_OPTIONS.map(sticker => [sticker.id, sticker]));
+const STICKER_MAP = Object.fromEntries(STICKER_CATALOG.map(sticker => [sticker.id, sticker]));
 
 const COLOR_ORDER = ['white', 'green', 'yellow', 'blue', 'pink'];
 const COLOR_OPTIONS = COLOR_ORDER.map(id => ({ id, ...MEMO_COLORS[id] }));
@@ -747,6 +745,8 @@ export default function App() {
   const appTitle = data.appTitle || DEFAULT_APP_TITLE;
   const stickyTextSize = STICKY_TEXT_SIZES.has(data.stickyTextSize) ? data.stickyTextSize : DEFAULT_STICKY_TEXT_SIZE;
   const stickyTextWeight = STICKY_TEXT_WEIGHTS.has(data.stickyTextWeight) ? data.stickyTextWeight : DEFAULT_STICKY_TEXT_WEIGHT;
+  const unlockedStickerIds = Array.isArray(data.unlockedStickerIds) ? data.unlockedStickerIds : DEFAULT_STICKER_IDS;
+  const visibleStickerIds = Array.isArray(data.visibleStickerIds) ? data.visibleStickerIds : DEFAULT_STICKER_IDS;
   const boards = data.boards?.length ? data.boards : DEFAULT_BOARDS;
   const homeBoards = useMemo(() => {
     const visibleBoards = boards.filter(board => !board.archived && isTimeCapsuleOpen(board, now));
@@ -1122,7 +1122,12 @@ export default function App() {
   };
 
   const addBoardItem = (patch) => {
-    captureUndo(patch.type === 'image' ? '画像の追加' : 'テキストの追加');
+    const addLabel = patch.type === 'image'
+      ? '画像の追加'
+      : patch.type === 'sticker'
+        ? 'ステッカーの追加'
+        : 'テキストの追加';
+    captureUndo(addLabel);
     const nextItem = createBoardItem(patch);
     setData(current => ({
       ...current,
@@ -1191,6 +1196,14 @@ export default function App() {
       stickyTextWeight: STICKY_TEXT_WEIGHTS.has(patch.stickyTextWeight)
         ? patch.stickyTextWeight
         : (STICKY_TEXT_WEIGHTS.has(current.stickyTextWeight) ? current.stickyTextWeight : DEFAULT_STICKY_TEXT_WEIGHT)
+    }));
+  };
+
+  const updateStickerSettings = (patch) => {
+    setData(current => normalizeData({
+      ...current,
+      unlockedStickerIds: patch.unlockedStickerIds || current.unlockedStickerIds,
+      visibleStickerIds: patch.visibleStickerIds || current.visibleStickerIds
     }));
   };
 
@@ -1441,6 +1454,7 @@ export default function App() {
           appTitle={appTitle}
           stickyTextSize={stickyTextSize}
           stickyTextWeight={stickyTextWeight}
+          visibleStickerIds={visibleStickerIds}
           activeBoardId={activeBoardId}
           boards={homeBoards}
           allBoards={boards}
@@ -1486,6 +1500,7 @@ export default function App() {
           draft={draft}
           stickyTextSize={stickyTextSize}
           stickyTextWeight={stickyTextWeight}
+          visibleStickerIds={visibleStickerIds}
           setDraft={setDraft}
           onBack={() => setPage('home')}
           onSave={saveMemo}
@@ -1569,6 +1584,16 @@ export default function App() {
         />
       )}
 
+      {page === 'stickers' && (
+        <StickerPage
+          unlockedStickerIds={unlockedStickerIds}
+          visibleStickerIds={visibleStickerIds}
+          onBack={() => setPage('home')}
+          onUpdate={updateStickerSettings}
+          onShowToast={setAppToast}
+        />
+      )}
+
       {page === 'timeCapsule' && (
         <TimeCapsulePage
           boards={managementBoards}
@@ -1647,6 +1672,7 @@ function HomePage({
   appTitle,
   stickyTextSize,
   stickyTextWeight,
+  visibleStickerIds = DEFAULT_STICKER_IDS,
   activeBoardId,
   boards,
   allBoards,
@@ -1701,6 +1727,7 @@ function HomePage({
   const [directText, setDirectText] = useState(null);
   const [selectedBoardItemId, setSelectedBoardItemId] = useState('');
   const [pasteMenu, setPasteMenu] = useState(null);
+  const [stickerPicker, setStickerPicker] = useState(null);
   const boardRef = useRef(null);
   const boardTabsScrollRef = useRef(null);
   const boardTabMainSegmentRef = useRef(null);
@@ -1855,6 +1882,7 @@ function HomePage({
   const closeBoardFloatingMenus = () => {
     setQuickAdd(null);
     setPasteMenu(null);
+    setStickerPicker(null);
   };
 
   const getBoardPoint = (clientX, clientY, boardRect) => ({
@@ -1862,12 +1890,20 @@ function HomePage({
     y: ((clientY - boardRect.top) / boardRect.height) * 100
   });
 
-  const getMemoPointPatch = (clientX, clientY, gesture, maxY = MEMO_CARD_MAX_Y) => {
+  const getMemoPointPatch = (clientX, clientY, gesture, maxY = MEMO_CARD_MAX_Y, maxX = 70) => {
     const point = getBoardPoint(clientX, clientY, gesture.boardRect);
     return {
-      x: clamp(point.x - gesture.grabOffsetX, 1, 70),
+      x: clamp(point.x - gesture.grabOffsetX, 1, maxX),
       y: clamp(point.y - gesture.grabOffsetY, 1, maxY)
     };
+  };
+
+  const getBoardItemMaxX = () => {
+    const boardRect = boardRef.current?.getBoundingClientRect();
+    const itemRect = activeCardRef.current?.getBoundingClientRect();
+    if (!boardRect || !itemRect || boardRect.width <= 0) return 96;
+    const itemWidthPercent = (itemRect.width / boardRect.width) * 100;
+    return clamp(100 - itemWidthPercent, 4, 96);
   };
 
   const updateTrashHover = (clientX = null, clientY = null) => {
@@ -1947,7 +1983,6 @@ function HomePage({
 
   const handlePointerDown = (event, memo) => {
     if (!boardRef.current || event.target.closest('input, textarea, button')) return;
-    markCurrentBoardActive();
     window.clearTimeout(memoLongPressTimerRef.current);
     memoLongPressFiredRef.current = false;
     memoLongPressOriginRef.current = { clientX: event.clientX, clientY: event.clientY };
@@ -1967,7 +2002,6 @@ function HomePage({
     const startMemoDrag = () => {
       if (cardDragStartedRef.current) return;
       cardDragStartedRef.current = true;
-      markCurrentBoardActive();
       onBeginMove('メモの移動');
       setDraggingMemoId(memo.id);
     };
@@ -2078,7 +2112,6 @@ function HomePage({
 
   const handleBoardItemPointerDown = (event, item) => {
     if (!boardRef.current || event.target.closest('input, textarea, button')) return;
-    markCurrentBoardActive();
     event.preventDefault();
     event.stopPropagation();
     const origin = { clientX: event.clientX, clientY: event.clientY };
@@ -2099,9 +2132,12 @@ function HomePage({
     const startItemDrag = () => {
       if (cardDragStartedRef.current) return;
       cardDragStartedRef.current = true;
-      markCurrentBoardActive();
       setSelectedBoardItemId('');
-      onBeginMove(item.type === 'image' ? '画像の移動' : 'テキストの移動');
+      onBeginMove(item.type === 'image'
+        ? '画像の移動'
+        : item.type === 'sticker'
+          ? 'ステッカーの移動'
+          : 'テキストの移動');
       setDraggingBoardItemId(item.id);
     };
 
@@ -2122,8 +2158,9 @@ function HomePage({
         const gesture = cardGestureRef.current;
         const points = Array.from(cardPointersRef.current.values()).slice(0, 2);
         const center = getPointerCenter(points[0], points[1]);
+        const maxX = getBoardItemMaxX();
         patchDraggedBoardItem(item.id, {
-          x: clamp(gesture.x + ((center.x - gesture.center.x) / gesture.boardRect.width) * 100, -8, 88),
+          x: clamp(gesture.x + ((center.x - gesture.center.x) / gesture.boardRect.width) * 100, -8, maxX),
           y: clamp(gesture.y + ((center.y - gesture.center.y) / gesture.boardRect.height) * 100, -8, BOARD_ITEM_MAX_Y),
           scale: clamp(gesture.scale * (getPointerDistance(points[0], points[1]) / gesture.distance), 0.3, 3.2),
           rotation: clamp(gesture.rotation + getPointerAngle(points[0], points[1]) - gesture.angle, -180, 180)
@@ -2133,7 +2170,10 @@ function HomePage({
         if (!cardDragStartedRef.current && moveDistance <= 8) return;
         moveEvent.preventDefault();
         startItemDrag();
-        patchDraggedBoardItem(item.id, getMemoPointPatch(moveEvent.clientX, moveEvent.clientY, cardGestureRef.current, BOARD_ITEM_MAX_Y));
+        patchDraggedBoardItem(
+          item.id,
+          getMemoPointPatch(moveEvent.clientX, moveEvent.clientY, cardGestureRef.current, BOARD_ITEM_MAX_Y, getBoardItemMaxX())
+        );
       }
       window.requestAnimationFrame(() => updateTrashHover(moveEvent.clientX, moveEvent.clientY));
     };
@@ -2171,7 +2211,7 @@ function HomePage({
     const rect = boardRef.current?.getBoundingClientRect();
     if (!rect) return { x: 18, y: 18 };
     return {
-      x: clamp(((event.clientX - rect.left) / rect.width) * 100, 0, 88),
+      x: clamp(((event.clientX - rect.left) / rect.width) * 100, 0, 96),
       y: clamp(((event.clientY - rect.top) / rect.height) * 100, 4, BOARD_ITEM_MAX_Y)
     };
   };
@@ -2245,6 +2285,30 @@ function HomePage({
     });
     setQuickAdd(null);
     setPasteMenu(null);
+    setSelectedBoardItemId('');
+  };
+
+  const openBoardStickerPicker = () => {
+    const position = quickAdd || pasteMenu;
+    if (!position) return;
+    setStickerPicker(position);
+    setQuickAdd(null);
+    setPasteMenu(null);
+  };
+
+  const addBoardSticker = (assetId) => {
+    if (!STICKER_MAP[assetId] || !stickerPicker) return;
+    markCurrentBoardActive();
+    onAddBoardItem({
+      type: 'sticker',
+      boardId: activeBoardId,
+      assetId,
+      x: stickerPicker.x,
+      y: stickerPicker.y,
+      scale: 1,
+      rotation: 0
+    });
+    setStickerPicker(null);
     setSelectedBoardItemId('');
   };
 
@@ -2558,7 +2622,7 @@ function HomePage({
       onClick={(event) => {
         if (boardMenu) setBoardMenu(null);
         if (memoMenu) setMemoMenu(null);
-        if (!event.target.closest('.quick-add-menu, .board-item, .direct-text-toolbar, .direct-text-editor')) {
+        if (!event.target.closest('.quick-add-menu, .board-sticker-picker, .board-item, .direct-text-toolbar, .direct-text-editor')) {
           closeBoardFloatingMenus();
         }
         if (!event.target.closest('.board-item, .direct-text-toolbar, .direct-text-editor')) {
@@ -2823,6 +2887,10 @@ function HomePage({
             <Camera size={19} />
             写真一覧
           </button>
+          <button type="button" onClick={() => openMenuPage('stickers')}>
+            <StickyNote size={19} />
+            ステッカー
+          </button>
           <button type="button" onClick={() => openMenuPage('timeCapsule')}>
             <Clock size={19} />
             タイムカプセル
@@ -3027,6 +3095,10 @@ function HomePage({
             <Upload size={18} />
             画像
           </button>
+          <button type="button" onClick={openBoardStickerPicker}>
+            <StickyNote size={18} />
+            ステッカー
+          </button>
         </div>
       )}
 
@@ -3040,10 +3112,30 @@ function HomePage({
             <Upload size={18} />
             画像
           </button>
+          <button type="button" onClick={openBoardStickerPicker}>
+            <StickyNote size={18} />
+            ステッカー
+          </button>
           <button type="button" onClick={pasteFromClipboard}>
             <Copy size={18} />
             {copiedMemo ? 'メモを貼る' : 'ペースト'}
           </button>
+        </div>
+      )}
+
+      {stickerPicker && (
+        <div
+          className="quick-add-menu board-sticker-picker"
+          style={{ left: `${stickerPicker.clientX}px`, top: `${stickerPicker.clientY}px` }}
+          role="dialog"
+          aria-label="ステッカーを選択"
+        >
+          {visibleStickerIds.map(id => STICKER_MAP[id]).filter(Boolean).map(sticker => (
+            <button key={sticker.id} type="button" onClick={() => addBoardSticker(sticker.id)} aria-label={`${sticker.label}を貼る`}>
+              <img src={sticker.src} alt="" draggable={false} />
+              {sticker.label}
+            </button>
+          ))}
         </div>
       )}
 
@@ -3422,6 +3514,7 @@ function BoardFreeItem({ item, mediaUrlsById = {}, isDragging, isSelected = fals
   };
 
   const imageSrc = item.imageDataUrl || (item.imageId ? mediaUrlsById[item.imageId] : '');
+  const sticker = item.type === 'sticker' ? STICKER_MAP[item.assetId] : null;
 
   return (
     <article
@@ -3433,6 +3526,8 @@ function BoardFreeItem({ item, mediaUrlsById = {}, isDragging, isSelected = fals
     >
       {item.type === 'image' ? (
         imageSrc ? <img src={imageSrc} alt="" draggable={false} /> : <span>画像を読み込めません</span>
+      ) : item.type === 'sticker' ? (
+        sticker ? <img src={sticker.src} alt={sticker.label} draggable={false} /> : <span>ステッカー</span>
       ) : (
         <span>{item.text}</span>
       )}
@@ -3493,6 +3588,7 @@ function MemoCreatePage({
   draft,
   stickyTextSize,
   stickyTextWeight,
+  visibleStickerIds = DEFAULT_STICKER_IDS,
   setDraft,
   onBack,
   onSave,
@@ -3529,6 +3625,10 @@ function MemoCreatePage({
   const firstChecklistItem = draft.checklist[0] || null;
   const selectedPaletteColor = draft.cardType === 'photo' ? draft.tapeColor : draft.color;
   const paletteLabel = draft.cardType === 'photo' ? 'マステ色' : 'メモ色';
+  const visibleStickers = useMemo(
+    () => visibleStickerIds.map(id => STICKER_MAP[id]).filter(Boolean),
+    [visibleStickerIds]
+  );
   const createCardStyle = {
     ...getCreateCardSizeStyle(draft),
     '--memo-tape-color': getTapeColor(draft.cardType === 'photo' ? draft.tapeColor : draft.color),
@@ -4333,7 +4433,7 @@ function MemoCreatePage({
 
         {draft.cardType !== 'photo' && (
           <div className="sticker-palette" aria-label="スタンプ">
-            {STICKER_OPTIONS.map(sticker => (
+            {visibleStickers.map(sticker => (
               <button
                 key={sticker.id}
                 type="button"
@@ -4652,6 +4752,179 @@ function SettingsPage({
           }}
         />
       </div>
+    </section>
+  );
+}
+
+function StickerPage({ unlockedStickerIds, visibleStickerIds, onBack, onUpdate, onShowToast }) {
+  const [tab, setTab] = useState('manage');
+  const [code, setCode] = useState('');
+  const [draggingStickerId, setDraggingStickerId] = useState('');
+  const visibleStickerIdsRef = useRef(visibleStickerIds);
+  const unlockedSet = useMemo(() => new Set(unlockedStickerIds), [unlockedStickerIds]);
+  const visibleSet = useMemo(() => new Set(visibleStickerIds), [visibleStickerIds]);
+  const unlockedStickers = STICKER_CATALOG.filter(sticker => unlockedSet.has(sticker.id));
+  const visibleStickers = visibleStickerIds.map(id => STICKER_MAP[id]).filter(Boolean);
+  const hiddenUnlockedStickers = unlockedStickers.filter(sticker => !visibleSet.has(sticker.id));
+
+  useEffect(() => {
+    visibleStickerIdsRef.current = visibleStickerIds;
+  }, [visibleStickerIds]);
+
+  const updateVisible = (nextIds) => {
+    visibleStickerIdsRef.current = nextIds;
+    onUpdate({ visibleStickerIds: nextIds });
+  };
+
+  const toggleSticker = (id) => {
+    if (visibleSet.has(id)) {
+      updateVisible(visibleStickerIds.filter(item => item !== id));
+      return;
+    }
+    if (visibleStickerIds.length >= MAX_VISIBLE_STICKERS) {
+      onShowToast?.(`表示できるステッカーは${MAX_VISIBLE_STICKERS}個までです。`);
+      return;
+    }
+    updateVisible([...visibleStickerIds, id]);
+  };
+
+  const moveVisibleStickerToIndex = (id, nextIndex) => {
+    const currentIds = visibleStickerIdsRef.current;
+    const index = currentIds.indexOf(id);
+    if (index < 0) return;
+    const clampedIndex = clamp(nextIndex, 0, currentIds.length - 1);
+    if (index === clampedIndex) return;
+    const nextIds = [...currentIds];
+    const [item] = nextIds.splice(index, 1);
+    nextIds.splice(clampedIndex, 0, item);
+    updateVisible(nextIds);
+  };
+
+  const startStickerSortDrag = (event, stickerId) => {
+    if (event.target.closest('button')) return;
+    event.preventDefault();
+    const card = event.currentTarget;
+    setDraggingStickerId(stickerId);
+    card.setPointerCapture(event.pointerId);
+
+    const moveSortSticker = (moveEvent) => {
+      const target = document.elementFromPoint(moveEvent.clientX, moveEvent.clientY);
+      const targetCard = target?.closest?.('[data-visible-sticker-id]');
+      if (!targetCard) return;
+      const targetId = targetCard.dataset.visibleStickerId;
+      const targetIndex = visibleStickerIdsRef.current.indexOf(targetId);
+      if (targetIndex >= 0) moveVisibleStickerToIndex(stickerId, targetIndex);
+    };
+
+    const stopSortSticker = () => {
+      setDraggingStickerId('');
+      window.removeEventListener('pointermove', moveSortSticker);
+      window.removeEventListener('pointerup', stopSortSticker);
+      window.removeEventListener('pointercancel', stopSortSticker);
+    };
+
+    window.addEventListener('pointermove', moveSortSticker);
+    window.addEventListener('pointerup', stopSortSticker);
+    window.addEventListener('pointercancel', stopSortSticker);
+  };
+
+  const unlockByCode = (event) => {
+    event.preventDefault();
+    const normalizedCode = code.trim().toLowerCase();
+    const pack = Object.values(STICKER_PACKS).find(item => item.code === normalizedCode);
+    if (!pack) {
+      onShowToast?.('合言葉が違います。');
+      return;
+    }
+    const nextUnlocked = [...new Set([...unlockedStickerIds, ...pack.stickerIds])];
+    const appendVisible = pack.stickerIds.filter(id => !visibleSet.has(id));
+    const nextVisible = [...visibleStickerIds, ...appendVisible].slice(0, MAX_VISIBLE_STICKERS);
+    onUpdate({
+      unlockedStickerIds: nextUnlocked,
+      visibleStickerIds: nextVisible
+    });
+    setCode('');
+    setTab('manage');
+    onShowToast?.(pack.stickerIds.every(id => unlockedSet.has(id))
+      ? 'このステッカーは追加済みです。'
+      : '追加ステッカーを解放しました。');
+  };
+
+  return (
+    <section className="list-page sticker-page">
+      <SimplePageHeader title="ステッカー" eyebrow="素材" onBack={onBack} />
+      <div className="archive-tabs sticker-tabs" role="tablist" aria-label="ステッカー">
+        <button type="button" className={tab === 'manage' ? 'active' : ''} onClick={() => setTab('manage')}>
+          ステッカー管理
+        </button>
+        <button type="button" className={tab === 'add' ? 'active' : ''} onClick={() => setTab('add')}>
+          ステッカーの追加
+        </button>
+      </div>
+
+      {tab === 'manage' ? (
+        <>
+          <section className="settings-card sticker-manage-card">
+            <strong>普段表示するステッカー</strong>
+            <span className="sticker-count">{visibleStickerIds.length} / {MAX_VISIBLE_STICKERS}</span>
+            <div className="sticker-visible-grid" aria-label="表示中のステッカー">
+              {visibleStickers.map(sticker => (
+                <article
+                  key={sticker.id}
+                  className={`sticker-manage-item ${draggingStickerId === sticker.id ? 'is-dragging' : ''}`}
+                  data-visible-sticker-id={sticker.id}
+                  onPointerDown={(event) => startStickerSortDrag(event, sticker.id)}
+                >
+                  <img src={sticker.src} alt="" draggable={false} />
+                  <button type="button" className="subtle-action" onClick={() => toggleSticker(sticker.id)}>
+                    非表示
+                  </button>
+                </article>
+              ))}
+              {Array.from({ length: Math.max(0, MAX_VISIBLE_STICKERS - visibleStickers.length) }).map((_, index) => (
+                <div key={`empty-${index}`} className="sticker-empty-slot" aria-hidden="true" />
+              ))}
+            </div>
+          </section>
+
+          <section className="settings-card sticker-library-card">
+            <strong>使えるステッカー</strong>
+            <div className="sticker-library-grid">
+              {unlockedStickers.map(sticker => (
+                <button
+                  key={sticker.id}
+                  type="button"
+                  className={visibleSet.has(sticker.id) ? 'active' : ''}
+                  onClick={() => toggleSticker(sticker.id)}
+                  aria-label={`${sticker.label}を${visibleSet.has(sticker.id) ? '非表示' : '表示'}`}
+                >
+                  <img src={sticker.src} alt="" draggable={false} />
+                </button>
+              ))}
+            </div>
+            {hiddenUnlockedStickers.length === 0 && <small>すべて表示中です。</small>}
+          </section>
+        </>
+      ) : (
+        <section className="settings-card sticker-add-card">
+          <strong>ステッカーの追加</strong>
+          <p>合言葉を入れると、新しいステッカーが使えるようになります。</p>
+          <form onSubmit={unlockByCode}>
+            <label>
+              <span>合言葉</span>
+              <input
+                value={code}
+                placeholder="入力する"
+                autoComplete="off"
+                onChange={(event) => setCode(event.target.value)}
+              />
+            </label>
+            <button type="submit" className="subtle-action settings-wide-action">
+              追加する
+            </button>
+          </form>
+        </section>
+      )}
     </section>
   );
 }

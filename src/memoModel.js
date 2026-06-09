@@ -53,7 +53,27 @@ export const BOARD_TEXT_SIZES = new Set(['small', 'standard', 'large']);
 export const BOARD_TEXT_WEIGHTS = new Set(['soft', 'standard', 'bold']);
 
 const BOARD_ICONS = new Set(['home', 'book', 'map', 'camera', 'folder']);
-const STICKER_ASSETS = new Set(['usa', 'piyo', 'pon', 'lemon']);
+export const STICKER_CATALOG = [
+  { id: 'usa', label: 'うさぎ', src: '/usapon-memo/assets/usa.png', packId: 'default' },
+  { id: 'piyo', label: 'ひよこ', src: '/usapon-memo/assets/piyo.png', packId: 'default' },
+  { id: 'pon', label: 'ぽん', src: '/usapon-memo/assets/pon.png', packId: 'default' },
+  { id: 'lemon', label: 'レモン', src: '/usapon-memo/assets/lemon.png', packId: 'default' },
+  { id: 'ochun', label: 'おチュン', src: '/usapon-memo/assets/stickers/ochun.png', packId: 'mogumogu' },
+  { id: 'moguGoods', label: 'もぐくん', src: '/usapon-memo/assets/stickers/mogu-goods.png', packId: 'mogumogu' },
+  { id: 'layer', label: 'レイヤー', src: '/usapon-memo/assets/stickers/layer.png', packId: 'mogumogu' },
+  { id: 'osakaMogu', label: '大阪もぐくん', src: '/usapon-memo/assets/stickers/osaka-mogu.png', packId: 'mogumogu' },
+  { id: 'kumamotoMogu', label: '熊本もぐくん', src: '/usapon-memo/assets/stickers/kumamoto-mogu.png', packId: 'mogumogu' }
+];
+export const DEFAULT_STICKER_IDS = STICKER_CATALOG.filter(sticker => sticker.packId === 'default').map(sticker => sticker.id);
+export const STICKER_PACKS = {
+  mogumogu: {
+    label: 'もぐもぐセット',
+    code: 'mogumogu',
+    stickerIds: STICKER_CATALOG.filter(sticker => sticker.packId === 'mogumogu').map(sticker => sticker.id)
+  }
+};
+export const MAX_VISIBLE_STICKERS = 15;
+const STICKER_ASSETS = new Set(STICKER_CATALOG.map(sticker => sticker.id));
 
 const LEGACY_COLOR_MAP = {
   routine: 'yellow',
@@ -79,6 +99,7 @@ export const createBoardItem = (patch = {}) => normalizeBoardItem({
   type: 'text',
   boardId: 'home',
   text: '',
+  assetId: '',
   imageDataUrl: '',
   imageId: '',
   imageMimeType: '',
@@ -413,7 +434,7 @@ export const normalizeMemo = (memo = {}, index = 0) => {
 
 export const normalizeBoardItem = (item = {}, index = 0) => {
   const position = DEFAULT_POSITIONS[index % DEFAULT_POSITIONS.length];
-  const type = item.type === 'image' ? 'image' : 'text';
+  const type = ['image', 'sticker'].includes(item.type) ? item.type : 'text';
   const createdAt = typeof item.createdAt === 'string' ? item.createdAt : nowIso();
   const updatedAt = typeof item.updatedAt === 'string' ? item.updatedAt : createdAt;
   const textColor = BOARD_TEXT_COLORS[item.textColor]
@@ -431,12 +452,13 @@ export const normalizeBoardItem = (item = {}, index = 0) => {
     type,
     boardId: typeof item.boardId === 'string' && item.boardId.trim() ? item.boardId.trim() : 'home',
     text: typeof item.text === 'string' ? item.text : '',
+    assetId: STICKER_ASSETS.has(item.assetId) ? item.assetId : '',
     imageDataUrl: typeof item.imageDataUrl === 'string' ? item.imageDataUrl : '',
     imageId: typeof item.imageId === 'string' ? item.imageId : '',
     imageMimeType: typeof item.imageMimeType === 'string' ? item.imageMimeType : '',
     naturalWidth: Number.isFinite(Number(item.naturalWidth)) ? Number(item.naturalWidth) : 0,
     naturalHeight: Number.isFinite(Number(item.naturalHeight)) ? Number(item.naturalHeight) : 0,
-    x: Number.isFinite(Number(item.x)) ? clamp(Number(item.x), -8, 88) : position.x,
+    x: Number.isFinite(Number(item.x)) ? clamp(Number(item.x), -8, 96) : position.x,
     y: Number.isFinite(Number(item.y)) ? clamp(Number(item.y), -8, BOARD_ITEM_MAX_Y) : position.y,
     scale: Number.isFinite(Number(item.scale)) ? clamp(Number(item.scale), 0.3, 3.2) : 1,
     rotation: Number.isFinite(Number(item.rotation)) ? clamp(Number(item.rotation), -180, 180) : 0,
@@ -527,6 +549,19 @@ export const normalizeData = (data = {}) => {
   const notifiedTimeCapsuleBoardIds = Array.isArray(data.notifiedTimeCapsuleBoardIds)
     ? data.notifiedTimeCapsuleBoardIds.filter(id => typeof id === 'string')
     : [];
+  const unlockedStickerSet = new Set([
+    ...DEFAULT_STICKER_IDS,
+    ...(Array.isArray(data.unlockedStickerIds) ? data.unlockedStickerIds : [])
+  ].filter(id => STICKER_ASSETS.has(id)));
+  const unlockedStickerIds = STICKER_CATALOG
+    .map(sticker => sticker.id)
+    .filter(id => unlockedStickerSet.has(id));
+  const visibleStickerSource = Array.isArray(data.visibleStickerIds)
+    ? data.visibleStickerIds
+    : DEFAULT_STICKER_IDS;
+  const visibleStickerIds = [...new Set(visibleStickerSource)]
+    .filter(id => unlockedStickerSet.has(id) && STICKER_ASSETS.has(id))
+    .slice(0, MAX_VISIBLE_STICKERS);
 
   return {
     appTitle,
@@ -536,7 +571,9 @@ export const normalizeData = (data = {}) => {
     memos,
     boardItems,
     diaryRecords,
-    notifiedTimeCapsuleBoardIds
+    notifiedTimeCapsuleBoardIds,
+    unlockedStickerIds,
+    visibleStickerIds
   };
 };
 
