@@ -68,6 +68,10 @@ export const STICKER_CATALOG = [
 ];
 export const DEFAULT_STICKER_IDS = STICKER_CATALOG.filter(sticker => sticker.packId === 'default').map(sticker => sticker.id);
 export const STICKER_PACKS = {
+  default: {
+    label: '基本',
+    stickerIds: DEFAULT_STICKER_IDS
+  },
   mogumogu: {
     label: 'もぐもぐセット',
     code: 'mogumogu',
@@ -569,6 +573,9 @@ export const normalizeData = (data = {}) => {
   const visibleStickerIds = [...new Set(visibleStickerSource)]
     .filter(id => unlockedStickerSet.has(id) && STICKER_ASSETS.has(id))
     .slice(0, MAX_VISIBLE_STICKERS);
+  const diaryPhotoTransformRecoveryVersion = Number.isFinite(Number(data.diaryPhotoTransformRecoveryVersion))
+    ? Math.max(0, Number(data.diaryPhotoTransformRecoveryVersion))
+    : 0;
 
   return {
     appTitle,
@@ -580,7 +587,8 @@ export const normalizeData = (data = {}) => {
     diaryRecords,
     notifiedTimeCapsuleBoardIds,
     unlockedStickerIds,
-    visibleStickerIds
+    visibleStickerIds,
+    diaryPhotoTransformRecoveryVersion
   };
 };
 

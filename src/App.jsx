@@ -201,6 +201,7 @@ const ENABLE_CREATE_SETTINGS_PANEL = false;
 const BOARD_SNAPSHOT_WIDTH = 800;
 const BOARD_SNAPSHOT_RETRY_WIDTH = 640;
 const CONTENT_OFFSET_LIMIT = 90;
+const DIARY_PHOTO_TRANSFORM_RECOVERY_VERSION = 1;
 
 const nextFrame = () => new Promise(resolve => requestAnimationFrame(() => resolve()));
 
@@ -476,6 +477,40 @@ const getContentOffsetStyle = (memo) => ({
   '--content-x': `${memo.contentOffsetX || 0}px`,
   '--content-y': `${memo.contentOffsetY || 0}px`
 });
+
+const resetDiaryPhotoTransforms = (sourceData = {}) => {
+  let changed = false;
+  const diaryRecords = Object.fromEntries(Object.entries(sourceData.diaryRecords || {}).map(([dateKey, record]) => [
+    dateKey,
+    {
+      ...record,
+      photos: (record.photos || []).map(photo => {
+        const hasTransform = (photo.zoom || 1) !== 1
+          || (photo.offsetX || 0) !== 0
+          || (photo.offsetY || 0) !== 0
+          || (photo.rotation || 0) !== 0;
+        if (!hasTransform) return photo;
+        changed = true;
+        return {
+          ...photo,
+          zoom: 1,
+          offsetX: 0,
+          offsetY: 0,
+          rotation: 0
+        };
+      })
+    }
+  ]));
+
+  return {
+    data: {
+      ...sourceData,
+      diaryRecords,
+      diaryPhotoTransformRecoveryVersion: DIARY_PHOTO_TRANSFORM_RECOVERY_VERSION
+    },
+    changed
+  };
+};
 
 const getMemoCardSizeStyle = (memo) => {
   const isPhoto = memo.cardType === 'photo';
@@ -766,7 +801,7 @@ export default function App() {
   const managementBoards = useMemo(() => boards.filter(board => !board.archived), [boards]);
   const storageBreakdown = useMemo(() => getStorageBreakdown(data), [data]);
   const mediaUrlsById = useMemo(
-    () => Object.fromEntries(mediaRecords.map(record => [record.id, record.dataUrl])),
+    () => Object.fromEntries(mediaRecords.map(record => [record.id, record.dataUrl || record.thumbnailDataUrl || ''])),
     [mediaRecords]
   );
   const mediaBreakdown = useMemo(() => mediaRecords.reduce((result, record) => {
@@ -850,6 +885,15 @@ export default function App() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!mediaReady || data.diaryPhotoTransformRecoveryVersion >= DIARY_PHOTO_TRANSFORM_RECOVERY_VERSION) return;
+    setData(current => {
+      if (current.diaryPhotoTransformRecoveryVersion >= DIARY_PHOTO_TRANSFORM_RECOVERY_VERSION) return current;
+      const recovery = resetDiaryPhotoTransforms(current);
+      return recovery.data;
+    });
+  }, [data.diaryPhotoTransformRecoveryVersion, mediaReady]);
 
   useEffect(() => {
     let cancelled = false;
@@ -4911,12 +4955,21 @@ function StickerPage({ unlockedStickerIds, visibleStickerIds, onBack, onUpdate, 
   const [tab, setTab] = useState('manage');
   const [code, setCode] = useState('');
   const [draggingStickerId, setDraggingStickerId] = useState('');
+  const [openPackIds, setOpenPackIds] = useState(() => ['default']);
   const visibleStickerIdsRef = useRef(visibleStickerIds);
   const unlockedSet = useMemo(() => new Set(unlockedStickerIds), [unlockedStickerIds]);
   const visibleSet = useMemo(() => new Set(visibleStickerIds), [visibleStickerIds]);
   const unlockedStickers = STICKER_CATALOG.filter(sticker => unlockedSet.has(sticker.id));
   const visibleStickers = visibleStickerIds.map(id => STICKER_MAP[id]).filter(Boolean);
-  const hiddenUnlockedStickers = unlockedStickers.filter(sticker => !visibleSet.has(sticker.id));
+  const stickerPacks = Object.entries(STICKER_PACKS)
+    .map(([packId, pack]) => ({
+      id: packId,
+      ...pack,
+      stickers: pack.stickerIds
+        .map(id => STICKER_MAP[id])
+        .filter(sticker => sticker && unlockedSet.has(sticker.id))
+    }))
+    .filter(pack => pack.stickers.length > 0);
 
   useEffect(() => {
     visibleStickerIdsRef.current = visibleStickerIds;
@@ -4951,6 +5004,14 @@ function StickerPage({ unlockedStickerIds, visibleStickerIds, onBack, onUpdate, 
     updateVisible(nextIds);
   };
 
+  const togglePackOpen = (packId) => {
+    setOpenPackIds(current => (
+      current.includes(packId)
+        ? current.filter(id => id !== packId)
+        : [...current, packId]
+    ));
+  };
+
   const startStickerSortDrag = (event, stickerId) => {
     if (event.target.closest('button')) return;
     event.preventDefault();
@@ -4982,7 +5043,9 @@ function StickerPage({ unlockedStickerIds, visibleStickerIds, onBack, onUpdate, 
   const unlockByCode = (event) => {
     event.preventDefault();
     const normalizedCode = code.trim().toLowerCase();
-    const pack = Object.values(STICKER_PACKS).find(item => item.code === normalizedCode);
+    const packEntry = Object.entries(STICKER_PACKS).find(([, item]) => item.code === normalizedCode);
+    const pack = packEntry?.[1];
+    const packId = packEntry?.[0];
     if (!pack) {
       onShowToast?.('合言葉が違います。');
       return;
@@ -4996,6 +5059,9 @@ function StickerPage({ unlockedStickerIds, visibleStickerIds, onBack, onUpdate, 
     });
     setCode('');
     setTab('manage');
+    if (packId) {
+      setOpenPackIds(current => [...new Set([...current, packId])]);
+    }
     onShowToast?.(pack.stickerIds.every(id => unlockedSet.has(id))
       ? 'このステッカーは追加済みです。'
       : '追加ステッカーを解放しました。');
@@ -5042,20 +5108,41 @@ function StickerPage({ unlockedStickerIds, visibleStickerIds, onBack, onUpdate, 
 
           <section className="settings-card sticker-library-card">
             <strong>使えるステッカー</strong>
-            <div className="sticker-library-grid">
-              {unlockedStickers.map(sticker => (
-                <button
-                  key={sticker.id}
-                  type="button"
-                  className={visibleSet.has(sticker.id) ? 'active' : ''}
-                  onClick={() => toggleSticker(sticker.id)}
-                  aria-label={`${sticker.label}を${visibleSet.has(sticker.id) ? '非表示' : '表示'}`}
-                >
-                  <img src={sticker.src} alt="" draggable={false} />
-                </button>
-              ))}
+            <div className="sticker-pack-list">
+              {stickerPacks.map(pack => {
+                const isOpen = openPackIds.includes(pack.id);
+                const visibleCount = pack.stickers.filter(sticker => visibleSet.has(sticker.id)).length;
+                return (
+                  <section key={pack.id} className="sticker-pack">
+                    <button
+                      type="button"
+                      className="sticker-pack-header"
+                      onClick={() => togglePackOpen(pack.id)}
+                      aria-expanded={isOpen}
+                    >
+                      <span>{pack.label}</span>
+                      <small>{visibleCount} / {pack.stickers.length}</small>
+                    </button>
+                    {isOpen && (
+                      <div className="sticker-library-grid">
+                        {pack.stickers.map(sticker => (
+                          <button
+                            key={sticker.id}
+                            type="button"
+                            className={visibleSet.has(sticker.id) ? 'active' : ''}
+                            onClick={() => toggleSticker(sticker.id)}
+                            aria-label={`${sticker.label}を${visibleSet.has(sticker.id) ? '非表示' : '表示'}`}
+                          >
+                            <img src={sticker.src} alt="" draggable={false} />
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+                );
+              })}
             </div>
-            {hiddenUnlockedStickers.length === 0 && <small>すべて表示中です。</small>}
+            {unlockedStickers.length === 0 && <small>使えるステッカーはまだありません。</small>}
           </section>
         </>
       ) : (
@@ -5094,18 +5181,6 @@ function DiaryPhotoCard({ photo, imageSrc, onPatch, onDelete }) {
   const resetGesture = () => {
     const currentPhoto = latestPhotoRef.current;
     const pointers = [...pointersRef.current.values()];
-    if (pointers.length === 1) {
-      const [pointer] = pointers;
-      gestureRef.current = {
-        mode: 'drag',
-        startX: pointer.clientX,
-        startY: pointer.clientY,
-        offsetX: currentPhoto.offsetX || 0,
-        offsetY: currentPhoto.offsetY || 0
-      };
-      return;
-    }
-
     if (pointers.length >= 2) {
       const [first, second] = pointers;
       gestureRef.current = {
@@ -5126,31 +5201,27 @@ function DiaryPhotoCard({ photo, imageSrc, onPatch, onDelete }) {
 
   const startPhotoAdjust = (event) => {
     if (!imageSrc) return;
-    event.preventDefault();
-    event.currentTarget.setPointerCapture?.(event.pointerId);
     pointersRef.current.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
-    resetGesture();
+    if (pointersRef.current.size >= 2) {
+      event.preventDefault();
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+      resetGesture();
+    }
   };
 
   const movePhotoAdjust = (event) => {
     if (!pointersRef.current.has(event.pointerId)) return;
-    event.preventDefault();
     pointersRef.current.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
-    const gesture = gestureRef.current;
-    if (!gesture) return;
+    if (pointersRef.current.size < 2) return;
 
-    const pointers = [...pointersRef.current.values()];
-    if (gesture.mode === 'drag' && pointers.length === 1) {
-      const [pointer] = pointers;
-      const nextPatch = {
-        offsetX: clamp(gesture.offsetX + pointer.clientX - gesture.startX, -PHOTO_OFFSET_LIMIT, PHOTO_OFFSET_LIMIT),
-        offsetY: clamp(gesture.offsetY + pointer.clientY - gesture.startY, -PHOTO_OFFSET_LIMIT, PHOTO_OFFSET_LIMIT)
-      };
-      latestPhotoRef.current = { ...latestPhotoRef.current, ...nextPatch };
-      onPatch(nextPatch);
+    event.preventDefault();
+    const gesture = gestureRef.current;
+    if (!gesture) {
+      resetGesture();
       return;
     }
 
+    const pointers = [...pointersRef.current.values()];
     if (gesture.mode === 'pinch' && pointers.length >= 2) {
       const [first, second] = pointers;
       const center = getPointerCenter(first, second);
