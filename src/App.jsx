@@ -50,6 +50,8 @@ import {
   DEFAULT_NOTE_WIDTH,
   DEFAULT_PHOTO_CARD_HEIGHT,
   DEFAULT_PHOTO_CARD_WIDTH,
+  PHOTO_OFFSET_LIMIT,
+  PHOTO_ROTATION_LIMIT,
   DEFAULT_STICKY_TEXT_SIZE,
   DEFAULT_STICKY_TEXT_WEIGHT,
   DEFAULT_STICKER_IDS,
@@ -462,6 +464,13 @@ const getPhotoImageStyle = (memo) => {
     '--photo-fit-height': fitWidth ? 'auto' : '100%'
   };
 };
+
+const getDiaryPhotoImageStyle = (photo) => ({
+  '--diary-photo-zoom': photo.zoom || 1,
+  '--diary-photo-x': `${photo.offsetX || 0}px`,
+  '--diary-photo-y': `${photo.offsetY || 0}px`,
+  '--diary-photo-rotation': `${photo.rotation || 0}deg`
+});
 
 const getContentOffsetStyle = (memo) => ({
   '--content-x': `${memo.contentOffsetX || 0}px`,
@@ -1158,13 +1167,14 @@ export default function App() {
   const updateDiaryRecord = (dateKey, patch) => {
     setData(current => {
       const currentRecord = current.diaryRecords?.[dateKey] || { text: '', photos: [] };
+      const nextPatch = typeof patch === 'function' ? patch(currentRecord) : patch;
       return {
         ...current,
         diaryRecords: {
           ...(current.diaryRecords || {}),
           [dateKey]: {
             ...currentRecord,
-            ...patch,
+            ...nextPatch,
             updatedAt: new Date().toISOString(),
             createdAt: currentRecord.createdAt || new Date().toISOString()
           }
@@ -1430,6 +1440,28 @@ export default function App() {
     setPage('home');
   };
 
+  const deleteArchivedBoard = (boardId) => {
+    const board = boards.find(item => item.id === boardId);
+    if (!board?.archived) return;
+
+    const confirmed = window.confirm(`「${board.label}」を完全に削除しますか？中のメモや画像も一覧から消えます。`);
+    if (!confirmed) return;
+
+    captureUndo('アーカイブボードの削除');
+    setData(current => ({
+      ...current,
+      boards: current.boards.filter(item => item.id !== boardId),
+      memos: current.memos.filter(memo => memo.boardId !== boardId),
+      boardItems: (current.boardItems || []).filter(item => item.boardId !== boardId),
+      notifiedTimeCapsuleBoardIds: (current.notifiedTimeCapsuleBoardIds || []).filter(id => id !== boardId)
+    }));
+
+    if (activeBoardId === boardId) {
+      const fallbackBoard = boards.find(item => !item.archived && item.id !== boardId);
+      setActiveBoardId(fallbackBoard?.id || 'home');
+    }
+  };
+
   const openEditMemo = (memo) => {
     const photoDataUrl = memo.photoDataUrl || (memo.photoImageId ? mediaUrlsById[memo.photoImageId] : '');
     setDraft(normalizeMemo({
@@ -1564,6 +1596,7 @@ export default function App() {
           onBack={() => setPage('home')}
           onRestoreMemo={restoreMemo}
           onRestoreBoard={restoreBoard}
+          onDeleteBoard={deleteArchivedBoard}
         />
       )}
 
@@ -2956,12 +2989,26 @@ function HomePage({
           markCurrentBoardActive();
         }}>
           {memos.length === 0 && boardItems.length === 0 ? (
-            <button type="button" className="board-empty cork-empty" onClick={(event) => {
-              event.stopPropagation();
-              markCurrentBoardActive();
-              closeBoardFloatingMenus();
-              setSelectedBoardItemId('');
-            }}>
+            <button
+              type="button"
+              className="board-empty cork-empty"
+              onPointerDown={(event) => {
+                event.preventDefault();
+              }}
+              onContextMenu={(event) => {
+                event.preventDefault();
+              }}
+              onClick={(event) => {
+                event.stopPropagation();
+                if (boardLongPressFiredRef.current) {
+                  boardLongPressFiredRef.current = false;
+                  return;
+                }
+                markCurrentBoardActive();
+                closeBoardFloatingMenus();
+                setSelectedBoardItemId('');
+              }}
+            >
               <StickyNote size={28} />
               <strong>ここに貼っていこう</strong>
               <span>写真やメモを、少しずつ集めるボードです</span>
@@ -3154,7 +3201,7 @@ function HomePage({
   );
 }
 
-function BoardEditSheet({ board, onClose, onSave }) {
+function BoardEditSheet({ board, onClose, onSave, closeLabel = '' }) {
   const [label, setLabel] = useState(board.label);
   const [icon, setIcon] = useState(board.icon || 'folder');
 
@@ -3191,6 +3238,11 @@ function BoardEditSheet({ board, onClose, onSave }) {
           })}
         </div>
         <button type="submit" className="board-edit-save">保存</button>
+        {closeLabel && (
+          <button type="button" className="board-edit-finish" onClick={onClose}>
+            {closeLabel}
+          </button>
+        )}
       </form>
     </div>
   );
@@ -3903,8 +3955,8 @@ function MemoCreatePage({
     if (gesture.mode === 'drag' && pointers.length === 1) {
       const [pointer] = pointers;
       updatePhotoCrop({
-        photoOffsetX: clamp(gesture.offsetX + pointer.clientX - gesture.startX, -160, 160),
-        photoOffsetY: clamp(gesture.offsetY + pointer.clientY - gesture.startY, -160, 160)
+        photoOffsetX: clamp(gesture.offsetX + pointer.clientX - gesture.startX, -PHOTO_OFFSET_LIMIT, PHOTO_OFFSET_LIMIT),
+        photoOffsetY: clamp(gesture.offsetY + pointer.clientY - gesture.startY, -PHOTO_OFFSET_LIMIT, PHOTO_OFFSET_LIMIT)
       });
       return;
     }
@@ -3915,9 +3967,9 @@ function MemoCreatePage({
       const center = getPointerCenter(first, second);
       updatePhotoCrop({
         photoZoom: clamp(gesture.zoom * (distance / Math.max(gesture.distance, 1)), 1, 4),
-        photoRotation: clamp(gesture.rotation + getPointerAngle(first, second) - gesture.angle, -35, 35),
-        photoOffsetX: clamp(gesture.offsetX + center.x - gesture.center.x, -160, 160),
-        photoOffsetY: clamp(gesture.offsetY + center.y - gesture.center.y, -160, 160)
+        photoRotation: clamp(gesture.rotation + getPointerAngle(first, second) - gesture.angle, -PHOTO_ROTATION_LIMIT, PHOTO_ROTATION_LIMIT),
+        photoOffsetX: clamp(gesture.offsetX + center.x - gesture.center.x, -PHOTO_OFFSET_LIMIT, PHOTO_OFFSET_LIMIT),
+        photoOffsetY: clamp(gesture.offsetY + center.y - gesture.center.y, -PHOTO_OFFSET_LIMIT, PHOTO_OFFSET_LIMIT)
       });
     }
   };
@@ -4047,7 +4099,7 @@ function MemoCreatePage({
           angle: getPointerAngle(first, second),
           x: currentSticker.x,
           y: currentSticker.y,
-          size: currentSticker.size || 42,
+          size: currentSticker.size || 50,
           rotation: currentSticker.rotation || 0
         };
       } else if (activePointers.length === 1) {
@@ -4092,7 +4144,7 @@ function MemoCreatePage({
           );
           patch = {
             ...position,
-            size: clamp(gesture.size * (getPointerDistance(first, second) / Math.max(gesture.distance, 1)), 28, 120),
+            size: clamp(gesture.size * (getPointerDistance(first, second) / Math.max(gesture.distance, 1)), 36, 132),
             rotation: clamp(gesture.rotation + getPointerAngle(first, second) - gesture.angle, -180, 180)
           };
         } else if (activePointers.length === 1) {
@@ -4265,39 +4317,43 @@ function MemoCreatePage({
         {draft.cardType === 'photo' ? (
           <div className="photo-editor">
             <div
-              className={`photo-picker photo-crop-frame ${getPhotoCropClass(draft.photoCropRatio)}`}
-              style={{ '--photo-frame-ratio': getPhotoFrameRatio(draft) }}
-              role="button"
-              tabIndex={0}
-              aria-label={draft.photoDataUrl || draft.photoImageId ? '写真の切り抜き位置を調整' : '写真を選ぶ'}
-              onClick={() => {
-                if (draft.photoDataUrl || draft.photoImageId) {
-                  setPhotoToolsOpen(true);
-                } else {
-                  photoInputRef.current?.click();
-                }
-              }}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                  event.preventDefault();
-                  if (!draft.photoDataUrl && !draft.photoImageId) photoInputRef.current?.click();
-                }
-              }}
+              className="photo-gesture-zone"
               onPointerDown={startPhotoDrag}
               onPointerMove={movePhotoDrag}
               onPointerUp={stopPhotoDrag}
               onPointerCancel={stopPhotoDrag}
             >
-              <input ref={photoInputRef} type="file" accept="image/*" onChange={handlePhotoChange} />
-              {draft.photoDataUrl ? (
-                <>
-                  <img src={draft.photoDataUrl} alt="選択した写真" style={getPhotoImageStyle(draft)} draggable="false" />
-                </>
-              ) : draft.photoImageId ? (
-                <span><Camera size={28} />画像を読み込み中</span>
-              ) : (
-                <span><ImagePlus size={28} />{imageBusy ? '読み込み中' : '写真を選ぶ'}</span>
-              )}
+              <div
+                className={`photo-picker photo-crop-frame ${getPhotoCropClass(draft.photoCropRatio)}`}
+                style={{ '--photo-frame-ratio': getPhotoFrameRatio(draft) }}
+                role="button"
+                tabIndex={0}
+                aria-label={draft.photoDataUrl || draft.photoImageId ? '写真の切り抜き位置を調整' : '写真を選ぶ'}
+                onClick={() => {
+                  if (draft.photoDataUrl || draft.photoImageId) {
+                    setPhotoToolsOpen(true);
+                  } else {
+                    photoInputRef.current?.click();
+                  }
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    if (!draft.photoDataUrl && !draft.photoImageId) photoInputRef.current?.click();
+                  }
+                }}
+              >
+                <input ref={photoInputRef} type="file" accept="image/*" onChange={handlePhotoChange} />
+                {draft.photoDataUrl ? (
+                  <>
+                    <img src={draft.photoDataUrl} alt="選択した写真" style={getPhotoImageStyle(draft)} draggable="false" />
+                  </>
+                ) : draft.photoImageId ? (
+                  <span><Camera size={28} />画像を読み込み中</span>
+                ) : (
+                  <span><ImagePlus size={28} />{imageBusy ? '読み込み中' : '写真を選ぶ'}</span>
+                )}
+              </div>
             </div>
             {(draft.photoDataUrl || draft.photoImageId) && photoToolsOpen && (
               <div className="photo-tools" aria-label="写真操作">
@@ -5026,6 +5082,121 @@ function StickerPage({ unlockedStickerIds, visibleStickerIds, onBack, onUpdate, 
   );
 }
 
+function DiaryPhotoCard({ photo, imageSrc, onPatch, onDelete }) {
+  const pointersRef = useRef(new globalThis.Map());
+  const gestureRef = useRef(null);
+  const latestPhotoRef = useRef(photo);
+
+  useEffect(() => {
+    latestPhotoRef.current = photo;
+  }, [photo]);
+
+  const resetGesture = () => {
+    const currentPhoto = latestPhotoRef.current;
+    const pointers = [...pointersRef.current.values()];
+    if (pointers.length === 1) {
+      const [pointer] = pointers;
+      gestureRef.current = {
+        mode: 'drag',
+        startX: pointer.clientX,
+        startY: pointer.clientY,
+        offsetX: currentPhoto.offsetX || 0,
+        offsetY: currentPhoto.offsetY || 0
+      };
+      return;
+    }
+
+    if (pointers.length >= 2) {
+      const [first, second] = pointers;
+      gestureRef.current = {
+        mode: 'pinch',
+        distance: Math.max(getPointerDistance(first, second), 1),
+        angle: getPointerAngle(first, second),
+        center: getPointerCenter(first, second),
+        zoom: currentPhoto.zoom || 1,
+        rotation: currentPhoto.rotation || 0,
+        offsetX: currentPhoto.offsetX || 0,
+        offsetY: currentPhoto.offsetY || 0
+      };
+      return;
+    }
+
+    gestureRef.current = null;
+  };
+
+  const startPhotoAdjust = (event) => {
+    if (!imageSrc) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    pointersRef.current.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
+    resetGesture();
+  };
+
+  const movePhotoAdjust = (event) => {
+    if (!pointersRef.current.has(event.pointerId)) return;
+    event.preventDefault();
+    pointersRef.current.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
+    const gesture = gestureRef.current;
+    if (!gesture) return;
+
+    const pointers = [...pointersRef.current.values()];
+    if (gesture.mode === 'drag' && pointers.length === 1) {
+      const [pointer] = pointers;
+      const nextPatch = {
+        offsetX: clamp(gesture.offsetX + pointer.clientX - gesture.startX, -PHOTO_OFFSET_LIMIT, PHOTO_OFFSET_LIMIT),
+        offsetY: clamp(gesture.offsetY + pointer.clientY - gesture.startY, -PHOTO_OFFSET_LIMIT, PHOTO_OFFSET_LIMIT)
+      };
+      latestPhotoRef.current = { ...latestPhotoRef.current, ...nextPatch };
+      onPatch(nextPatch);
+      return;
+    }
+
+    if (gesture.mode === 'pinch' && pointers.length >= 2) {
+      const [first, second] = pointers;
+      const center = getPointerCenter(first, second);
+      const nextPatch = {
+        zoom: clamp(gesture.zoom * (getPointerDistance(first, second) / gesture.distance), 1, 4),
+        rotation: clamp(gesture.rotation + getPointerAngle(first, second) - gesture.angle, -PHOTO_ROTATION_LIMIT, PHOTO_ROTATION_LIMIT),
+        offsetX: clamp(gesture.offsetX + center.x - gesture.center.x, -PHOTO_OFFSET_LIMIT, PHOTO_OFFSET_LIMIT),
+        offsetY: clamp(gesture.offsetY + center.y - gesture.center.y, -PHOTO_OFFSET_LIMIT, PHOTO_OFFSET_LIMIT)
+      };
+      latestPhotoRef.current = { ...latestPhotoRef.current, ...nextPatch };
+      onPatch(nextPatch);
+    }
+  };
+
+  const stopPhotoAdjust = (event) => {
+    pointersRef.current.delete(event.pointerId);
+    resetGesture();
+  };
+
+  return (
+    <article className="diary-photo-card">
+      <div
+        className="diary-photo-gesture-zone"
+        onPointerDown={startPhotoAdjust}
+        onPointerMove={movePhotoAdjust}
+        onPointerUp={stopPhotoAdjust}
+        onPointerCancel={stopPhotoAdjust}
+      >
+        <div className="diary-photo-frame" aria-label="日記写真の位置を調整">
+          {imageSrc
+            ? <img src={imageSrc} alt="" style={getDiaryPhotoImageStyle(photo)} draggable={false} />
+            : <span className="image-missing">画像を読み込めません</span>}
+        </div>
+      </div>
+      <input
+        value={photo.comment || ''}
+        placeholder="コメント"
+        onChange={(event) => onPatch({ comment: event.target.value })}
+      />
+      <button type="button" onClick={onDelete}>
+        削除
+      </button>
+    </article>
+  );
+}
+
 function DiaryPage({ boards, records, mediaUrlsById = {}, onBack, onUpdateRecord, onAttachBoardSnapshot, onSaveMedia, onShowToast }) {
   const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [pasteOpen, setPasteOpen] = useState(false);
@@ -5062,6 +5233,10 @@ function DiaryPage({ boards, records, mediaUrlsById = {}, onBack, onUpdateRecord
           url: '',
           imageId: mediaRecord?.id || '',
           comment: '',
+          zoom: 1,
+          offsetX: 0,
+          offsetY: 0,
+          rotation: 0,
           originalBytes: image.originalBytes,
           compressedBytes: image.compressedBytes,
           mimeType: image.mimeType
@@ -5119,26 +5294,26 @@ function DiaryPage({ boards, records, mediaUrlsById = {}, onBack, onUpdateRecord
         />
         <div className="diary-photo-list">
           {(record.photos || []).map((photo, index) => (
-            <article key={photo.id || index} className="diary-photo-card">
-              {photo.url || mediaUrlsById[photo.imageId]
-                ? <img src={photo.url || mediaUrlsById[photo.imageId]} alt="" />
-                : <span className="image-missing">画像を読み込めません</span>}
-              <input
-                value={photo.comment || ''}
-                placeholder="コメント"
-                onChange={(event) => {
-                  const nextPhotos = [...(record.photos || [])];
-                  nextPhotos[index] = { ...photo, comment: event.target.value };
-                  updatePhotos(nextPhotos);
-                }}
-              />
-              <button
-                type="button"
-                onClick={() => updatePhotos((record.photos || []).filter((_, photoIndex) => photoIndex !== index))}
-              >
-                削除
-              </button>
-            </article>
+            <DiaryPhotoCard
+              key={photo.id || index}
+              photo={photo}
+              imageSrc={photo.url || mediaUrlsById[photo.imageId] || ''}
+              onPatch={(patch) => {
+                onUpdateRecord(dateKey, (currentRecord) => {
+                  const currentPhotos = currentRecord.photos || [];
+                  const targetId = photo.id;
+                  return {
+                    ...currentRecord,
+                    photos: currentPhotos.map((currentPhoto, photoIndex) => (
+                      (targetId ? currentPhoto.id === targetId : photoIndex === index)
+                        ? { ...currentPhoto, ...patch }
+                        : currentPhoto
+                    ))
+                  };
+                });
+              }}
+              onDelete={() => updatePhotos((record.photos || []).filter((_, photoIndex) => photoIndex !== index))}
+            />
           ))}
           {(record.photos || []).length === 0 && <p className="list-empty-text">写真はまだありません</p>}
         </div>
@@ -5199,11 +5374,27 @@ function DiaryPage({ boards, records, mediaUrlsById = {}, onBack, onUpdateRecord
 }
 
 function TimeCapsulePage({ boards, onBack, onUpdateBoard }) {
+  const [tab, setTab] = useState('settings');
+  const [editingBoard, setEditingBoard] = useState(null);
+  const scheduledBoards = boards.filter(board => board.isTimeCapsule && board.timeCapsuleAt);
+  const visibleBoards = tab === 'scheduled' ? scheduledBoards : boards;
+
   return (
     <section className="list-page">
       <SimplePageHeader title="タイムカプセル" eyebrow="ボード予約" onBack={onBack} />
+      <div className="archive-tabs time-capsule-tabs" aria-label="タイムカプセルメニュー">
+        <button type="button" className={tab === 'settings' ? 'active' : ''} onClick={() => setTab('settings')}>
+          予約設定
+        </button>
+        <button type="button" className={tab === 'scheduled' ? 'active' : ''} onClick={() => setTab('scheduled')}>
+          予約済み一覧
+        </button>
+      </div>
       <div className="plain-list">
-        {boards.map(board => (
+        {tab === 'scheduled' && scheduledBoards.length === 0 && (
+          <p className="list-empty-text">予約済みボードはありません</p>
+        )}
+        {visibleBoards.map(board => (
           <article key={board.id} className="list-item-card time-capsule-card">
             <div>
               <span>{getBoardOpenLabel(board)}</span>
@@ -5220,22 +5411,42 @@ function TimeCapsulePage({ boards, onBack, onUpdateBoard }) {
                 })}
               />
             </label>
-            <button
-              type="button"
-              className="subtle-action"
-              onClick={() => onUpdateBoard(board.id, { isTimeCapsule: false, timeCapsuleAt: null })}
-              disabled={!board.isTimeCapsule}
-            >
-              解除
-            </button>
+            <div className="time-capsule-actions">
+              <button
+                type="button"
+                className="subtle-action"
+                onClick={() => setEditingBoard(board)}
+              >
+                編集
+              </button>
+              <button
+                type="button"
+                className="subtle-action"
+                onClick={() => onUpdateBoard(board.id, { isTimeCapsule: false, timeCapsuleAt: null })}
+                disabled={!board.isTimeCapsule}
+              >
+                解除
+              </button>
+            </div>
           </article>
         ))}
       </div>
+      {editingBoard && (
+        <BoardEditSheet
+          board={editingBoard}
+          onClose={() => setEditingBoard(null)}
+          closeLabel="編集を終了する"
+          onSave={(patch) => {
+            onUpdateBoard(editingBoard.id, patch);
+            setEditingBoard(null);
+          }}
+        />
+      )}
     </section>
   );
 }
 
-function ArchivePage({ boards, memos, onBack, onRestoreMemo, onRestoreBoard }) {
+function ArchivePage({ boards, memos, onBack, onRestoreMemo, onRestoreBoard, onDeleteBoard }) {
   const [tab, setTab] = useState('memos');
   const archivedMemos = memos.filter(memo => memo.archived && memo.cardType !== 'photo');
   const archivedPhotos = memos.filter(memo => memo.archived && memo.cardType === 'photo');
@@ -5260,21 +5471,32 @@ function ArchivePage({ boards, memos, onBack, onRestoreMemo, onRestoreBoard }) {
           <ArchiveItem key={memo.id} title={getMemoPrimaryText(memo)} meta="写真" onRestore={() => onRestoreMemo(memo.id)} />
         ))}
         {tab === 'boards' && archivedBoards.map(board => (
-          <ArchiveItem key={board.id} title={board.label} meta="ボード" onRestore={() => onRestoreBoard(board.id)} />
+          <ArchiveItem
+            key={board.id}
+            title={board.label}
+            meta="ボード"
+            onRestore={() => onRestoreBoard(board.id)}
+            onDelete={() => onDeleteBoard(board.id)}
+          />
         ))}
       </div>
     </section>
   );
 }
 
-function ArchiveItem({ title, meta, onRestore }) {
+function ArchiveItem({ title, meta, onRestore, onDelete = null }) {
   return (
     <article className="list-item-card">
       <div>
         <span>{meta}</span>
         <strong>{title}</strong>
       </div>
-      <button type="button" className="subtle-action" onClick={onRestore}>復元</button>
+      <div className="list-item-actions">
+        <button type="button" className="subtle-action" onClick={onRestore}>復元</button>
+        {onDelete && (
+          <button type="button" className="subtle-action danger-action" onClick={onDelete}>削除</button>
+        )}
+      </div>
     </article>
   );
 }

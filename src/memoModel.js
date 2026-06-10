@@ -38,6 +38,8 @@ export const DEFAULT_NOTE_WIDTH = 238;
 export const DEFAULT_NOTE_HEIGHT = 198;
 export const DEFAULT_PHOTO_CARD_WIDTH = 238;
 export const DEFAULT_PHOTO_CARD_HEIGHT = 300;
+export const PHOTO_OFFSET_LIMIT = 260;
+export const PHOTO_ROTATION_LIMIT = 180;
 export const BOARD_ITEM_MAX_Y = 88;
 export const MEMO_CARD_MAX_Y = 88;
 export const STICKY_TEXT_SIZES = new Set(['small', 'standard', 'large']);
@@ -138,7 +140,7 @@ export const createSticker = (assetId = 'usa', patch = {}) => ({
   assetId: STICKER_ASSETS.has(assetId) ? assetId : 'usa',
   x: Number.isFinite(Number(patch.x)) ? clamp(Number(patch.x)) : 50,
   y: Number.isFinite(Number(patch.y)) ? clamp(Number(patch.y)) : 62,
-  size: Number.isFinite(Number(patch.size)) ? clamp(Number(patch.size), 28, 120) : 42,
+  size: Number.isFinite(Number(patch.size)) ? clamp(Number(patch.size), 36, 132) : 50,
   rotation: Number.isFinite(Number(patch.rotation)) ? clamp(Number(patch.rotation), -180, 180) : 0
 });
 
@@ -340,9 +342,9 @@ export const normalizeMemo = (memo = {}, index = 0) => {
   const caption = typeof memo.caption === 'string' ? memo.caption.trim() : '';
   const photoCropRatio = PHOTO_CROP_RATIOS[memo.photoCropRatio] ? memo.photoCropRatio : 'custom';
   const photoZoom = Number.isFinite(Number(memo.photoZoom)) ? clamp(Number(memo.photoZoom), 1, 4) : 1;
-  const photoOffsetX = Number.isFinite(Number(memo.photoOffsetX)) ? clamp(Number(memo.photoOffsetX), -160, 160) : 0;
-  const photoOffsetY = Number.isFinite(Number(memo.photoOffsetY)) ? clamp(Number(memo.photoOffsetY), -160, 160) : 0;
-  const photoRotation = Number.isFinite(Number(memo.photoRotation)) ? clamp(Number(memo.photoRotation), -35, 35) : 0;
+  const photoOffsetX = Number.isFinite(Number(memo.photoOffsetX)) ? clamp(Number(memo.photoOffsetX), -PHOTO_OFFSET_LIMIT, PHOTO_OFFSET_LIMIT) : 0;
+  const photoOffsetY = Number.isFinite(Number(memo.photoOffsetY)) ? clamp(Number(memo.photoOffsetY), -PHOTO_OFFSET_LIMIT, PHOTO_OFFSET_LIMIT) : 0;
+  const photoRotation = Number.isFinite(Number(memo.photoRotation)) ? clamp(Number(memo.photoRotation), -PHOTO_ROTATION_LIMIT, PHOTO_ROTATION_LIMIT) : 0;
   const photoAspectRatio = Number.isFinite(Number(memo.photoAspectRatio)) && Number(memo.photoAspectRatio) > 0
     ? clamp(Number(memo.photoAspectRatio), 0.1, 10)
     : 1;
@@ -477,6 +479,10 @@ const normalizeDiaryPhoto = (photo = {}) => ({
   url: typeof photo.url === 'string' ? photo.url : '',
   imageId: typeof photo.imageId === 'string' ? photo.imageId : '',
   comment: typeof photo.comment === 'string' ? photo.comment : '',
+  zoom: Number.isFinite(Number(photo.zoom)) ? clamp(Number(photo.zoom), 1, 4) : 1,
+  offsetX: Number.isFinite(Number(photo.offsetX)) ? clamp(Number(photo.offsetX), -PHOTO_OFFSET_LIMIT, PHOTO_OFFSET_LIMIT) : 0,
+  offsetY: Number.isFinite(Number(photo.offsetY)) ? clamp(Number(photo.offsetY), -PHOTO_OFFSET_LIMIT, PHOTO_OFFSET_LIMIT) : 0,
+  rotation: Number.isFinite(Number(photo.rotation)) ? clamp(Number(photo.rotation), -PHOTO_ROTATION_LIMIT, PHOTO_ROTATION_LIMIT) : 0,
   originalBytes: Number.isFinite(Number(photo.originalBytes)) ? Math.max(0, Number(photo.originalBytes)) : 0,
   compressedBytes: Number.isFinite(Number(photo.compressedBytes)) ? Math.max(0, Number(photo.compressedBytes)) : 0,
   mimeType: typeof photo.mimeType === 'string' ? photo.mimeType : ''

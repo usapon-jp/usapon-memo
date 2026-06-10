@@ -184,6 +184,9 @@ button {
   background: rgba(255, 255, 255, 0.58);
   color: var(--muted);
   cursor: pointer;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .board-empty strong {
@@ -490,6 +493,19 @@ button {
 .subtle-action:disabled {
   opacity: 0.48;
   cursor: not-allowed;
+}
+
+.list-item-actions,
+.time-capsule-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.danger-action {
+  background: rgba(239, 199, 190, 0.78);
+  color: #a55343;
 }
 
 .photo-grid-list {
@@ -1011,11 +1027,32 @@ button {
   box-shadow: 0 12px 24px rgba(103, 69, 35, 0.12);
 }
 
-.diary-photo-card img {
+.diary-photo-gesture-zone {
+  padding: 18px;
+  margin: -18px -18px 0;
+  touch-action: none;
+}
+
+.diary-photo-frame {
   width: min(100%, 260px);
   aspect-ratio: 1;
-  object-fit: cover;
+  position: relative;
+  overflow: hidden;
   background: #f3eadc;
+}
+
+.diary-photo-frame img {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  object-fit: cover;
+  transform: translate(-50%, -50%) translate(var(--diary-photo-x, 0), var(--diary-photo-y, 0)) rotate(var(--diary-photo-rotation, 0deg)) scale(var(--diary-photo-zoom, 1));
+  transform-origin: center;
+  user-select: none;
+  pointer-events: none;
 }
 
 .diary-photo-card input {
@@ -1103,6 +1140,10 @@ button {
 .archive-tabs button.active {
   background: rgba(255, 255, 255, 0.86);
   box-shadow: 0 8px 18px rgba(103, 69, 35, 0.08);
+}
+
+.time-capsule-tabs {
+  grid-template-columns: repeat(2, 1fr);
 }
 
 .create-page {
@@ -1264,7 +1305,9 @@ button {
   box-sizing: content-box;
   display: block;
   height: auto;
-  padding: 16px;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 24px;
   transform: translate(-50%, -50%) rotate(var(--sticker-rotation, 0deg));
   user-select: none;
 }
@@ -1295,11 +1338,11 @@ button {
 }
 
 .sticker-delete {
-  width: 22px;
-  height: 22px;
+  width: 26px;
+  height: 26px;
   position: absolute;
-  top: -10px;
-  right: -10px;
+  top: 4px;
+  right: 4px;
   z-index: 4;
   border: 0;
   border-radius: 50%;
@@ -2603,6 +2646,17 @@ body {
   cursor: pointer;
 }
 
+.board-edit-finish {
+  min-height: 40px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(240, 227, 209, 0.78);
+  color: #7c5b3e;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
 .cork-board-wrap {
   height: calc(100dvh - 140px);
   min-height: 0;
@@ -3282,6 +3336,12 @@ body {
 .photo-editor {
   display: grid;
   gap: 12px;
+}
+
+.photo-gesture-zone {
+  padding: 18px;
+  margin: -18px;
+  touch-action: none;
 }
 
 .create-photo .photo-editor {
