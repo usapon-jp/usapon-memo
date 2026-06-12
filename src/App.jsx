@@ -4143,7 +4143,7 @@ function MemoCreatePage({
           angle: getPointerAngle(first, second),
           x: currentSticker.x,
           y: currentSticker.y,
-          size: currentSticker.size || 50,
+          size: currentSticker.size || 58,
           rotation: currentSticker.rotation || 0
         };
       } else if (activePointers.length === 1) {
@@ -4188,7 +4188,7 @@ function MemoCreatePage({
           );
           patch = {
             ...position,
-            size: clamp(gesture.size * (getPointerDistance(first, second) / Math.max(gesture.distance, 1)), 36, 132),
+            size: clamp(gesture.size * (getPointerDistance(first, second) / Math.max(gesture.distance, 1)), 44, 150),
             rotation: clamp(gesture.rotation + getPointerAngle(first, second) - gesture.angle, -180, 180)
           };
         } else if (activePointers.length === 1) {
@@ -4222,8 +4222,26 @@ function MemoCreatePage({
       stickerGestureRef.current = null;
       setMovingStickerId('');
       window.removeEventListener('pointermove', moveSticker);
+      window.removeEventListener('pointerdown', addNearbyStickerPointer, true);
       window.removeEventListener('pointerup', stopStickerMove);
       window.removeEventListener('pointercancel', stopStickerMove);
+    };
+
+    const addNearbyStickerPointer = (pointerEvent) => {
+      const session = stickerGestureRef.current;
+      if (!session || session.stickerId !== sticker.id || session.pointers.has(pointerEvent.pointerId)) return;
+      if (!isPointInsideCreateCard(pointerEvent.clientX, pointerEvent.clientY)) return;
+
+      const currentSticker = getCurrentSticker();
+      const center = getStickerCenter(currentSticker);
+      const hitRadius = Math.max((currentSticker.size || 58) / 2 + 76, 104);
+      const distance = Math.hypot(pointerEvent.clientX - center.x, pointerEvent.clientY - center.y);
+      if (distance > hitRadius) return;
+
+      pointerEvent.preventDefault();
+      pointerEvent.stopPropagation();
+      updateStickerPointer(pointerEvent);
+      resetStickerGesture();
     };
 
     if (!stickerGestureRef.current || stickerGestureRef.current.stickerId !== sticker.id) {
@@ -4233,6 +4251,7 @@ function MemoCreatePage({
         gesture: null
       };
       window.addEventListener('pointermove', moveSticker);
+      window.addEventListener('pointerdown', addNearbyStickerPointer, { capture: true });
       window.addEventListener('pointerup', stopStickerMove);
       window.addEventListener('pointercancel', stopStickerMove);
     }

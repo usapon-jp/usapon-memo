@@ -144,7 +144,7 @@ export const createSticker = (assetId = 'usa', patch = {}) => ({
   assetId: STICKER_ASSETS.has(assetId) ? assetId : 'usa',
   x: Number.isFinite(Number(patch.x)) ? clamp(Number(patch.x)) : 50,
   y: Number.isFinite(Number(patch.y)) ? clamp(Number(patch.y)) : 62,
-  size: Number.isFinite(Number(patch.size)) ? clamp(Number(patch.size), 36, 132) : 50,
+  size: Number.isFinite(Number(patch.size)) ? clamp(Number(patch.size), 44, 150) : 58,
   rotation: Number.isFinite(Number(patch.rotation)) ? clamp(Number(patch.rotation), -180, 180) : 0
 });
 

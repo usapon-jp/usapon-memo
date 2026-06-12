@@ -1368,9 +1368,9 @@ button {
   box-sizing: content-box;
   display: block;
   height: auto;
-  min-width: 36px;
-  min-height: 36px;
-  padding: 24px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 34px;
   transform: translate(-50%, -50%) rotate(var(--sticker-rotation, 0deg));
   user-select: none;
 }
