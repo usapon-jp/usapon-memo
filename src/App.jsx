@@ -75,6 +75,7 @@ import {
   putMediaRecord,
   putMediaRecords
 } from './mediaStorage.js';
+import { canAutoOfferInstall, detectInstallContext, INSTALL_GUIDE_HIDDEN_KEY } from './installGuide.js';
 
 const BOARD_ICON_MAP = {
   home: Home,
@@ -784,6 +785,12 @@ export default function App() {
   const [storageEstimate, setStorageEstimate] = useState(null);
   const [mediaRecords, setMediaRecords] = useState([]);
   const [mediaReady, setMediaReady] = useState(false);
+  const [installContext] = useState(detectInstallContext);
+  const [installGuideOpen, setInstallGuideOpen] = useState(false);
+  const [installGuideHidden, setInstallGuideHidden] = useState(() => {
+    try { return localStorage.getItem(INSTALL_GUIDE_HIDDEN_KEY) === '1'; } catch { return false; }
+  });
+  const installOfferShownRef = useRef(false);
   const initializedBoardRef = useRef(false);
   const snapshotStageRef = useRef(null);
   const appTitle = data.appTitle || DEFAULT_APP_TITLE;
@@ -850,6 +857,12 @@ export default function App() {
       setStorageError(current => current === STORAGE_FULL_MESSAGE ? '' : current);
     }
   }, [data, mediaReady]);
+
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('install') === '1' && !installContext.isStandalone) {
+      setInstallGuideOpen(true);
+    }
+  }, [installContext.isStandalone]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1114,6 +1127,7 @@ export default function App() {
       updatedAt: new Date().toISOString()
     });
 
+    const isFirstMemo = data.memos.length === 0;
     setData(current => {
       const exists = current.memos.some(item => item.id === nextMemo.id);
       return {
@@ -1126,6 +1140,11 @@ export default function App() {
     setActiveBoardId(nextMemo.boardId);
     setPage('home');
     setDraft(createDraft({ boardId: nextMemo.boardId }));
+    setAppToast('メモを保存しました。');
+    if (isFirstMemo && !installOfferShownRef.current && canAutoOfferInstall(installContext, installGuideHidden)) {
+      installOfferShownRef.current = true;
+      setInstallGuideOpen(true);
+    }
   };
 
   const patchMemo = (id, patch) => {
@@ -1313,6 +1332,12 @@ export default function App() {
       console.error('Backup import failed', error);
       setStorageError('バックアップを読み込めませんでした。JSONファイルを確認してください。');
     }
+  };
+
+  const hideInstallGuide = () => {
+    try { localStorage.setItem(INSTALL_GUIDE_HIDDEN_KEY, '1'); } catch { /* 現在の表示だけ閉じる */ }
+    setInstallGuideHidden(true);
+    setInstallGuideOpen(false);
   };
 
   const requestBrowserNotifications = async () => {
@@ -1524,6 +1549,9 @@ export default function App() {
   return (
     <main className="phone-shell">
       {(storageError || appToast) && <p className="storage-toast">{storageError || appToast}</p>}
+      {installContext.isInstagramInAppBrowser && !installContext.isStandalone && (
+        <InstagramInstallNotice hasData={data.memos.length > 0} onOpen={() => setInstallGuideOpen(true)} />
+      )}
 
       {page === 'home' && (
         <HomePage
@@ -1658,6 +1686,7 @@ export default function App() {
           onRequestNotifications={requestBrowserNotifications}
           onExportBackup={exportBackup}
           onImportBackup={importBackup}
+          onOpenInstallGuide={() => setInstallGuideOpen(true)}
         />
       )}
 
@@ -1703,8 +1732,51 @@ export default function App() {
           stickyTextWeight={stickyTextWeight}
         />
       )}
+      <HomeScreenInstallGuide
+        open={installGuideOpen}
+        context={installContext}
+        hasData={data.memos.length > 0}
+        onExportBackup={exportBackup}
+        onClose={() => setInstallGuideOpen(false)}
+        onNeverShow={hideInstallGuide}
+      />
     </main>
   );
+}
+
+function InstagramInstallNotice({ hasData, onOpen }) {
+  return <aside className="instagram-install-notice" role="status"><div><strong>{hasData ? 'メモを引き継ぐにはバックアップが必要です' : 'メモを書く前に通常ブラウザで開くのがおすすめです'}</strong><p>{hasData ? 'InstagramとSafari・Chromeの保存場所は別です。' : '通常ブラウザならホーム画面に追加できます。'}</p></div><button type="button" onClick={onOpen}>開き方</button></aside>;
+}
+
+function HomeScreenInstallGuide({ open, context, hasData, onExportBackup, onClose, onNeverShow }) {
+  const [installPrompt, setInstallPrompt] = useState(null);
+
+  useEffect(() => {
+    const capture = (event) => { event.preventDefault(); setInstallPrompt(event); };
+    const installed = () => { setInstallPrompt(null); onClose(); };
+    window.addEventListener('beforeinstallprompt', capture);
+    window.addEventListener('appinstalled', installed);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', capture);
+      window.removeEventListener('appinstalled', installed);
+    };
+  }, []);
+
+  if (!open || context.isStandalone) return null;
+
+  const install = async () => {
+    if (!installPrompt) return;
+    await installPrompt.prompt();
+    const choice = await installPrompt.userChoice;
+    if (choice.outcome === 'accepted') onClose();
+    setInstallPrompt(null);
+  };
+
+  return <div className="install-guide-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className="install-guide-sheet" role="dialog" aria-modal="true" aria-label="ホーム画面に追加する"><header><div><small>ADD TO HOME SCREEN</small><h2>ホーム画面に追加する</h2></div><button type="button" onClick={onClose} aria-label="閉じる"><X size={20}/></button></header><p className="install-guide-lead">うさぽんメモを、ホーム画面からすぐ開けるようにします。</p>
+    {hasData ? <div className="install-data-warning"><strong>今のメモは、このブラウザだけに保存されています</strong><p>InstagramからSafari・Chromeへ自動では移りません。写真を含めて引き継ぐには、先にバックアップを書き出し、移動先の「設定」で読み込んでください。</p><button type="button" onClick={() => void onExportBackup()}>バックアップを書き出してから進む</button></div> : <div className="install-data-safe"><strong>まだメモはありません</strong><p>通常ブラウザで開いてホーム画面へ追加してから、最初のメモを書くと安全です。</p></div>}
+    {context.isInstagramInAppBrowser ? <ol className="install-guide-steps"><li><span>1</span><div><strong>Instagram右上の「…」をタップ</strong><small>メニューを開きます。</small></div></li><li><span>2</span><div><strong>「外部ブラウザーで開く」を選ぶ</strong><small>{context.platform === 'ios' ? 'iPhoneではSafariで開いてください。' : 'AndroidではChromeなどで開いてください。'}</small></div></li><li><span>3</span><div><strong>通常ブラウザの設定から案内を開く</strong><small>データがある場合は、先にバックアップを読み込みます。</small></div></li></ol> : context.platform === 'ios' ? <ol className="install-guide-steps"><li><span>1</span><div><strong>Safariの共有ボタンをタップ</strong><small>四角から上向き矢印が出ているボタンです。</small></div></li><li><span>2</span><div><strong>「ホーム画面に追加」を選ぶ</strong><small>見つからない場合は下へスクロールします。</small></div></li><li><span>3</span><div><strong>右上の「追加」をタップ</strong><small>うさぽんメモのアイコンが追加されます。</small></div></li></ol> : installPrompt ? <button type="button" className="install-direct-button" onClick={() => void install()}>ホーム画面に追加する</button> : <ol className="install-guide-steps"><li><span>1</span><div><strong>ブラウザ右上のメニューを開く</strong><small>Chromeでは「︙」です。</small></div></li><li><span>2</span><div><strong>「アプリをインストール」を選ぶ</strong><small>表示されない場合は「ホーム画面に追加」を選びます。</small></div></li></ol>}
+    <div className="install-guide-actions"><button type="button" onClick={onClose}>あとで</button><button type="button" onClick={onNeverShow}>今後は自動表示しない</button></div>
+  </section></div>;
 }
 
 function BoardSnapshotStage({ refTarget, board, memos, boardItems, mediaUrlsById, stickyTextSize, stickyTextWeight }) {
@@ -4847,7 +4919,8 @@ function SettingsPage({
   onUpdateStickyTextSettings,
   onRequestNotifications,
   onExportBackup,
-  onImportBackup
+  onImportBackup,
+  onOpenInstallGuide
 }) {
   const [title, setTitle] = useState(appTitle);
   const backupInputRef = useRef(null);
@@ -4965,6 +5038,12 @@ function SettingsPage({
             event.target.value = '';
           }}
         />
+      </div>
+
+      <div className="settings-card install-settings-card">
+        <strong>ホーム画面に追加</strong>
+        <p>通常ブラウザで開く方法と、ホーム画面への追加手順を確認できます。</p>
+        <button type="button" className="subtle-action settings-wide-action" onClick={onOpenInstallGuide}>ホーム画面に追加する</button>
       </div>
     </section>
   );
