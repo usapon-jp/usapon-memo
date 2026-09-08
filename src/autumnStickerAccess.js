@@ -40,6 +40,13 @@ export const memoSupabase = isSupabaseConfigured(config)
 
 const assetFileName = (id) => `${id}.png`;
 
+export function revokePaidStickerSources(sources = {}, urlApi = URL) {
+  AUTUMN_PAID_STICKER_IDS.forEach((id) => {
+    const source = sources[id];
+    if (typeof source === 'string' && source.startsWith('blob:')) urlApi.revokeObjectURL(source);
+  });
+}
+
 export async function loadAutumnStickerAccess(client = memoSupabase, settings = config) {
   const sources = settings.freeStickerUrl ? { [AUTUMN_FREE_STICKER_ID]: settings.freeStickerUrl } : {};
   if (!client) return { status: 'unconfigured', sources, error: '' };
@@ -57,16 +64,21 @@ export async function loadAutumnStickerAccess(client = memoSupabase, settings = 
     return { status: 'not-entitled', sources, error: '' };
   }
   const downloaded = await Promise.all(AUTUMN_PAID_STICKER_IDS.map(async (id) => {
-    const { data: blob, error: downloadError } = await client.storage
-      .from(settings.bucket)
-      .download(`${AUTUMN_ENTITLEMENT_ID}/${assetFileName(id)}`);
-    return downloadError ? null : [id, URL.createObjectURL(blob)];
+    try {
+      const { data: blob, error: downloadError } = await client.storage
+        .from(settings.bucket)
+        .download(`${AUTUMN_ENTITLEMENT_ID}/${assetFileName(id)}`);
+      return downloadError ? null : [id, URL.createObjectURL(blob)];
+    } catch {
+      return null;
+    }
   }));
   for (const entry of downloaded) {
     if (entry) sources[entry[0]] = entry[1];
   }
   if (downloaded.some((entry) => !entry)) {
-    return { status: 'assets-unavailable', sources, error: '購入済み素材をすべて読み込めませんでした。' };
+    revokePaidStickerSources(sources);
+    return { status: 'assets-unavailable', sources: { [AUTUMN_FREE_STICKER_ID]: settings.freeStickerUrl }, error: '購入済み素材をすべて読み込めませんでした。' };
   }
   return { status: 'ready', sources, error: '' };
 }

@@ -79,6 +79,8 @@ import { canAutoOfferInstall, detectInstallContext, INSTALL_GUIDE_HIDDEN_KEY } f
 import {
   AUTUMN_STICKER_IDS,
   loadAutumnStickerAccess,
+  memoSupabase,
+  revokePaidStickerSources,
   signInWithGoogle,
   signOutFromMemo
 } from './autumnStickerAccess.js';
@@ -800,13 +802,19 @@ export default function App() {
   const installOfferShownRef = useRef(false);
   const initializedBoardRef = useRef(false);
   const snapshotStageRef = useRef(null);
+  const autumnStickerSourcesRef = useRef({});
+  const autumnStickerRequestRef = useRef(0);
   const appTitle = data.appTitle || DEFAULT_APP_TITLE;
   const stickyTextSize = STICKY_TEXT_SIZES.has(data.stickyTextSize) ? data.stickyTextSize : DEFAULT_STICKY_TEXT_SIZE;
   const stickyTextWeight = STICKY_TEXT_WEIGHTS.has(data.stickyTextWeight) ? data.stickyTextWeight : DEFAULT_STICKY_TEXT_WEIGHT;
-  const unlockedStickerIds = Array.isArray(data.unlockedStickerIds) ? data.unlockedStickerIds : DEFAULT_STICKER_IDS;
+  const unlockedStickerIds = (Array.isArray(data.unlockedStickerIds) ? data.unlockedStickerIds : DEFAULT_STICKER_IDS)
+    .filter(id => !AUTUMN_STICKER_IDS.includes(id));
   const availableAutumnStickerIds = Object.keys(autumnStickerAccess.sources || {});
   const effectiveUnlockedStickerIds = [...new Set([...unlockedStickerIds, ...availableAutumnStickerIds])];
   const visibleStickerIds = Array.isArray(data.visibleStickerIds) ? data.visibleStickerIds : DEFAULT_STICKER_IDS;
+  const displayVisibleStickerIds = visibleStickerIds.filter((id) => (
+    !AUTUMN_STICKER_IDS.includes(id) || availableAutumnStickerIds.includes(id)
+  ));
   const boards = data.boards?.length ? data.boards : DEFAULT_BOARDS;
   const homeBoards = useMemo(() => {
     const visibleBoards = boards.filter(board => !board.archived && isTimeCapsuleOpen(board, now));
@@ -937,21 +945,52 @@ export default function App() {
     };
   }, [storageBreakdown.total]);
 
+  const clearPaidAutumnStickerSources = (updateState = true) => {
+    revokePaidStickerSources(autumnStickerSourcesRef.current);
+    const freeSources = Object.fromEntries(Object.entries(autumnStickerSourcesRef.current)
+      .filter(([id]) => !AUTUMN_STICKER_IDS.includes(id) || id === 'autumn-stamp-9803'));
+    AUTUMN_STICKER_IDS.forEach((id) => {
+      if (id !== 'autumn-stamp-9803' && STICKER_MAP[id]) STICKER_MAP[id].src = '';
+    });
+    autumnStickerSourcesRef.current = freeSources;
+    if (updateState) setAutumnStickerAccess(current => ({ ...current, sources: freeSources }));
+  };
+
   const refreshAutumnStickerAccess = async () => {
+    const requestId = ++autumnStickerRequestRef.current;
+    clearPaidAutumnStickerSources();
     setAutumnStickerAccess(current => ({ ...current, status: 'loading', error: '' }));
     try {
       const next = await loadAutumnStickerAccess();
+      if (requestId !== autumnStickerRequestRef.current) {
+        revokePaidStickerSources(next.sources);
+        return;
+      }
       AUTUMN_STICKER_IDS.forEach((id) => {
         if (STICKER_MAP[id]) STICKER_MAP[id].src = next.sources[id] || '';
       });
+      autumnStickerSourcesRef.current = next.sources;
       setAutumnStickerAccess(next);
     } catch (error) {
-      setAutumnStickerAccess({ status: 'error', sources: {}, error: error instanceof Error ? error.message : '読み込めませんでした。' });
+      if (requestId !== autumnStickerRequestRef.current) return;
+      setAutumnStickerAccess(current => ({
+        status: 'error',
+        sources: autumnStickerSourcesRef.current,
+        error: error instanceof Error ? error.message : '読み込めませんでした。'
+      }));
     }
   };
 
   useEffect(() => {
     void refreshAutumnStickerAccess();
+    const { data: { subscription } } = memoSupabase?.auth.onAuthStateChange(() => {
+      void refreshAutumnStickerAccess();
+    }) || { data: { subscription: null } };
+    return () => {
+      autumnStickerRequestRef.current += 1;
+      subscription?.unsubscribe();
+      clearPaidAutumnStickerSources(false);
+    };
   }, []);
 
   useEffect(() => {
@@ -1584,7 +1623,7 @@ export default function App() {
           appTitle={appTitle}
           stickyTextSize={stickyTextSize}
           stickyTextWeight={stickyTextWeight}
-          visibleStickerIds={visibleStickerIds}
+          visibleStickerIds={displayVisibleStickerIds}
           activeBoardId={activeBoardId}
           boards={homeBoards}
           allBoards={boards}
@@ -1630,7 +1669,7 @@ export default function App() {
           draft={draft}
           stickyTextSize={stickyTextSize}
           stickyTextWeight={stickyTextWeight}
-          visibleStickerIds={visibleStickerIds}
+          visibleStickerIds={displayVisibleStickerIds}
           setDraft={setDraft}
           onBack={() => setPage('home')}
           onSave={saveMemo}
@@ -1719,7 +1758,7 @@ export default function App() {
       {page === 'stickers' && (
         <StickerPage
           unlockedStickerIds={effectiveUnlockedStickerIds}
-          visibleStickerIds={visibleStickerIds}
+          visibleStickerIds={displayVisibleStickerIds}
           onBack={() => setPage('home')}
           onUpdate={updateStickerSettings}
           onShowToast={setAppToast}
@@ -3407,7 +3446,7 @@ function StickerLayer({
     <div className="sticker-layer" aria-hidden={!onStickerPointerDown}>
       {stickers.map(sticker => {
         const asset = STICKER_MAP[sticker.assetId];
-        if (!asset) return null;
+        if (!asset?.src) return null;
         const isSelected = selectedStickerId === sticker.id;
         return (
           <span
@@ -3714,6 +3753,7 @@ function BoardFreeItem({ item, mediaUrlsById = {}, isDragging, isSelected = fals
 
   const imageSrc = item.imageDataUrl || (item.imageId ? mediaUrlsById[item.imageId] : '');
   const sticker = item.type === 'sticker' ? STICKER_MAP[item.assetId] : null;
+  if (item.type === 'sticker' && !sticker?.src) return null;
 
   return (
     <article
@@ -3726,7 +3766,7 @@ function BoardFreeItem({ item, mediaUrlsById = {}, isDragging, isSelected = fals
       {item.type === 'image' ? (
         imageSrc ? <img src={imageSrc} alt="" draggable={false} /> : <span>画像を読み込めません</span>
       ) : item.type === 'sticker' ? (
-        sticker ? <img src={sticker.src} alt={sticker.label} draggable={false} /> : <span>ステッカー</span>
+        <img src={sticker.src} alt={sticker.label} draggable={false} />
       ) : (
         <span>{item.text}</span>
       )}
@@ -4773,7 +4813,7 @@ function MemoCreatePage({
         )}
       </section>
 
-      {draggingSticker && STICKER_MAP[draggingSticker.assetId] && (
+      {draggingSticker && STICKER_MAP[draggingSticker.assetId]?.src && (
         <div
           className="sticker-drag-preview"
           style={{ left: `${draggingSticker.x}px`, top: `${draggingSticker.y}px` }}
