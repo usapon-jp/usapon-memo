@@ -5336,8 +5336,8 @@ function StickerPage({
             <strong>秋のスタンプ</strong>
             {autumnAccess.status === 'loading' && <p>購入済みスタンプを確認しています。</p>}
             {autumnAccess.status === 'unconfigured' && <p>共有ログインの設定後に、購入済みスタンプを確認できます。</p>}
-            {autumnAccess.status === 'signed-out' && <p>配布済みのお試しスタンプ1点は合言葉で受け取れます。購入済みの全セットはGoogleでログインして確認します。</p>}
-            {autumnAccess.status === 'not-entitled' && <p>配布済みのお試しスタンプ1点は合言葉で受け取れます。購入済みの全セットは、購入したGoogleアカウントで確認できます。</p>}
+            {autumnAccess.status === 'signed-out' && <p>ショップで受け取った無料お試し5柄・購入済みセットは、同じGoogleアカウントで確認できます。</p>}
+            {autumnAccess.status === 'not-entitled' && <p>ショップで無料セットを受け取ったアカウント、または購入したGoogleアカウントで確認してください。</p>}
             {autumnAccess.status === 'assets-unavailable' && <p>購入権利を確認しましたが、素材を読み込めませんでした。もう一度確認してください。</p>}
             {autumnAccess.status === 'ready' && <p>購入済みの秋スタンプを読み込みました。</p>}
             {autumnAccess.status === 'trial-ready' && <p>無料お試しセットを読み込みました。</p>}
