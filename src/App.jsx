@@ -77,6 +77,8 @@ import {
 } from './mediaStorage.js';
 import { canAutoOfferInstall, detectInstallContext, INSTALL_GUIDE_HIDDEN_KEY } from './installGuide.js';
 import {
+  AUTUMN_FREE_STICKER_ID,
+  AUTUMN_PAID_STICKER_IDS,
   AUTUMN_STICKER_IDS,
   loadAutumnStickerAccess,
   memoSupabase,
@@ -808,12 +810,12 @@ export default function App() {
   const stickyTextSize = STICKY_TEXT_SIZES.has(data.stickyTextSize) ? data.stickyTextSize : DEFAULT_STICKY_TEXT_SIZE;
   const stickyTextWeight = STICKY_TEXT_WEIGHTS.has(data.stickyTextWeight) ? data.stickyTextWeight : DEFAULT_STICKY_TEXT_WEIGHT;
   const unlockedStickerIds = (Array.isArray(data.unlockedStickerIds) ? data.unlockedStickerIds : DEFAULT_STICKER_IDS)
-    .filter(id => !AUTUMN_STICKER_IDS.includes(id));
+    .filter(id => !AUTUMN_PAID_STICKER_IDS.includes(id));
   const availableAutumnStickerIds = Object.keys(autumnStickerAccess.sources || {});
   const effectiveUnlockedStickerIds = [...new Set([...unlockedStickerIds, ...availableAutumnStickerIds])];
   const visibleStickerIds = Array.isArray(data.visibleStickerIds) ? data.visibleStickerIds : DEFAULT_STICKER_IDS;
   const displayVisibleStickerIds = visibleStickerIds.filter((id) => (
-    !AUTUMN_STICKER_IDS.includes(id) || availableAutumnStickerIds.includes(id)
+    !AUTUMN_PAID_STICKER_IDS.includes(id) || availableAutumnStickerIds.includes(id)
   ));
   const boards = data.boards?.length ? data.boards : DEFAULT_BOARDS;
   const homeBoards = useMemo(() => {
@@ -950,7 +952,7 @@ export default function App() {
     const freeSources = Object.fromEntries(Object.entries(autumnStickerSourcesRef.current)
       .filter(([id]) => !AUTUMN_STICKER_IDS.includes(id) || id === 'autumn-stamp-9803'));
     AUTUMN_STICKER_IDS.forEach((id) => {
-      if (id !== 'autumn-stamp-9803' && STICKER_MAP[id]) STICKER_MAP[id].src = '';
+      if (id !== AUTUMN_FREE_STICKER_ID && STICKER_MAP[id]) STICKER_MAP[id].src = '';
     });
     autumnStickerSourcesRef.current = freeSources;
     if (updateState) setAutumnStickerAccess(current => ({ ...current, sources: freeSources }));
@@ -967,7 +969,7 @@ export default function App() {
         return;
       }
       AUTUMN_STICKER_IDS.forEach((id) => {
-        if (STICKER_MAP[id]) STICKER_MAP[id].src = next.sources[id] || '';
+        if (id !== AUTUMN_FREE_STICKER_ID && STICKER_MAP[id]) STICKER_MAP[id].src = next.sources[id] || '';
       });
       autumnStickerSourcesRef.current = next.sources;
       setAutumnStickerAccess(next);
@@ -4788,18 +4790,21 @@ function MemoCreatePage({
         </div>
 
         {draft.cardType !== 'photo' && (
-          <div className="sticker-palette" aria-label="スタンプ">
-            {visibleStickers.map(sticker => (
-              <button
-                key={sticker.id}
-                type="button"
-                draggable={false}
-                onPointerDown={(event) => startStickerAdd(event, sticker.id)}
-                aria-label={`${sticker.label}を追加`}
-              >
-                <img src={sticker.src} alt="" draggable={false} />
-              </button>
-            ))}
+          <div>
+            <div className="sticker-palette" aria-label="スタンプ">
+              {visibleStickers.map(sticker => (
+                <button
+                  key={sticker.id}
+                  type="button"
+                  draggable={false}
+                  onPointerDown={(event) => startStickerAdd(event, sticker.id)}
+                  aria-label={`${sticker.label}を追加`}
+                >
+                  <img src={sticker.src} alt="" draggable={false} />
+                </button>
+              ))}
+            </div>
+            <small>付箋へドラッグして貼ります</small>
           </div>
         )}
 
@@ -5147,7 +5152,7 @@ function StickerPage({
         .map(id => STICKER_MAP[id])
         .filter(sticker => sticker && unlockedSet.has(sticker.id))
     }))
-    .filter(pack => pack.stickers.length > 0);
+    .filter(pack => !pack.hiddenFromLibrary && pack.stickers.length > 0);
 
   useEffect(() => {
     visibleStickerIdsRef.current = visibleStickerIds;
@@ -5330,8 +5335,8 @@ function StickerPage({
             <strong>秋のスタンプ</strong>
             {autumnAccess.status === 'loading' && <p>購入済みスタンプを確認しています。</p>}
             {autumnAccess.status === 'unconfigured' && <p>共有ログインの設定後に、購入済みスタンプを確認できます。</p>}
-            {autumnAccess.status === 'signed-out' && <p>お試しはIMG9803だけです。購入済みの全セットはGoogleでログインして確認します。</p>}
-            {autumnAccess.status === 'not-entitled' && <p>お試しはIMG9803だけです。購入済みの全セットは、購入したGoogleアカウントで確認できます。</p>}
+            {autumnAccess.status === 'signed-out' && <p>配布済みのお試しスタンプ1点は合言葉で受け取れます。購入済みの全セットはGoogleでログインして確認します。</p>}
+            {autumnAccess.status === 'not-entitled' && <p>配布済みのお試しスタンプ1点は合言葉で受け取れます。購入済みの全セットは、購入したGoogleアカウントで確認できます。</p>}
             {autumnAccess.status === 'assets-unavailable' && <p>購入権利を確認しましたが、素材を読み込めませんでした。もう一度確認してください。</p>}
             {autumnAccess.status === 'ready' && <p>購入済みの秋スタンプを読み込みました。</p>}
             {autumnAccess.status === 'error' && <p>確認できませんでした。{autumnAccess.error}</p>}
@@ -5345,7 +5350,7 @@ function StickerPage({
               <button type="button" className="subtle-action" onClick={onRefreshAutumn} disabled={autumnAccess.status === 'loading'}>もう一度確認</button>
             </div>
           </section>
-          <p>合言葉で受け取ったステッカー</p>
+          <p>配布済みのお試しスタンプ1点を受け取る</p>
           <form onSubmit={unlockByCode}>
             <label>
               <span>合言葉</span>

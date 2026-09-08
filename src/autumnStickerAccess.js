@@ -48,7 +48,7 @@ export function revokePaidStickerSources(sources = {}, urlApi = URL) {
 }
 
 export async function loadAutumnStickerAccess(client = memoSupabase, settings = config) {
-  const sources = settings.freeStickerUrl ? { [AUTUMN_FREE_STICKER_ID]: settings.freeStickerUrl } : {};
+  const sources = {};
   if (!client) return { status: 'unconfigured', sources, error: '' };
 
   const { data: { session }, error: sessionError } = await client.auth.getSession();
@@ -78,7 +78,7 @@ export async function loadAutumnStickerAccess(client = memoSupabase, settings = 
   }
   if (downloaded.some((entry) => !entry)) {
     revokePaidStickerSources(sources);
-    return { status: 'assets-unavailable', sources: { [AUTUMN_FREE_STICKER_ID]: settings.freeStickerUrl }, error: '購入済み素材をすべて読み込めませんでした。' };
+    return { status: 'assets-unavailable', sources: {}, error: '購入済み素材をすべて読み込めませんでした。' };
   }
   return { status: 'ready', sources, error: '' };
 }

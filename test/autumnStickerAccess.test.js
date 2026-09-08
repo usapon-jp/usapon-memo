@@ -10,6 +10,7 @@ import {
   loadAutumnStickerAccess,
   revokePaidStickerSources
 } from '../src/autumnStickerAccess.js';
+import { STICKER_PACKS, normalizeData } from '../src/memoModel.js';
 
 const visibleStickerIdsForAccess = (ids, availableAutumnIds) => ids.filter((id) => (
   !AUTUMN_STICKER_IDS.includes(id) || availableAutumnIds.includes(id)
@@ -20,6 +21,17 @@ test('秋セットは26点で、無料素材はIMG9803だけ', () => {
   assert.equal(AUTUMN_PAID_STICKER_IDS.length, 25);
   assert.equal(AUTUMN_STICKER_IDS.length, 26);
   assert.equal(AUTUMN_PAID_STICKER_IDS.includes(AUTUMN_FREE_STICKER_ID), false);
+});
+
+test('無料お試しはどんぐりで端末に保存でき、有料秋セットに合言葉はない', () => {
+  assert.equal(STICKER_PACKS.autumn.code, undefined);
+  assert.equal(STICKER_PACKS.autumnTrial.code, 'どんぐり');
+  const data = normalizeData({
+    unlockedStickerIds: ['autumn-stamp-9803'],
+    visibleStickerIds: ['autumn-stamp-9803']
+  });
+  assert.deepEqual(data.unlockedStickerIds, ['usa', 'piyo', 'pon', 'lemon', 'autumn-stamp-9803']);
+  assert.deepEqual(data.visibleStickerIds, ['autumn-stamp-9803']);
 });
 
 test('有料素材のblob URLだけを破棄し、無料素材は保持する', () => {

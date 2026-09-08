@@ -70,7 +70,7 @@ export const STICKER_CATALOG = [
   { id: 'autumn-stamp-9800', label: '秋スタンプ 9800', src: '', packId: 'autumn' },
   { id: 'autumn-stamp-9801', label: '秋スタンプ 9801', src: '', packId: 'autumn' },
   { id: 'autumn-stamp-9802', label: '秋スタンプ 9802', src: '', packId: 'autumn' },
-  { id: 'autumn-stamp-9803', label: '秋スタンプ（お試し）', src: '', packId: 'autumn' },
+  { id: 'autumn-stamp-9803', label: '秋スタンプ（お試し）', src: '/usapon-memo/assets/stickers/autumn-stamp-9803.png', packId: 'autumn' },
   { id: 'autumn-stamp-9804', label: '秋スタンプ 9804', src: '', packId: 'autumn' },
   { id: 'autumn-stamp-9805', label: '秋スタンプ 9805', src: '', packId: 'autumn' },
   { id: 'autumn-stamp-9806', label: '秋スタンプ 9806', src: '', packId: 'autumn' },
@@ -106,6 +106,12 @@ export const STICKER_PACKS = {
   autumn: {
     label: '秋のスタンプ',
     stickerIds: STICKER_CATALOG.filter(sticker => sticker.packId === 'autumn').map(sticker => sticker.id)
+  },
+  autumnTrial: {
+    label: '秋のお試し',
+    code: 'どんぐり',
+    hiddenFromLibrary: true,
+    stickerIds: ['autumn-stamp-9803']
   }
 };
 export const MAX_VISIBLE_STICKERS = 15;
