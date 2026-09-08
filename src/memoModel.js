@@ -64,7 +64,33 @@ export const STICKER_CATALOG = [
   { id: 'moguGoods', label: 'もぐくん', src: '/usapon-memo/assets/stickers/mogu-goods.png', packId: 'mogumogu' },
   { id: 'layer', label: 'レイヤー', src: '/usapon-memo/assets/stickers/layer.png', packId: 'mogumogu' },
   { id: 'osakaMogu', label: '大阪もぐくん', src: '/usapon-memo/assets/stickers/osaka-mogu.png', packId: 'mogumogu' },
-  { id: 'kumamotoMogu', label: '熊本もぐくん', src: '/usapon-memo/assets/stickers/kumamoto-mogu.png', packId: 'mogumogu' }
+  { id: 'kumamotoMogu', label: '熊本もぐくん', src: '/usapon-memo/assets/stickers/kumamoto-mogu.png', packId: 'mogumogu' },
+  { id: 'autumn-stamp-9798', label: '秋スタンプ 9798', src: '', packId: 'autumn' },
+  { id: 'autumn-stamp-9799', label: '秋スタンプ 9799', src: '', packId: 'autumn' },
+  { id: 'autumn-stamp-9800', label: '秋スタンプ 9800', src: '', packId: 'autumn' },
+  { id: 'autumn-stamp-9801', label: '秋スタンプ 9801', src: '', packId: 'autumn' },
+  { id: 'autumn-stamp-9802', label: '秋スタンプ 9802', src: '', packId: 'autumn' },
+  { id: 'autumn-stamp-9803', label: '秋スタンプ（お試し）', src: '', packId: 'autumn' },
+  { id: 'autumn-stamp-9804', label: '秋スタンプ 9804', src: '', packId: 'autumn' },
+  { id: 'autumn-stamp-9805', label: '秋スタンプ 9805', src: '', packId: 'autumn' },
+  { id: 'autumn-stamp-9806', label: '秋スタンプ 9806', src: '', packId: 'autumn' },
+  { id: 'autumn-stamp-9807', label: '秋スタンプ 9807', src: '', packId: 'autumn' },
+  { id: 'autumn-stamp-9809', label: '秋スタンプ 9809', src: '', packId: 'autumn' },
+  { id: 'autumn-stamp-9810', label: '秋スタンプ 9810', src: '', packId: 'autumn' },
+  { id: 'autumn-stamp-9811', label: '秋スタンプ 9811', src: '', packId: 'autumn' },
+  { id: 'autumn-stamp-9812', label: '秋スタンプ 9812', src: '', packId: 'autumn' },
+  { id: 'autumn-stamp-9813', label: '秋スタンプ 9813', src: '', packId: 'autumn' },
+  { id: 'autumn-stamp-9814', label: '秋スタンプ 9814', src: '', packId: 'autumn' },
+  { id: 'autumn-stamp-9815', label: '秋スタンプ 9815', src: '', packId: 'autumn' },
+  { id: 'autumn-stamp-9816', label: '秋スタンプ 9816', src: '', packId: 'autumn' },
+  { id: 'autumn-stamp-9817', label: '秋スタンプ 9817', src: '', packId: 'autumn' },
+  { id: 'autumn-stamp-9818', label: '秋スタンプ 9818', src: '', packId: 'autumn' },
+  { id: 'autumn-stamp-9819', label: '秋スタンプ 9819', src: '', packId: 'autumn' },
+  { id: 'autumn-stamp-9820', label: '秋スタンプ 9820', src: '', packId: 'autumn' },
+  { id: 'autumn-stamp-9821', label: '秋スタンプ 9821', src: '', packId: 'autumn' },
+  { id: 'autumn-stamp-9822', label: '秋スタンプ 9822', src: '', packId: 'autumn' },
+  { id: 'autumn-stamp-9823', label: '秋スタンプ 9823', src: '', packId: 'autumn' },
+  { id: 'autumn-stamp-extra', label: '秋スタンプ', src: '', packId: 'autumn' }
 ];
 export const DEFAULT_STICKER_IDS = STICKER_CATALOG.filter(sticker => sticker.packId === 'default').map(sticker => sticker.id);
 export const STICKER_PACKS = {
@@ -76,6 +102,10 @@ export const STICKER_PACKS = {
     label: 'もぐもぐセット',
     code: 'mogumogu',
     stickerIds: STICKER_CATALOG.filter(sticker => sticker.packId === 'mogumogu').map(sticker => sticker.id)
+  },
+  autumn: {
+    label: '秋のスタンプ',
+    stickerIds: STICKER_CATALOG.filter(sticker => sticker.packId === 'autumn').map(sticker => sticker.id)
   }
 };
 export const MAX_VISIBLE_STICKERS = 15;
@@ -571,7 +601,7 @@ export const normalizeData = (data = {}) => {
     ? data.visibleStickerIds
     : DEFAULT_STICKER_IDS;
   const visibleStickerIds = [...new Set(visibleStickerSource)]
-    .filter(id => unlockedStickerSet.has(id) && STICKER_ASSETS.has(id))
+    .filter(id => STICKER_ASSETS.has(id))
     .slice(0, MAX_VISIBLE_STICKERS);
   const diaryPhotoTransformRecoveryVersion = Number.isFinite(Number(data.diaryPhotoTransformRecoveryVersion))
     ? Math.max(0, Number(data.diaryPhotoTransformRecoveryVersion))

@@ -76,6 +76,12 @@ import {
   putMediaRecords
 } from './mediaStorage.js';
 import { canAutoOfferInstall, detectInstallContext, INSTALL_GUIDE_HIDDEN_KEY } from './installGuide.js';
+import {
+  AUTUMN_STICKER_IDS,
+  loadAutumnStickerAccess,
+  signInWithGoogle,
+  signOutFromMemo
+} from './autumnStickerAccess.js';
 
 const BOARD_ICON_MAP = {
   home: Home,
@@ -787,6 +793,7 @@ export default function App() {
   const [mediaReady, setMediaReady] = useState(false);
   const [installContext] = useState(detectInstallContext);
   const [installGuideOpen, setInstallGuideOpen] = useState(false);
+  const [autumnStickerAccess, setAutumnStickerAccess] = useState({ status: 'loading', sources: {}, error: '' });
   const [installGuideHidden, setInstallGuideHidden] = useState(() => {
     try { return localStorage.getItem(INSTALL_GUIDE_HIDDEN_KEY) === '1'; } catch { return false; }
   });
@@ -797,6 +804,8 @@ export default function App() {
   const stickyTextSize = STICKY_TEXT_SIZES.has(data.stickyTextSize) ? data.stickyTextSize : DEFAULT_STICKY_TEXT_SIZE;
   const stickyTextWeight = STICKY_TEXT_WEIGHTS.has(data.stickyTextWeight) ? data.stickyTextWeight : DEFAULT_STICKY_TEXT_WEIGHT;
   const unlockedStickerIds = Array.isArray(data.unlockedStickerIds) ? data.unlockedStickerIds : DEFAULT_STICKER_IDS;
+  const availableAutumnStickerIds = Object.keys(autumnStickerAccess.sources || {});
+  const effectiveUnlockedStickerIds = [...new Set([...unlockedStickerIds, ...availableAutumnStickerIds])];
   const visibleStickerIds = Array.isArray(data.visibleStickerIds) ? data.visibleStickerIds : DEFAULT_STICKER_IDS;
   const boards = data.boards?.length ? data.boards : DEFAULT_BOARDS;
   const homeBoards = useMemo(() => {
@@ -927,6 +936,23 @@ export default function App() {
       cancelled = true;
     };
   }, [storageBreakdown.total]);
+
+  const refreshAutumnStickerAccess = async () => {
+    setAutumnStickerAccess(current => ({ ...current, status: 'loading', error: '' }));
+    try {
+      const next = await loadAutumnStickerAccess();
+      AUTUMN_STICKER_IDS.forEach((id) => {
+        if (STICKER_MAP[id]) STICKER_MAP[id].src = next.sources[id] || '';
+      });
+      setAutumnStickerAccess(next);
+    } catch (error) {
+      setAutumnStickerAccess({ status: 'error', sources: {}, error: error instanceof Error ? error.message : '読み込めませんでした。' });
+    }
+  };
+
+  useEffect(() => {
+    void refreshAutumnStickerAccess();
+  }, []);
 
   useEffect(() => {
     if (!appToast) return undefined;
@@ -1692,11 +1718,15 @@ export default function App() {
 
       {page === 'stickers' && (
         <StickerPage
-          unlockedStickerIds={unlockedStickerIds}
+          unlockedStickerIds={effectiveUnlockedStickerIds}
           visibleStickerIds={visibleStickerIds}
           onBack={() => setPage('home')}
           onUpdate={updateStickerSettings}
           onShowToast={setAppToast}
+          autumnAccess={autumnStickerAccess}
+          onRefreshAutumn={() => void refreshAutumnStickerAccess()}
+          onSignInAutumn={() => void signInWithGoogle().catch(error => setAppToast(error.message || 'Googleログインを始められませんでした。'))}
+          onSignOutAutumn={() => void signOutFromMemo().then(refreshAutumnStickerAccess).catch(error => setAppToast(error.message || 'ログアウトできませんでした。'))}
         />
       )}
 
@@ -5049,7 +5079,17 @@ function SettingsPage({
   );
 }
 
-function StickerPage({ unlockedStickerIds, visibleStickerIds, onBack, onUpdate, onShowToast }) {
+function StickerPage({
+  unlockedStickerIds,
+  visibleStickerIds,
+  onBack,
+  onUpdate,
+  onShowToast,
+  autumnAccess,
+  onRefreshAutumn,
+  onSignInAutumn,
+  onSignOutAutumn
+}) {
   const [tab, setTab] = useState('manage');
   const [code, setCode] = useState('');
   const [draggingStickerId, setDraggingStickerId] = useState('');
@@ -5246,7 +5286,26 @@ function StickerPage({ unlockedStickerIds, visibleStickerIds, onBack, onUpdate, 
       ) : (
         <section className="settings-card sticker-add-card">
           <strong>ステッカーの追加</strong>
-          <p>合言葉を入れると、新しいステッカーが使えるようになります。</p>
+          <section className="autumn-sticker-access" aria-live="polite">
+            <strong>秋のスタンプ</strong>
+            {autumnAccess.status === 'loading' && <p>購入済みスタンプを確認しています。</p>}
+            {autumnAccess.status === 'unconfigured' && <p>共有ログインの設定後に、購入済みスタンプを確認できます。</p>}
+            {autumnAccess.status === 'signed-out' && <p>お試しはIMG9803だけです。購入済みの全セットはGoogleでログインして確認します。</p>}
+            {autumnAccess.status === 'not-entitled' && <p>お試しはIMG9803だけです。購入済みの全セットは、購入したGoogleアカウントで確認できます。</p>}
+            {autumnAccess.status === 'assets-unavailable' && <p>購入権利を確認しましたが、素材を読み込めませんでした。もう一度確認してください。</p>}
+            {autumnAccess.status === 'ready' && <p>購入済みの秋スタンプを読み込みました。</p>}
+            {autumnAccess.status === 'error' && <p>確認できませんでした。{autumnAccess.error}</p>}
+            <div className="settings-actions">
+              {(autumnAccess.status === 'signed-out' || autumnAccess.status === 'not-entitled') && (
+                <button type="button" className="subtle-action" onClick={onSignInAutumn}>Googleで確認</button>
+              )}
+              {autumnAccess.status === 'ready' && (
+                <button type="button" className="subtle-action" onClick={onSignOutAutumn}>ログアウト</button>
+              )}
+              <button type="button" className="subtle-action" onClick={onRefreshAutumn} disabled={autumnAccess.status === 'loading'}>もう一度確認</button>
+            </div>
+          </section>
+          <p>合言葉で受け取ったステッカー</p>
           <form onSubmit={unlockByCode}>
             <label>
               <span>合言葉</span>
