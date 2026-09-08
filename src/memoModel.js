@@ -70,6 +70,10 @@ export const STICKER_CATALOG = [
   { id: 'autumn-stamp-9800', label: '秋スタンプ 9800', src: '', packId: 'autumn' },
   { id: 'autumn-stamp-9801', label: '秋スタンプ 9801', src: '', packId: 'autumn' },
   { id: 'autumn-stamp-9802', label: '秋スタンプ 9802', src: '', packId: 'autumn' },
+  { id: 'autumn-trial-cover', label: '秋のお試し 表紙', src: '/usapon-memo/assets/stickers/autumn-trial/autumn-trial-cover.png', packId: 'autumnTrial' },
+  { id: 'autumn-trial-sticky', label: '秋のお試し 付箋', src: '/usapon-memo/assets/stickers/autumn-trial/autumn-trial-sticky.png', packId: 'autumnTrial' },
+  { id: 'autumn-trial-heading', label: '秋のお試し 見出し', src: '/usapon-memo/assets/stickers/autumn-trial/autumn-trial-heading.png', packId: 'autumnTrial' },
+  { id: 'autumn-trial-tape', label: '秋のお試し マステ', src: '/usapon-memo/assets/stickers/autumn-trial/autumn-trial-tape.png', packId: 'autumnTrial' },
   { id: 'autumn-stamp-9803', label: '秋スタンプ（お試し）', src: '/usapon-memo/assets/stickers/autumn-stamp-9803.png', packId: 'autumn' },
   { id: 'autumn-stamp-9804', label: '秋スタンプ 9804', src: '', packId: 'autumn' },
   { id: 'autumn-stamp-9805', label: '秋スタンプ 9805', src: '', packId: 'autumn' },
@@ -110,8 +114,8 @@ export const STICKER_PACKS = {
   autumnTrial: {
     label: '秋のお試し',
     code: 'どんぐり',
-    hiddenFromLibrary: true,
-    stickerIds: ['autumn-stamp-9803']
+    codeStickerIds: ['autumn-stamp-9803'],
+    stickerIds: ['autumn-trial-cover', 'autumn-trial-sticky', 'autumn-trial-heading', 'autumn-trial-tape', 'autumn-stamp-9803']
   }
 };
 export const MAX_VISIBLE_STICKERS = 15;

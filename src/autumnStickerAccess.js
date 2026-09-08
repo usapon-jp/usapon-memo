@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 
 export const AUTUMN_ENTITLEMENT_ID = 'autumn-letter-set';
 export const AUTUMN_FREE_STICKER_ID = 'autumn-stamp-9803';
+export const AUTUMN_TRIAL_PRODUCT_KEY = 'goodnotes-autumn-trial-set';
 export const PACKAGE_THEME_PACK_ASSETS_BUCKET = 'package-theme-pack-assets';
 export const AUTUMN_PAID_STICKER_IDS = [
   'autumn-stamp-9798', 'autumn-stamp-9799', 'autumn-stamp-9800', 'autumn-stamp-9801',
@@ -17,6 +18,15 @@ export const AUTUMN_STICKER_IDS = [
   AUTUMN_FREE_STICKER_ID,
   ...AUTUMN_PAID_STICKER_IDS.slice(5)
 ];
+export const AUTUMN_TRIAL_STICKER_IDS = [
+  'autumn-trial-cover',
+  'autumn-trial-sticky',
+  'autumn-trial-heading',
+  'autumn-trial-tape',
+  AUTUMN_FREE_STICKER_ID
+];
+export const AUTUMN_TRIAL_ENTITLEMENT_STICKER_IDS = AUTUMN_TRIAL_STICKER_IDS
+  .filter((id) => id !== AUTUMN_FREE_STICKER_ID);
 
 const supplied = (value = '') => typeof value === 'string' && value.trim() && !value.includes('your_');
 
@@ -26,6 +36,17 @@ export const getAutumnStickerConfig = (env = {}) => ({
   bucket: PACKAGE_THEME_PACK_ASSETS_BUCKET,
   freeStickerUrl: `${env.BASE_URL || '/usapon-memo/'}assets/stickers/autumn-stamp-9803.png`
 });
+
+export const getAutumnTrialStickerSources = (env = {}) => {
+  const baseUrl = env.BASE_URL || '/usapon-memo/';
+  return {
+    'autumn-trial-cover': `${baseUrl}assets/stickers/autumn-trial/autumn-trial-cover.png`,
+    'autumn-trial-sticky': `${baseUrl}assets/stickers/autumn-trial/autumn-trial-sticky.png`,
+    'autumn-trial-heading': `${baseUrl}assets/stickers/autumn-trial/autumn-trial-heading.png`,
+    'autumn-trial-tape': `${baseUrl}assets/stickers/autumn-trial/autumn-trial-tape.png`,
+    [AUTUMN_FREE_STICKER_ID]: `${baseUrl}assets/stickers/autumn-stamp-9803.png`
+  };
+};
 
 export const isSupabaseConfigured = (config) => (
   config.url.startsWith('https://') && supplied(config.publishableKey)
@@ -55,15 +76,27 @@ export async function loadAutumnStickerAccess(client = memoSupabase, settings = 
   if (sessionError) return { status: 'error', sources, error: sessionError.message };
   if (!session?.user) return { status: 'signed-out', sources, error: '' };
 
-  const { data, error } = await client.schema('package')
+  const { data: paidData, error: paidError } = await client.schema('package')
     .from('theme_pack_entitlements')
     .select('theme_pack_id')
     .eq('theme_pack_id', AUTUMN_ENTITLEMENT_ID);
-  if (error) return { status: 'error', sources, error: error.message };
-  if (!data?.some((row) => row.theme_pack_id === AUTUMN_ENTITLEMENT_ID)) {
-    return { status: 'not-entitled', sources, error: '' };
+  const { data: trialData, error: trialError } = await client.schema('digital_shop')
+    .from('free_product_entitlements')
+    .select('product_key, purchaser_user_id, revoked_at')
+    .eq('product_key', AUTUMN_TRIAL_PRODUCT_KEY)
+    .eq('purchaser_user_id', session.user.id)
+    .is('revoked_at', null);
+  const paidEntitled = !paidError && paidData?.some((row) => row.theme_pack_id === AUTUMN_ENTITLEMENT_ID);
+  const trialEntitled = !trialError && trialData?.some((row) => (
+    row.product_key === AUTUMN_TRIAL_PRODUCT_KEY
+    && row.purchaser_user_id === session.user.id
+    && row.revoked_at == null
+  ));
+  if (!paidEntitled && !trialEntitled) {
+    const accessError = paidError || trialError;
+    return { status: accessError ? 'error' : 'not-entitled', sources, error: accessError?.message || '' };
   }
-  const downloaded = await Promise.all(AUTUMN_PAID_STICKER_IDS.map(async (id) => {
+  const downloaded = await Promise.all((paidEntitled ? AUTUMN_PAID_STICKER_IDS : []).map(async (id) => {
     try {
       const { data: blob, error: downloadError } = await client.storage
         .from(settings.bucket)
@@ -80,7 +113,12 @@ export async function loadAutumnStickerAccess(client = memoSupabase, settings = 
     revokePaidStickerSources(sources);
     return { status: 'assets-unavailable', sources: {}, error: '購入済み素材をすべて読み込めませんでした。' };
   }
-  return { status: 'ready', sources, error: '' };
+  if (trialEntitled) Object.assign(sources, getAutumnTrialStickerSources(import.meta.env));
+  return {
+    status: paidEntitled ? 'ready' : 'trial-ready',
+    sources,
+    error: paidError?.message || trialError?.message || ''
+  };
 }
 
 export async function signInWithGoogle(client = memoSupabase) {

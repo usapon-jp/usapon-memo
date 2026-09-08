@@ -80,6 +80,7 @@ import {
   AUTUMN_FREE_STICKER_ID,
   AUTUMN_PAID_STICKER_IDS,
   AUTUMN_STICKER_IDS,
+  AUTUMN_TRIAL_ENTITLEMENT_STICKER_IDS,
   loadAutumnStickerAccess,
   memoSupabase,
   revokePaidStickerSources,
@@ -810,12 +811,13 @@ export default function App() {
   const stickyTextSize = STICKY_TEXT_SIZES.has(data.stickyTextSize) ? data.stickyTextSize : DEFAULT_STICKY_TEXT_SIZE;
   const stickyTextWeight = STICKY_TEXT_WEIGHTS.has(data.stickyTextWeight) ? data.stickyTextWeight : DEFAULT_STICKY_TEXT_WEIGHT;
   const unlockedStickerIds = (Array.isArray(data.unlockedStickerIds) ? data.unlockedStickerIds : DEFAULT_STICKER_IDS)
-    .filter(id => !AUTUMN_PAID_STICKER_IDS.includes(id));
+    .filter(id => !AUTUMN_PAID_STICKER_IDS.includes(id) && !AUTUMN_TRIAL_ENTITLEMENT_STICKER_IDS.includes(id));
   const availableAutumnStickerIds = Object.keys(autumnStickerAccess.sources || {});
   const effectiveUnlockedStickerIds = [...new Set([...unlockedStickerIds, ...availableAutumnStickerIds])];
   const visibleStickerIds = Array.isArray(data.visibleStickerIds) ? data.visibleStickerIds : DEFAULT_STICKER_IDS;
   const displayVisibleStickerIds = visibleStickerIds.filter((id) => (
-    !AUTUMN_PAID_STICKER_IDS.includes(id) || availableAutumnStickerIds.includes(id)
+    (!AUTUMN_PAID_STICKER_IDS.includes(id) && !AUTUMN_TRIAL_ENTITLEMENT_STICKER_IDS.includes(id))
+      || availableAutumnStickerIds.includes(id)
   ));
   const boards = data.boards?.length ? data.boards : DEFAULT_BOARDS;
   const homeBoards = useMemo(() => {
@@ -949,13 +951,11 @@ export default function App() {
 
   const clearPaidAutumnStickerSources = (updateState = true) => {
     revokePaidStickerSources(autumnStickerSourcesRef.current);
-    const freeSources = Object.fromEntries(Object.entries(autumnStickerSourcesRef.current)
-      .filter(([id]) => !AUTUMN_STICKER_IDS.includes(id) || id === 'autumn-stamp-9803'));
     AUTUMN_STICKER_IDS.forEach((id) => {
       if (id !== AUTUMN_FREE_STICKER_ID && STICKER_MAP[id]) STICKER_MAP[id].src = '';
     });
-    autumnStickerSourcesRef.current = freeSources;
-    if (updateState) setAutumnStickerAccess(current => ({ ...current, sources: freeSources }));
+    autumnStickerSourcesRef.current = {};
+    if (updateState) setAutumnStickerAccess(current => ({ ...current, sources: {} }));
   };
 
   const refreshAutumnStickerAccess = async () => {
@@ -5233,8 +5233,9 @@ function StickerPage({
       onShowToast?.('合言葉が違います。');
       return;
     }
-    const nextUnlocked = [...new Set([...unlockedStickerIds, ...pack.stickerIds])];
-    const appendVisible = pack.stickerIds.filter(id => !visibleSet.has(id));
+    const receiptStickerIds = pack.codeStickerIds || pack.stickerIds;
+    const nextUnlocked = [...new Set([...unlockedStickerIds, ...receiptStickerIds])];
+    const appendVisible = receiptStickerIds.filter(id => !visibleSet.has(id));
     const nextVisible = [...visibleStickerIds, ...appendVisible].slice(0, MAX_VISIBLE_STICKERS);
     onUpdate({
       unlockedStickerIds: nextUnlocked,
@@ -5245,7 +5246,7 @@ function StickerPage({
     if (packId) {
       setOpenPackIds(current => [...new Set([...current, packId])]);
     }
-    onShowToast?.(pack.stickerIds.every(id => unlockedSet.has(id))
+    onShowToast?.(receiptStickerIds.every(id => unlockedSet.has(id))
       ? 'このステッカーは追加済みです。'
       : '追加ステッカーを解放しました。');
   };
@@ -5339,12 +5340,13 @@ function StickerPage({
             {autumnAccess.status === 'not-entitled' && <p>配布済みのお試しスタンプ1点は合言葉で受け取れます。購入済みの全セットは、購入したGoogleアカウントで確認できます。</p>}
             {autumnAccess.status === 'assets-unavailable' && <p>購入権利を確認しましたが、素材を読み込めませんでした。もう一度確認してください。</p>}
             {autumnAccess.status === 'ready' && <p>購入済みの秋スタンプを読み込みました。</p>}
+            {autumnAccess.status === 'trial-ready' && <p>無料お試しセットを読み込みました。</p>}
             {autumnAccess.status === 'error' && <p>確認できませんでした。{autumnAccess.error}</p>}
             <div className="settings-actions">
               {(autumnAccess.status === 'signed-out' || autumnAccess.status === 'not-entitled') && (
                 <button type="button" className="subtle-action" onClick={onSignInAutumn}>Googleで確認</button>
               )}
-              {autumnAccess.status === 'ready' && (
+              {(autumnAccess.status === 'ready' || autumnAccess.status === 'trial-ready') && (
                 <button type="button" className="subtle-action" onClick={onSignOutAutumn}>ログアウト</button>
               )}
               <button type="button" className="subtle-action" onClick={onRefreshAutumn} disabled={autumnAccess.status === 'loading'}>もう一度確認</button>
