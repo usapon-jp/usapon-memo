@@ -1,126 +1,140 @@
 const COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
-const MAX_PALETTES = 5;
-const MAX_COLORS = 8;
-
+const PRESETS = [
+  { id: 'autumn', name: '秋の色', colors: ['#885744','#bc7044','#dba747','#e8cc91','#82916b','#644c55'] },
+  { id: 'soft', name: 'やさしい色', colors: ['#df8e9c','#e9bdaf','#eddda5','#a8bd99','#99bacb','#b9a6c7'] },
+  { id: 'halloween', name: 'ハロウィン', colors: ['#e39a44','#735679','#41434f','#a5b67a','#f4e4b7','#b96b78'] }
+];
 export function normalizePalettes(value) {
   if (!Array.isArray(value)) return [];
-  return value.slice(0, MAX_PALETTES).map((item, index) => ({
+  return value.slice(0, 30).map((item, index) => ({
     id: typeof item?.id === 'string' ? item.id.slice(0, 60) : `palette-${index + 1}`,
-    colors: Array.isArray(item?.colors) ? [...new Set(item.colors.filter(color => COLOR_PATTERN.test(color)).map(color => color.toLowerCase()))].slice(0, MAX_COLORS) : []
+    name: typeof item?.name === 'string' && item.name.trim() ? item.name.trim().slice(0, 30) : `パレット ${index + 1}`,
+    colors: Array.isArray(item?.colors) ? [...new Set(item.colors.filter(color => typeof color === 'string' && COLOR_PATTERN.test(color)).map(color => color.toLowerCase()))].slice(0, 16) : []
   }));
 }
-
 export function setupColorPalettes({ input, holders, addButton, panel, title, colors, addColor, deleteButton, closeButton, storageKey = 'usapon_color_palettes_v1' }) {
-  let palettes = [];
-  let activeId = null;
-  try { palettes = normalizePalettes(JSON.parse(localStorage.getItem(storageKey) || '[]')); } catch { palettes = []; }
-
-  const save = () => {
-    try { localStorage.setItem(storageKey, JSON.stringify(palettes)); } catch { /* The picker still works without storage. */ }
-  };
-  const activePalette = () => palettes.find(item => item.id === activeId);
-
-  function chooseColor(color) {
-    input.value = color;
-    input.dispatchEvent(new Event('input', { bubbles: true }));
+  let palettes = [], stock = [], selected = 'autumn';
+  try { palettes = normalizePalettes(JSON.parse(localStorage.getItem(storageKey) || '[]')); } catch {}
+  try {
+    const saved = JSON.parse(localStorage.getItem(storageKey + '_stock') || '[]');
+    stock = normalizePalettes([{ colors: saved }])[0].colors;
+    selected = localStorage.getItem(storageKey + '_selected') || selected;
+  } catch {}
+  if (![...PRESETS, ...palettes].some(p => p.id === selected)) selected = 'autumn';
+  let chosen = new Set();
+  const all = () => [...PRESETS, ...palettes];
+  const current = () => all().find(p => p.id === selected) || PRESETS[0];
+  const notice = document.createElement('p');
+  notice.className = 'palette-notice';
+  notice.setAttribute('role', 'status');
+  function save() {
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(palettes));
+      localStorage.setItem(storageKey + '_stock', JSON.stringify(stock));
+      localStorage.setItem(storageKey + '_selected', selected);
+      notice.textContent = '';
+    } catch { notice.textContent = '保存できませんでした。この画面を閉じると変更が失われます。'; }
   }
-
-  function renderPanel() {
-    const palette = activePalette();
-    if (!palette) { panel.hidden = true; return; }
-    title.textContent = `パレット ${palettes.indexOf(palette) + 1}`;
-    colors.replaceChildren();
-    if (!palette.colors.length) {
-      const empty = document.createElement('span');
-      empty.className = 'palette-empty';
-      empty.textContent = '今の色を追加できます';
-      colors.append(empty);
-    }
-    for (const color of palette.colors) {
-      const item = document.createElement('span');
-      item.className = 'palette-color-item';
-      const select = document.createElement('button');
-      select.type = 'button';
-      select.className = 'palette-color';
-      select.style.setProperty('--palette-color', color);
-      select.setAttribute('aria-label', `${color}を使う`);
-      select.addEventListener('click', () => chooseColor(color));
-      const remove = document.createElement('button');
-      remove.type = 'button';
-      remove.className = 'palette-color-remove';
-      remove.textContent = '×';
-      remove.setAttribute('aria-label', `${color}をパレットから外す`);
-      remove.addEventListener('click', () => {
-        palette.colors = palette.colors.filter(value => value !== color);
-        save(); render();
-      });
-      item.append(select, remove);
-      colors.append(item);
-    }
-    addColor.disabled = palette.colors.includes(input.value.toLowerCase()) || palette.colors.length >= MAX_COLORS;
+  function button(label, className, action) {
+    const node = document.createElement('button');
+    node.type = 'button'; node.className = className; node.textContent = label;
+    node.addEventListener('click', action);
+    return node;
   }
-
-  function open(id) {
-    activeId = id;
-    panel.hidden = false;
-    renderPanel();
+  function swatch(color, action) {
+    const node = button('', 'palette-color', action);
+    node.style.setProperty('--palette-color', color);
+    node.setAttribute('aria-label', color);
+    return node;
   }
-
-  function close() {
-    activeId = null;
-    panel.hidden = true;
-  }
-
-  function render() {
+  function close() { panel.hidden = true; addButton.setAttribute('aria-expanded', 'false'); }
+  function renderRow() {
     holders.replaceChildren();
-    palettes.forEach((palette, index) => {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'palette-holder';
-      button.setAttribute('aria-label', `パレット ${index + 1}を開く、${palette.colors.length}色`);
-      const previews = palette.colors.slice(0, 4);
-      if (!previews.length) {
-        const empty = document.createElement('i');
-        empty.className = 'palette-holder-empty';
-        button.append(empty);
-      } else {
-        previews.forEach(color => {
-          const dot = document.createElement('i');
-          dot.style.setProperty('--palette-color', color);
-          button.append(dot);
-        });
-      }
-      button.addEventListener('click', () => open(palette.id));
-      holders.append(button);
+    holders.setAttribute('aria-label', current().name);
+    current().colors.forEach(color => {
+      const node = swatch(color, () => { input.value = color; input.dispatchEvent(new Event('input', { bubbles: true })); });
+      node.setAttribute('aria-pressed', String(input.value.toLowerCase() === color));
+      holders.append(node);
     });
-    addButton.hidden = palettes.length >= MAX_PALETTES;
-    if (!panel.hidden) renderPanel();
+    addButton.textContent = current().name + ' ▾';
+    addButton.className = 'palette-switch';
+    addButton.setAttribute('aria-label', 'パレットを選ぶ');
+    addButton.title = 'パレットを選ぶ';
   }
-
+  title.textContent = 'パレット';
+  colors.className = 'palette-library';
+  addColor.textContent = '今の色をストック';
+  deleteButton.hidden = true;
+  const stockLabel = document.createElement('strong'); stockLabel.textContent = '色のストック';
+  const stockGrid = document.createElement('div'); stockGrid.className = 'palette-stock';
+  const hint = document.createElement('p'); hint.className = 'palette-notice'; hint.textContent = '色を選んで、名前をつけて保存';
+  const name = document.createElement('input');
+  name.type = 'text'; name.maxLength = 30; name.placeholder = 'パレットの名前'; name.setAttribute('aria-label', 'パレットの名前');
+  const create = button('パレットを保存', 'palette-save', () => {
+    if (!name.value.trim() || !chosen.size) { name.focus(); return; }
+    if (palettes.length >= 30) { notice.textContent = 'パレットは30個まで保存できます。'; return; }
+    const palette = { id: 'custom-' + crypto.randomUUID(), name: name.value.trim(), colors: [...chosen] };
+    palettes.push(palette); selected = palette.id; name.value = ''; chosen.clear();
+    save(); renderRow(); renderLibrary(); renderStock(); close();
+  });
+  const editor = document.createElement('div'); editor.className = 'palette-create';
+  editor.append(stockLabel, stockGrid, hint, name, create, notice);
+  panel.append(editor);
+  function renderLibrary() {
+    colors.replaceChildren();
+    all().forEach(palette => {
+      const entry = document.createElement('div'); entry.className = 'palette-entry';
+      const select = button('', 'palette-set', () => { selected = palette.id; save(); renderRow(); close(); });
+      select.setAttribute('aria-label', palette.name + 'を使う');
+      select.setAttribute('aria-pressed', String(selected === palette.id));
+      const label = document.createElement('span'); label.textContent = palette.name;
+      const preview = document.createElement('span'); preview.className = 'palette-preview';
+      palette.colors.forEach(color => { const dot = document.createElement('i'); dot.style.background = color; preview.append(dot); });
+      select.append(label, preview); entry.append(select);
+      if (!PRESETS.some(p => p.id === palette.id)) {
+        entry.append(button('×', 'palette-remove-set', () => {
+          if (!confirm('「' + palette.name + '」を削除しますか？')) return;
+          palettes = palettes.filter(p => p.id !== palette.id);
+          if (selected === palette.id) selected = 'autumn';
+          save(); renderRow(); renderLibrary();
+        }));
+        entry.lastChild.setAttribute('aria-label', palette.name + 'を削除');
+      }
+      colors.append(entry);
+    });
+  }
+  function renderStock() {
+    stockGrid.replaceChildren();
+    stock.forEach(color => {
+      const node = swatch(color, () => {
+        chosen.has(color) ? chosen.delete(color) : chosen.add(color);
+        renderStock();
+      });
+      node.setAttribute('aria-label', color + 'をセットに選ぶ');
+      node.setAttribute('aria-pressed', String(chosen.has(color)));
+      stockGrid.append(node);
+    });
+    create.disabled = !chosen.size || !name.value.trim();
+    addColor.disabled = stock.includes(input.value.toLowerCase());
+  }
   addButton.addEventListener('click', () => {
-    if (palettes.length >= MAX_PALETTES) return;
-    const id = `palette-${Date.now()}-${palettes.length}`;
-    palettes.push({ id, colors: [] });
-    save(); render(); open(id);
-  });
-  addColor.addEventListener('click', () => {
-    const palette = activePalette();
-    const color = input.value.toLowerCase();
-    if (!palette || palette.colors.includes(color) || palette.colors.length >= MAX_COLORS) return;
-    palette.colors.push(color);
-    save(); render();
-  });
-  deleteButton.addEventListener('click', () => {
-    if (!activeId) return;
-    palettes = palettes.filter(item => item.id !== activeId);
-    save(); close(); render();
+    if (!panel.hidden) { close(); return; }
+    panel.hidden = false; addButton.setAttribute('aria-expanded', 'true');
+    renderLibrary(); renderStock();
   });
   closeButton.addEventListener('click', close);
-  input.addEventListener('input', () => { if (!panel.hidden) renderPanel(); });
-  document.addEventListener('pointerdown', event => {
-    if (!panel.hidden && !panel.contains(event.target) && !holders.contains(event.target) && event.target !== addButton) close();
+  name.addEventListener('input', () => { create.disabled = !chosen.size || !name.value.trim(); });
+  addColor.addEventListener('click', () => {
+    const color = input.value.toLowerCase();
+    if (!COLOR_PATTERN.test(color) || stock.includes(color)) return;
+    if (stock.length >= 16) { notice.textContent = 'ストックは16色までです。'; return; }
+    stock.push(color); chosen.add(color); save(); renderStock();
   });
-  render();
+  input.addEventListener('input', () => { renderRow(); renderStock(); });
+  document.addEventListener('pointerdown', event => {
+    if (!panel.hidden && !panel.contains(event.target) && !addButton.contains(event.target)) close();
+  });
+  document.addEventListener('keydown', event => { if (event.key === 'Escape') close(); });
+  renderRow(); renderStock();
   return { close };
 }
-

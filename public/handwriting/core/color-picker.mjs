@@ -154,7 +154,72 @@ export function setupCircularColorPicker({ root, input, toggle, panel, wheel, br
   document.addEventListener('pointerdown', event => {
     if (!panel.hidden && !root.contains(event.target)) close();
   });
+// Named palette sets use a separate store; these are the quick-access colors.
+  const preview = document.createElement('span');
+  preview.className = 'current-color-preview';
+  preview.setAttribute('aria-label', '現在の色');
+  hex.parentElement.insertBefore(preview, hex);
+  const quickRow = document.querySelector('.palette');
+  let quickColors = [];
+  try {
+    const saved = JSON.parse(localStorage.getItem('usapon_quick_colors_v1') || '[]');
+    if (Array.isArray(saved)) quickColors = [...new Set(saved.filter(c => typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c)).map(c => c.toLowerCase()))];
+  } catch {}
+  const trash = document.createElement('button');
+  trash.type = 'button'; trash.className = 'quick-color-trash'; trash.hidden = true;
+  trash.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 10v7m4-7v7"/></svg>';
+  trash.setAttribute('aria-label', 'この色を削除');
+  document.body.append(trash);
+  let deleteColor = null;
+  function saveQuick() {
+    try { localStorage.setItem('usapon_quick_colors_v1', JSON.stringify(quickColors)); }
+    catch { document.getElementById('status').textContent = '色を保存できませんでした'; }
+  }
+  function renderQuick() {
+    quickRow.querySelectorAll('[data-quick-color]').forEach(n => n.remove());
+    quickColors.forEach(color => {
+      const b = document.createElement('button'); b.type = 'button';
+      b.className = 'quick-color'; b.dataset.quickColor = color;
+      b.style.background = color; b.setAttribute('aria-label', color + 'を使う。長押しで削除');
+      let timer, held = false, start;
+      const cancel = () => { clearTimeout(timer); };
+      const showTrash = () => {
+        held = true; deleteColor = color;
+        const r = b.getBoundingClientRect();
+        trash.style.left = Math.min(innerWidth - 48, Math.max(4, r.left)) + 'px';
+        trash.style.top = Math.max(4, r.top - 48) + 'px'; trash.hidden = false;
+      };
+      b.addEventListener('pointerdown', e => {
+        held = false; start = { x:e.clientX, y:e.clientY };
+        timer = setTimeout(showTrash, 550);
+      });
+      b.addEventListener('pointermove', e => { if (start && Math.hypot(e.clientX-start.x,e.clientY-start.y)>8) cancel(); });
+      ['pointerup','pointercancel','pointerleave'].forEach(event => b.addEventListener(event, cancel));
+      b.addEventListener('contextmenu', e => { e.preventDefault(); cancel(); showTrash(); });
+      b.addEventListener('click', () => {
+        if (held) return;
+        input.value = color; input.dispatchEvent(new Event('input', { bubbles:true }));
+      });
+      b.addEventListener('keydown', e => {
+        if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); showTrash(); }
+      });
+      quickRow.append(b);
+    });
+  }
+  trash.addEventListener('click', () => {
+    quickColors = quickColors.filter(c => c !== deleteColor);
+    saveQuick(); renderQuick(); trash.hidden = true;
+  });
+  document.addEventListener('pointerdown', e => {
+    if (!trash.contains(e.target)) trash.hidden = true;
+  });
+  const syncPreview = () => { preview.style.background = input.value; preview.title = input.value; };
+  input.addEventListener('input', syncPreview);
+  confirm.addEventListener('click', () => {
+    const color = input.value.toLowerCase();
+    if (!quickColors.includes(color)) { quickColors.push(color); saveQuick(); renderQuick(); }
+  });
+  renderQuick(); syncPreview();
   syncFields();
   return { open, close };
 }
-
