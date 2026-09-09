@@ -3225,7 +3225,7 @@ function HomePage({
 
       <section
         className="cork-board-wrap"
-        aria-label={`${activeBoard.label}のコルクボード`}
+        aria-label={`${activeBoard.label}のボード`}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
         onTouchCancel={() => {
