@@ -5,9 +5,11 @@ import { paintSegment, renderDocument, exportPng, exportStampPng, exportStampDat
 import { sendToMemo } from './host-bridge.mjs';
 const $ = id => document.getElementById(id);
 const canvas = $('drawing'); const ctx = canvas.getContext('2d');
-const mobileCanvas = matchMedia('(max-width: 480px)').matches;
+const NARROW_CANVAS_QUERY = '(max-width: 600px)';
+const MOBILE_CANVAS_HEIGHT = 1650;
+const mobileCanvas = matchMedia(NARROW_CANVAS_QUERY).matches;
 const DRAFT_STORAGE_KEY = 'usapon_handwriting_draft_v1';
-let initialDocument = mobileCanvas ? newDocument({ width: 1000, height: 1500 }) : newDocument();
+let initialDocument = mobileCanvas ? newDocument({ width: 1000, height: MOBILE_CANVAS_HEIGHT }) : newDocument();
 try {
   const saved = localStorage.getItem(DRAFT_STORAGE_KEY);
   if (saved) initialDocument = validateDocument(JSON.parse(saved));
@@ -91,19 +93,72 @@ const input = new InputSession({
   cancel: cancelStroke, undo, trace
 });
 function point(e) { return { id: e.pointerId, type: ['pen', 'touch'].includes(e.pointerType) ? e.pointerType : 'mouse', x: e.clientX, y: e.clientY, time: e.timeStamp, pressure: e.pressure }; }
+const canvasViewport = $('canvasViewport');
+const canvasStage = $('canvasStage');
+const surface = $('surface');
+const gestureTouches = new Map();
+let canvasZoom = 1;
+let pinch = null;
+let fittedCanvas = { width: 0, height: 0 };
+const touchDistance = touches => Math.hypot(touches[0].x - touches[1].x, touches[0].y - touches[1].y);
+const touchCenter = touches => ({ x: (touches[0].x + touches[1].x) / 2, y: (touches[0].y + touches[1].y) / 2 });
+function applyCanvasZoom(nextZoom, center, origin = null) {
+  if (!fittedCanvas.width) return;
+  const oldZoom = canvasZoom;
+  const zoom = Math.min(3, Math.max(1, nextZoom));
+  const bounds = canvasViewport.getBoundingClientRect();
+  const anchor = center || { x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2 };
+  const contentX = origin ? (origin.scrollLeft + origin.center.x - bounds.left) / origin.zoom : (canvasViewport.scrollLeft + anchor.x - bounds.left) / oldZoom;
+  const contentY = origin ? (origin.scrollTop + origin.center.y - bounds.top) / origin.zoom : (canvasViewport.scrollTop + anchor.y - bounds.top) / oldZoom;
+  canvasZoom = zoom;
+  surface.style.transform = `scale(${zoom})`;
+  canvasStage.style.width = `${fittedCanvas.width * zoom}px`;
+  canvasStage.style.height = `${fittedCanvas.height * zoom}px`;
+  canvasViewport.scrollLeft = contentX * zoom - (anchor.x - bounds.left);
+  canvasViewport.scrollTop = contentY * zoom - (anchor.y - bounds.top);
+}
+function beginPinch() {
+  const touches = [...gestureTouches.values()];
+  if (touches.length === 2) pinch = { distance: Math.max(1, touchDistance(touches)), center: touchCenter(touches), zoom: canvasZoom, scrollLeft: canvasViewport.scrollLeft, scrollTop: canvasViewport.scrollTop, engaged: false };
+}
 canvas.addEventListener('pointerdown', e => {
   if (e.pointerType === 'mouse' && e.button !== 0) return;
-  e.preventDefault(); canvas.setPointerCapture(e.pointerId); input.down(point(e));
+  e.preventDefault(); canvas.setPointerCapture(e.pointerId);
+  if (e.pointerType === 'touch') gestureTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  input.down(point(e));
+  if (gestureTouches.size === 2) beginPinch();
 });
 canvas.addEventListener('pointermove', e => {
-  e.preventDefault(); const samples = e.getCoalescedEvents?.() || [];
+  e.preventDefault();
+  if (e.pointerType === 'touch' && gestureTouches.has(e.pointerId)) gestureTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (gestureTouches.size === 2 && pinch) {
+    input.move(point(e));
+    const touches = [...gestureTouches.values()];
+    const distance = touchDistance(touches);
+    const center = touchCenter(touches);
+    if (!pinch.engaged && (Math.abs(distance - pinch.distance) > 8 || Math.hypot(center.x - pinch.center.x, center.y - pinch.center.y) > 8)) {
+      pinch.engaged = true;
+      input.gesture();
+    }
+    if (pinch.engaged) applyCanvasZoom(pinch.zoom * distance / pinch.distance, center, pinch);
+    return;
+  }
+  const samples = e.getCoalescedEvents?.() || [];
   (samples.length ? samples : [e]).forEach(sample => input.move(point(sample)));
 });
-canvas.addEventListener('pointerup', e => { e.preventDefault(); input.up(point(e)); });
-canvas.addEventListener('pointercancel', e => input.up(point(e), true));
-canvas.addEventListener('lostpointercapture', e => { if (input.pointers.has(e.pointerId)) input.up(point(e), true, 'lostpointercapture'); });
-window.addEventListener('blur', () => input.cancelAll('window-blur'));
-document.addEventListener('visibilitychange', () => { if (document.hidden) input.cancelAll('document-hidden'); });
+function endTouchGesture(e, cancelled = false) {
+  if (e.pointerType === 'touch') gestureTouches.delete(e.pointerId);
+  input.up(point(e), cancelled);
+  if (gestureTouches.size < 2) pinch = null;
+}
+canvas.addEventListener('pointerup', e => { e.preventDefault(); endTouchGesture(e); });
+canvas.addEventListener('pointercancel', e => endTouchGesture(e, true));
+canvas.addEventListener('lostpointercapture', e => {
+  gestureTouches.delete(e.pointerId); pinch = null;
+  if (input.pointers.has(e.pointerId)) input.up(point(e), true, 'lostpointercapture');
+});
+window.addEventListener('blur', () => { gestureTouches.clear(); pinch = null; input.cancelAll('window-blur'); });
+document.addEventListener('visibilitychange', () => { if (document.hidden) { gestureTouches.clear(); pinch = null; input.cancelAll('document-hidden'); } });
 window.addEventListener('beforeunload', e => { if (dirty || stroke) { e.preventDefault(); e.returnValue = ''; } });
 $('penOnly').addEventListener('change', () => { input.cancelAll(); input.penOnly = $('penOnly').checked; });
 $('paper').addEventListener('change', () => $('surface').classList.toggle('paper', $('paper').checked));
@@ -243,7 +298,7 @@ for (const option of document.querySelectorAll('[data-paste-background]')) optio
 });
 let oldWidth = 0;
 new ResizeObserver(() => {
-  const targetHeight = matchMedia('(max-width: 480px)').matches ? 1500 : 750;
+  const targetHeight = matchMedia(NARROW_CANVAS_QUERY).matches ? MOBILE_CANVAS_HEIGHT : 750;
   if (!dirty && !history.document.strokes.length && history.document.canvas.height !== targetHeight) {
     history = new DrawingHistory(newDocument({ width: 1000, height: targetHeight }));
     $('surface').style.aspectRatio = `${history.document.canvas.width} / ${history.document.canvas.height}`;
@@ -254,6 +309,21 @@ new ResizeObserver(() => {
   if (edge === oldWidth && canvas.height === height) return;
   input.cancelAll('canvas-resize'); oldWidth = edge; canvas.width = edge; canvas.height = height; redraw();
 }).observe($('surface'));
+let observedViewportWidth = 0;
+new ResizeObserver(() => {
+  if (canvasZoom !== 1) return;
+  const viewportWidth = canvasViewport.clientWidth;
+  if (viewportWidth === observedViewportWidth) return;
+  observedViewportWidth = viewportWidth;
+  canvasStage.style.width = '';
+  canvasStage.style.height = '';
+  requestAnimationFrame(() => {
+    const bounds = surface.getBoundingClientRect();
+    fittedCanvas = { width: bounds.width, height: bounds.height };
+    canvasStage.style.width = `${bounds.width}px`;
+    canvasStage.style.height = `${bounds.height}px`;
+  });
+}).observe(canvasViewport);
 // Explicit local test surface; no network, application storage or external APIs.
 window.lab = { get document() { return structuredClone(history.document); }, get stats() { return { undo: history.past.length, redo: history.future.length, lastFrameMs, peakFrameMs, frameSamples: [...frameSamples] }; }, exportPng: () => exportPng(history.document) };
 redraw();

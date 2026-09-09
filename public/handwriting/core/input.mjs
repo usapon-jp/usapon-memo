@@ -58,4 +58,5 @@ export class InputSession {
     if (!this.pointers.size) { this.blocked = false; this.candidate = null; }
   }
   cancelAll(reason = 'control-change') { this.interrupt(reason); this.candidate = null; this.pointers.clear(); this.blocked = false; }
+  gesture() { this.candidate = null; this.blocked = true; }
 }
