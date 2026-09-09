@@ -13,6 +13,29 @@ export function normalizePalettes(value) {
   }));
 }
 export function setupColorPalettes({ input, holders, addButton, panel, title, colors, addColor, deleteButton, closeButton, storageKey = 'usapon_color_palettes_v1' }) {
+  // Escape the dock's backdrop-filter containing block.
+  document.body.append(panel);
+  function positionPanel() {
+    if (panel.hidden) return;
+    const viewport = window.visualViewport;
+    const top = viewport?.offsetTop ?? 0;
+    const left = viewport?.offsetLeft ?? 0;
+    const width = viewport?.width ?? innerWidth;
+    const height = viewport?.height ?? innerHeight;
+    const anchor = addButton.getBoundingClientRect();
+    const bottomEdge = Math.max(top + 80, Math.min(anchor.top - 8, top + height - 12));
+    panel.style.bottom = 'auto';
+    panel.style.transform = 'none';
+    panel.style.width = Math.min(350, width - 24) + 'px';
+    panel.style.maxHeight = Math.max(60, bottomEdge - top - 12) + 'px';
+    panel.style.left = Math.max(left + 12, Math.min(anchor.right - panel.offsetWidth, left + width - panel.offsetWidth - 12)) + 'px';
+    panel.style.top = Math.max(top + 12, bottomEdge - panel.offsetHeight) + 'px';
+  }
+  window.addEventListener('resize', positionPanel);
+  window.addEventListener('scroll', positionPanel, {passive:true});
+  window.visualViewport?.addEventListener('resize', positionPanel);
+  window.visualViewport?.addEventListener('scroll', positionPanel);
+  new ResizeObserver(positionPanel).observe(panel);
   let palettes = [], stock = [], selected = 'autumn';
   try { palettes = normalizePalettes(JSON.parse(localStorage.getItem(storageKey) || '[]')); } catch {}
   try {
@@ -121,6 +144,7 @@ export function setupColorPalettes({ input, holders, addButton, panel, title, co
     if (!panel.hidden) { close(); return; }
     panel.hidden = false; addButton.setAttribute('aria-expanded', 'true');
     renderLibrary(); renderStock();
+    positionPanel();
   });
   closeButton.addEventListener('click', close);
   name.addEventListener('input', () => { create.disabled = !chosen.size || !name.value.trim(); });
