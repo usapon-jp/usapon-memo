@@ -181,7 +181,7 @@ const colorMenu=document.createElement('div');
   function colorActions(color,sourceId,anchor){
     colorMenu.replaceChildren();colorMenu.hidden=false;
     const dismiss=button('閉じる','palette-menu-close',dismissColorMenu);
-    const add=button('上の色欄に追加','',()=>{
+    const add=button('上に追加','',()=>{
       document.dispatchEvent(new CustomEvent('usapon-quick-color-add',{detail:{color}}));
       dismissColorMenu();
     });
