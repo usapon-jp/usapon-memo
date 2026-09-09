@@ -79,10 +79,10 @@ export function setupColorPalettes({ input, holders, addButton, panel, title, co
       node.setAttribute('aria-pressed', String(input.value.toLowerCase() === color));
       holders.append(node);
     });
-    addButton.textContent = current().name + ' ▾';
+    addButton.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M3 10h18"/></svg>';
     addButton.className = 'palette-switch';
-    addButton.setAttribute('aria-label', 'パレットを選ぶ');
-    addButton.title = 'パレットを選ぶ';
+    addButton.setAttribute('aria-label', 'パレットを選ぶ：' + current().name);
+    addButton.title = current().name + '（パレットを選ぶ）';
   }
   title.textContent = 'パレット';
   colors.className = 'palette-library';
