@@ -140,7 +140,7 @@ export class BrushStrokeRenderer {
   }
   dispose() { this.mask.width = this.mask.height = 1; if(this.wash)this.wash.width=this.wash.height=1; if(this.texture)this.texture.width=this.texture.height=1; }
 }
-export function renderDocument(canvas, document) {
+function renderFlat(canvas, document) {
   const ctx = canvas.getContext('2d');
   ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.setTransform(canvas.width / document.canvas.width, 0, 0, canvas.height / document.canvas.height, 0, 0);
@@ -151,6 +151,42 @@ export function renderDocument(canvas, document) {
       brush.append(); brush.composite(ctx); brush.dispose();
     }
   });
+}
+export function renderLayerBuffers(canvas, document) {
+  const layers = document.layers ?? [{id:'base',visible:true,opacity:1,clip:false}];
+  return layers.map(layer => {
+    const buffer = canvas.ownerDocument.createElement('canvas');
+    buffer.width=canvas.width; buffer.height=canvas.height;
+    renderFlat(buffer,{...document,strokes:document.strokes.filter(s=>(s.layerId??layers[0].id)===layer.id)});
+    return buffer;
+  });
+}
+const compositeScratch = new WeakMap();
+export function compositeLayers(canvas, document, buffers) {
+  const ctx=canvas.getContext('2d'); ctx.save(); ctx.setTransform(1,0,0,1,0,0);
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  const layers=document.layers??[{visible:true,opacity:1,clip:false}];
+  let previous=null;
+  let scratch=compositeScratch.get(canvas);
+  if(!scratch){scratch=[canvas.ownerDocument.createElement('canvas'),canvas.ownerDocument.createElement('canvas')];compositeScratch.set(canvas,scratch);}
+  layers.forEach((layer,i)=>{
+    const masked=scratch[i%2];
+    if(masked.width!==canvas.width || masked.height!==canvas.height){masked.width=canvas.width;masked.height=canvas.height;}
+    const c=masked.getContext('2d');
+    c.globalCompositeOperation='source-over';c.globalAlpha=1;c.clearRect(0,0,masked.width,masked.height);
+    if(layer.visible){
+      c.globalAlpha=layer.opacity; c.drawImage(buffers[i],0,0); c.globalAlpha=1;
+      if(layer.clip && previous){c.globalCompositeOperation='destination-in';c.drawImage(previous,0,0);}
+    }
+    ctx.drawImage(masked,0,0);
+    previous=masked;
+  });
+  ctx.restore();
+}
+export function renderDocument(canvas, document) {
+  const buffers=renderLayerBuffers(canvas,document);
+  compositeLayers(canvas,document,buffers);
+  buffers.forEach(b=>{b.width=b.height=1;});
 }
 export async function exportPng(document, maxEdge = 2048) {
   const canvas = globalThis.document.createElement('canvas');

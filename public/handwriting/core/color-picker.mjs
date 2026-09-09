@@ -167,6 +167,9 @@ export function setupCircularColorPicker({ root, input, toggle, panel, wheel, br
   } catch {}
   const trash = document.createElement('button');
   trash.type = 'button'; trash.className = 'quick-color-trash'; trash.hidden = true;
+  const addToPalette=document.createElement('button');addToPalette.type='button';
+  addToPalette.textContent='パレットに追加';addToPalette.className='quick-add-palette';addToPalette.hidden=true;
+  document.body.append(addToPalette);
   trash.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 10v7m4-7v7"/></svg>';
   trash.setAttribute('aria-label', 'この色を削除');
   document.body.append(trash);
@@ -178,40 +181,34 @@ export function setupCircularColorPicker({ root, input, toggle, panel, wheel, br
   function renderQuick() {
     quickRow.querySelectorAll('[data-quick-color]').forEach(n => n.remove());
     quickColors.forEach(color => {
-      const b = document.createElement('button'); b.type = 'button';
-      b.className = 'quick-color'; b.dataset.quickColor = color;
-      b.style.background = color; b.setAttribute('aria-label', color + 'を使う。長押しで削除');
-      let timer, held = false, start;
-      const cancel = () => { clearTimeout(timer); };
-      const showTrash = () => {
-        held = true; deleteColor = color;
-        const r = b.getBoundingClientRect();
-        trash.style.left = Math.min(innerWidth - 48, Math.max(4, r.left)) + 'px';
-        trash.style.top = Math.max(4, r.top - 48) + 'px'; trash.hidden = false;
+      const b=document.createElement('button');b.type='button';b.className='quick-color';b.dataset.quickColor=color;
+      b.style.background=color;b.setAttribute('aria-label',color+'を使う。長押しでメニュー');
+      let timer,held=false,start;
+      const cancel=()=>clearTimeout(timer);
+      const show=()=>{
+        held=true;deleteColor=color;
+        const r=b.getBoundingClientRect(),left=Math.max(4,Math.min(innerWidth-200,r.left)),top=Math.max(4,r.top-50);
+        trash.style.left=(left+152)+'px';trash.style.top=top+'px';trash.hidden=false;
+        addToPalette.style.left=left+'px';addToPalette.style.top=top+'px';addToPalette.hidden=false;
       };
-      b.addEventListener('pointerdown', e => {
-        held = false; start = { x:e.clientX, y:e.clientY };
-        timer = setTimeout(showTrash, 550);
-      });
-      b.addEventListener('pointermove', e => { if (start && Math.hypot(e.clientX-start.x,e.clientY-start.y)>8) cancel(); });
-      ['pointerup','pointercancel','pointerleave'].forEach(event => b.addEventListener(event, cancel));
-      b.addEventListener('contextmenu', e => { e.preventDefault(); cancel(); showTrash(); });
-      b.addEventListener('click', () => {
-        if (held) return;
-        input.value = color; input.dispatchEvent(new Event('input', { bubbles:true }));
-      });
-      b.addEventListener('keydown', e => {
-        if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); showTrash(); }
-      });
+      b.addEventListener('pointerdown',e=>{held=false;start={x:e.clientX,y:e.clientY};timer=setTimeout(show,550);});
+      b.addEventListener('pointermove',e=>{if(start&&Math.hypot(e.clientX-start.x,e.clientY-start.y)>8)cancel();});
+      ['pointerup','pointercancel','pointerleave'].forEach(t=>b.addEventListener(t,cancel));
+      b.addEventListener('contextmenu',e=>{e.preventDefault();cancel();show();});
+      b.addEventListener('click',()=>{if(!held){input.value=color;input.dispatchEvent(new Event('input',{bubbles:true}));}});
       quickRow.append(b);
     });
   }
+  addToPalette.onclick=()=>{
+    document.dispatchEvent(new CustomEvent('usapon-palette-drop',{detail:{color:deleteColor}}));
+    addToPalette.hidden=true;trash.hidden=true;
+  };
   trash.addEventListener('click', () => {
     quickColors = quickColors.filter(c => c !== deleteColor);
-    saveQuick(); renderQuick(); trash.hidden = true;
+    saveQuick(); renderQuick(); trash.hidden = true; addToPalette.hidden=true;
   });
   document.addEventListener('pointerdown', e => {
-    if (!trash.contains(e.target)) trash.hidden = true;
+    if (!trash.contains(e.target) && !addToPalette.contains(e.target)) {trash.hidden = true;addToPalette.hidden=true;}
   });
   const syncPreview = () => { preview.style.background = input.value; preview.title = input.value; };
   input.addEventListener('input', syncPreview);

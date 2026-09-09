@@ -185,3 +185,15 @@
 .custom-color{flex-shrink:0}
 .palette-panel{top:80px;bottom:auto;max-height:calc(100dvh - 180px)}
 .circular-hex-row .current-color-preview{flex:0 0 28px;width:28px;height:28px}
+.quick-color{touch-action:none}
+.color-drag-ghost{position:fixed;z-index:110;width:36px;height:36px;pointer-events:none;border:3px solid white;border-radius:50%;box-shadow:0 5px 18px #66504444;transform:translate(-50%,-50%)}
+.palette-drop-ready{background:#edf4e6;outline:2px dashed #9fba93;border-radius:12px}
+.layer-toggle{margin-left:auto;flex:0 0 40px;padding:8px;background:#f4ecdf;border-radius:12px}
+.layer-toggle svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linejoin:round}
+.layer-panel{position:fixed;z-index:40;right:12px;top:80px;width:min(330px,calc(100vw - 24px));max-height:70dvh;overflow:auto;padding:12px;background:#fffdf8;border:1px solid #eadbd5;border-radius:18px;box-shadow:0 10px 32px #654c4626}
+.layer-panel[hidden]{display:none}.layer-row{display:flex;flex-wrap:wrap;gap:4px;border-top:1px solid #eadbd5;padding:8px 0}.layer-row button{border-radius:10px;font-size:12px}.layer-row [aria-pressed=true]{background:#ffe1e8}.layer-row input{width:100%;accent-color:#9fba93}
+@media(max-width:480px){.tools{flex:1;min-width:0}.tools button{width:30px;min-width:30px}.tools button img{width:28px}.history{gap:2px;padding:2px;margin-right:2px}.history button{width:32px;min-width:32px}.layer-toggle{min-width:36px;flex-basis:36px}}
+.quick-add-palette{position:fixed;z-index:100;width:148px;min-height:44px;border-radius:12px;background:#fffdf8;border:1px solid #e7bdc7;font-size:12px;box-shadow:0 4px 16px #60404026}.quick-add-palette[hidden]{display:none}.quick-color{touch-action:pan-x}
+.layer-row>button:first-child{display:flex;align-items:center;gap:7px}
+.layer-thumbnail{width:40px;height:40px;object-fit:contain;border:1px solid #dfd6ca;border-radius:7px;background:repeating-conic-gradient(#fff 0% 25%,#f0ebe3 0% 50%) 0/10px 10px}
+.layer-clip{display:flex;align-items:center;gap:4px}.layer-clip svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}

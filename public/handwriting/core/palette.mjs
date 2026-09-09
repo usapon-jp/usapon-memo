@@ -136,5 +136,24 @@ export function setupColorPalettes({ input, holders, addButton, panel, title, co
   });
   document.addEventListener('keydown', event => { if (event.key === 'Escape') close(); });
   renderRow(); renderStock();
+  document.addEventListener('usapon-palette-drop', event => {
+    const color = event.detail?.color;
+    if (typeof color !== 'string' || !COLOR_PATTERN.test(color)) return;
+    let target = current();
+    if (target.colors.includes(color)) { event.detail.accepted = true; return; }
+    if (target.colors.length >= 16) {
+      document.getElementById('status').textContent = 'パレットは16色までです'; return;
+    }
+    if (PRESETS.some(p => p.id === target.id)) {
+      if (palettes.length >= 30) { document.getElementById('status').textContent = 'パレットは30個までです'; return; }
+      target = { id: 'custom-' + crypto.randomUUID(), name: target.name + '（マイ）', colors: [...target.colors] };
+      palettes.push(target); selected = target.id;
+    }
+    target.colors.push(color);
+    save(); renderRow();
+    event.detail.accepted = true;
+    if (!panel.hidden) renderLibrary();
+    document.getElementById('status').textContent = 'パレットに色を追加しました';
+  });
   return { close };
 }

@@ -5,6 +5,7 @@ import { paintSegment, renderDocument, exportPng, exportStampPng, exportStampDat
 import { sendToMemo } from './host-bridge.mjs';
 import { setupCircularColorPicker } from './core/color-picker.mjs';
 import { setupColorPalettes } from './core/palette.mjs';
+import { renderLayerBuffers, compositeLayers } from './core/render.mjs';
 const $ = id => document.getElementById(id);
 const canvas = $('drawing'); const ctx = canvas.getContext('2d');
 const NARROW_CANVAS_QUERY = '(max-width: 600px)';
@@ -20,6 +21,9 @@ try {
 }
 let history = new DrawingHistory(initialDocument); let stroke = null; let tool = 'pencil'; let dirty = false;
 let activeBrush = null;
+let activeLayerId=history.document.layers[0].id, layerBuffers=null, activeLayerIndex=0;
+const layerWork=document.createElement('canvas');
+function disposeLayers(){layerBuffers?.forEach(b=>{b.width=b.height=1;});layerBuffers=null;}
 const strokeBase = document.createElement('canvas');
 let painted = 0; let frame = 0; let builder = null; let started = 0;
 let lastFrameMs = 0; let peakFrameMs = 0; let frameSamples = []; let failure = false;
@@ -37,8 +41,9 @@ function metrics() {
   $('clear').disabled = !history.document.strokes.length || Boolean(stroke);
 }
 function redraw() {
+  if(!history.document.layers.some(l=>l.id===activeLayerId))activeLayerId=history.document.layers[0].id;
   $('surface').style.aspectRatio = `${history.document.canvas.width} / ${history.document.canvas.height}`;
-  renderDocument(canvas, history.document); metrics();
+  renderDocument(canvas, history.document); metrics(); renderLayerUi();
 }
 function schedule() { if (!frame) frame = requestAnimationFrame(paintPending); }
 function paintPending() {
@@ -47,11 +52,15 @@ function paintPending() {
   if (activeBrush) {
     activeBrush.append();
     ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.drawImage(strokeBase, 0, 0);
-    ctx.restore(); activeBrush.composite(ctx);
+    const work=layerWork.getContext('2d');
+    work.setTransform(1,0,0,1,0,0);work.clearRect(0,0,canvas.width,canvas.height);work.drawImage(strokeBase,0,0);
+    ctx.restore(); activeBrush.composite(work);
   } else {
-    for (let i = painted; i < stroke.points.length; i++) paintSegment(ctx, stroke, stroke.points[Math.max(0, i - 1)], stroke.points[i]);
+    const work=layerWork.getContext('2d');
+    work.setTransform(canvas.width/history.document.canvas.width,0,0,canvas.height/history.document.canvas.height,0,0);
+    for (let i = painted; i < stroke.points.length; i++) paintSegment(work, stroke, stroke.points[Math.max(0, i - 1)], stroke.points[i]);
   }
+  if(layerBuffers)compositeLayers(canvas,history.document,layerBuffers.map((b,i)=>i===activeLayerIndex?layerWork:b));
   painted = stroke.points.length;
   lastFrameMs = performance.now() - before; peakFrameMs = Math.max(peakFrameMs, lastFrameMs);
   frameSamples.push(lastFrameMs); if (frameSamples.length > 500) frameSamples.shift();
@@ -65,6 +74,7 @@ function addPoint(p) {
   if (builder.sample({ x, y, time: p.time, pressure: p.pressure })) schedule();
 }
 function cancelStroke() {
+  disposeLayers();
   activeBrush?.dispose(); activeBrush = null;
   if (frame) cancelAnimationFrame(frame); frame = 0; stroke = null; builder = null; painted = 0; redraw();
 }
@@ -75,10 +85,15 @@ const input = new InputSession({
     failure = false; painted = 0;
     started = history.document.strokes.reduce((n, s) => n + s.points.length, 0);
     builder = new StrokeBuilder({ tool, input: p.type, color: $('color').value, size: +$('size').value, opacity: tool === 'eraser' ? 1 : +$('opacity').value / 100, time: p.time }); stroke = builder.stroke;
+    stroke.layerId=activeLayerId;
+    disposeLayers();layerBuffers=renderLayerBuffers(canvas,history.document);
+    activeLayerIndex=history.document.layers.findIndex(l=>l.id===activeLayerId);
+    layerWork.width=canvas.width;layerWork.height=canvas.height;
+    layerWork.getContext('2d').drawImage(layerBuffers[activeLayerIndex],0,0);
     activeBrush?.dispose(); activeBrush = null;
     if (tool !== 'eraser') {
       strokeBase.width = canvas.width; strokeBase.height = canvas.height;
-      strokeBase.getContext('2d').drawImage(canvas, 0, 0);
+      strokeBase.getContext('2d').drawImage(layerWork, 0, 0);
       activeBrush = new BrushStrokeRenderer(canvas, history.document.canvas, stroke);
     }
     addPoint(p); metrics();
@@ -89,7 +104,7 @@ const input = new InputSession({
     if (frame) cancelAnimationFrame(frame); frame = 0;
     if (failure) { cancelStroke(); return; }
     paintPending();
-    try { history.commit(stroke); dirty = true; stroke = null; activeBrush?.dispose(); activeBrush = null; metrics(); message('未保存'); }
+    try { history.commit(stroke); dirty = true; stroke = null; activeBrush?.dispose(); activeBrush = null; disposeLayers(); metrics(); message('未保存'); }
     catch (error) { cancelStroke(); message(error.message); }
   },
   cancel: cancelStroke, undo, trace
@@ -331,4 +346,54 @@ new ResizeObserver(() => {
 }).observe(canvasViewport);
 // Explicit local test surface; no network, application storage or external APIs.
 window.lab = { get document() { return structuredClone(history.document); }, get stats() { return { undo: history.past.length, redo: history.future.length, lastFrameMs, peakFrameMs, frameSamples: [...frameSamples] }; }, exportPng: () => exportPng(history.document) };
+const layerButton=document.createElement('button');
+layerButton.className='layer-toggle';layerButton.type='button';layerButton.setAttribute('aria-label','レイヤー');
+layerButton.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5 9-5Zm-9 9 9 5 9-5M3 16l9 5 9-5"/></svg>';
+document.querySelector('.toolbar').append(layerButton);
+const layerPanel=document.createElement('div');layerPanel.className='layer-panel';layerPanel.hidden=true;
+let thumbnailRevision=-1, thumbnailDocumentId=null, layerThumbnails=[];
+layerPanel.setAttribute('role','dialog');layerPanel.setAttribute('aria-label','レイヤー');
+document.body.append(layerPanel);
+function renderLayerUi(){
+  if(layerPanel.hidden)return;
+  if(thumbnailRevision!==history.document.revision || thumbnailDocumentId!==history.document.id){
+    const tiny=document.createElement('canvas');tiny.width=96;tiny.height=Math.round(96*history.document.canvas.height/history.document.canvas.width);
+    const buffers=renderLayerBuffers(tiny,history.document);
+    layerThumbnails=buffers.map(b=>b.toDataURL('image/png'));
+    buffers.forEach(b=>{b.width=b.height=1;});
+    thumbnailRevision=history.document.revision;thumbnailDocumentId=history.document.id;
+  }
+  layerPanel.replaceChildren();
+  const head=document.createElement('strong');head.textContent='レイヤー';layerPanel.append(head);
+  function button(label,fn){const b=document.createElement('button');b.type='button';b.textContent=label;b.onclick=fn;return b;}
+  layerPanel.append(button('閉じる',()=>{layerPanel.hidden=true;}));
+  const layers=history.document.layers;
+  function update(next){input.cancelAll();history.changeLayers(next);dirty=true;redraw();}
+  [...layers].reverse().forEach(layer=>{
+    const index=layers.findIndex(l=>l.id===layer.id),row=document.createElement('div');row.className='layer-row';
+    const select=button(layer.name,()=>{input.cancelAll();activeLayerId=layer.id;renderLayerUi();});
+    const thumb=document.createElement('img');thumb.className='layer-thumbnail';thumb.src=layerThumbnails[index];thumb.alt=layer.name+'のプレビュー';select.prepend(thumb);
+    select.setAttribute('aria-pressed',String(layer.id===activeLayerId));row.append(select);
+    row.append(button(layer.visible?'表示中':'非表示',()=>update(layers.map(l=>l.id===layer.id?{...l,visible:!l.visible}:l))));
+    const clip=button(layer.clip?'クリップ中':'クリップ',()=>update(layers.map(l=>l.id===layer.id?{...l,clip:!l.clip}:l)));
+    clip.className='layer-clip';
+    clip.insertAdjacentHTML('afterbegin','<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h10v14m-5-5 5 5 5-5"/></svg>');
+    clip.title='直下のレイヤーの形にクリップ';
+    clip.setAttribute('aria-label',layer.name+'を直下のレイヤーにクリップ');
+    clip.disabled=index===0;clip.setAttribute('aria-pressed',String(layer.clip));row.append(clip);
+    const opacity=document.createElement('input');opacity.type='range';opacity.min=0;opacity.max=100;opacity.value=layer.opacity*100;
+    opacity.setAttribute('aria-label',layer.name+'の不透明度');opacity.onchange=()=>update(layers.map(l=>l.id===layer.id?{...l,opacity:Number(opacity.value)/100}:l));row.append(opacity);
+    for(const [label,offset] of [['↑',1],['↓',-1]]){
+      const move=button(label,()=>{const next=layers.map(l=>({...l}));[next[index],next[index+offset]]=[next[index+offset],next[index]];next[0].clip=false;update(next);});
+      move.disabled=index+offset<0||index+offset>=layers.length;row.append(move);
+    }
+    layerPanel.append(row);
+  });
+  const add=button('＋ レイヤー',()=>{
+    const l={id:crypto.randomUUID(),name:'レイヤー'+(layers.length+1),visible:true,opacity:1,clip:false};
+    activeLayerId=l.id;update([...layers,l]);
+  });add.disabled=layers.length>=3;layerPanel.append(add);
+}
+layerButton.onclick=()=>{layerPanel.hidden=!layerPanel.hidden;renderLayerUi();};
+document.addEventListener('pointerdown',e=>{if(!layerPanel.contains(e.target)&&!layerButton.contains(e.target))layerPanel.hidden=true;});
 redraw();
