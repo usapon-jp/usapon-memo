@@ -3,6 +3,7 @@ import { InputSession } from './core/input.mjs';
 import { BRUSH_SIZES } from './core/brush-sizes.mjs';
 import { setupSizeFavorites } from './core/size-favorites.mjs';
 import { setupHelp } from './core/help.mjs';
+import { contentPointAtAnchor, anchoredScroll } from './core/zoom.mjs';
 import { StrokeBuilder } from './core/stroke.mjs';
 import { paintSegment, renderDocument, exportPng, exportStampPng, exportStampDataUrl, BrushStrokeRenderer } from './core/render.mjs';
 import { sendToMemo } from './host-bridge.mjs';
@@ -128,18 +129,29 @@ function applyCanvasZoom(nextZoom, center, origin = null) {
   const zoom = Math.min(3, Math.max(1, nextZoom));
   const bounds = canvasViewport.getBoundingClientRect();
   const anchor = center || { x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2 };
-  const contentX = origin ? (origin.scrollLeft + origin.center.x - bounds.left) / origin.zoom : (canvasViewport.scrollLeft + anchor.x - bounds.left) / oldZoom;
-  const contentY = origin ? (origin.scrollTop + origin.center.y - bounds.top) / origin.zoom : (canvasViewport.scrollTop + anchor.y - bounds.top) / oldZoom;
+  const before = surface.getBoundingClientRect();
+  const contentX = origin?.contentX ?? contentPointAtAnchor(anchor.x, before.left, oldZoom);
+  const contentY = origin?.contentY ?? contentPointAtAnchor(anchor.y, before.top, oldZoom);
   canvasZoom = zoom;
+  // Keep the fitted surface at its base size. The stage supplies scrollable room;
+  // allowing width:100% to follow the enlarged stage would apply zoom twice.
+  surface.style.width = `${fittedCanvas.width}px`;
+  surface.style.height = `${fittedCanvas.height}px`;
   surface.style.transform = `scale(${zoom})`;
   canvasStage.style.width = `${fittedCanvas.width * zoom}px`;
   canvasStage.style.height = `${fittedCanvas.height * zoom}px`;
-  canvasViewport.scrollLeft = contentX * zoom - (anchor.x - bounds.left);
-  canvasViewport.scrollTop = contentY * zoom - (anchor.y - bounds.top);
+  const after = surface.getBoundingClientRect();
+  canvasViewport.scrollLeft = anchoredScroll(canvasViewport.scrollLeft, after.left, anchor.x, contentX, zoom);
+  canvasViewport.scrollTop = anchoredScroll(canvasViewport.scrollTop, after.top, anchor.y, contentY, zoom);
 }
 function beginPinch() {
   const touches = [...gestureTouches.values()];
-  if (touches.length === 2) pinch = { distance: Math.max(1, touchDistance(touches)), center: touchCenter(touches), zoom: canvasZoom, scrollLeft: canvasViewport.scrollLeft, scrollTop: canvasViewport.scrollTop, engaged: false };
+  if (touches.length === 2) {
+    const center = touchCenter(touches), rect = surface.getBoundingClientRect();
+    pinch = { distance: Math.max(1, touchDistance(touches)), center, zoom: canvasZoom,
+      contentX: contentPointAtAnchor(center.x, rect.left, canvasZoom),
+      contentY: contentPointAtAnchor(center.y, rect.top, canvasZoom), engaged: false };
+  }
 }
 canvas.addEventListener('pointerdown', e => {
   if (e.pointerType === 'mouse' && e.button !== 0) return;
@@ -360,6 +372,8 @@ new ResizeObserver(() => {
   observedViewportWidth = viewportWidth;
   canvasStage.style.width = '';
   canvasStage.style.height = '';
+  surface.style.width = '';
+  surface.style.height = '';
   requestAnimationFrame(() => {
     const bounds = surface.getBoundingClientRect();
     fittedCanvas = { width: bounds.width, height: bounds.height };
@@ -398,12 +412,14 @@ function renderLayerUi(){
     const thumb=document.createElement('img');thumb.className='layer-thumbnail';thumb.src=layerThumbnails[index];thumb.alt=layer.name+'のプレビュー';select.prepend(thumb);
     select.setAttribute('aria-pressed',String(layer.id===activeLayerId));row.append(select);
     row.append(button(layer.visible?'表示中':'非表示',()=>update(layers.map(l=>l.id===layer.id?{...l,visible:!l.visible}:l))));
-    const clip=button(layer.clip?'クリップ中':'クリップ',()=>update(layers.map(l=>l.id===layer.id?{...l,clip:!l.clip}:l)));
-    clip.className='layer-clip';
-    clip.insertAdjacentHTML('afterbegin','<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h10v14m-5-5 5 5 5-5"/></svg>');
-    clip.title='直下のレイヤーの形にクリップ';
-    clip.setAttribute('aria-label',layer.name+'を直下のレイヤーにクリップ');
-    clip.disabled=index===0;clip.setAttribute('aria-pressed',String(layer.clip));row.append(clip);
+    if(index>0){
+      const clip=button(layer.clip?'クリップ中':'クリップ',()=>update(layers.map(l=>l.id===layer.id?{...l,clip:!l.clip}:l)));
+      clip.className='layer-clip';
+      clip.insertAdjacentHTML('afterbegin','<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h10v14m-5-5 5 5 5-5"/></svg>');
+      clip.title='直下のレイヤーの形にクリップ';
+      clip.setAttribute('aria-label',layer.name+'を直下のレイヤーにクリップ');
+      clip.setAttribute('aria-pressed',String(layer.clip));row.append(clip);
+    }
     const opacity=document.createElement('input');opacity.type='range';opacity.min=0;opacity.max=100;opacity.value=layer.opacity*100;
     opacity.setAttribute('aria-label',layer.name+'の不透明度');opacity.onchange=()=>update(layers.map(l=>l.id===layer.id?{...l,opacity:Number(opacity.value)/100}:l));row.append(opacity);
     for(const [label,offset] of [['↑',1],['↓',-1]]){
