@@ -77,6 +77,7 @@ export function setupColorPalettes({ input, holders, addButton, panel, title, co
     current().colors.forEach(color => {
       const node = swatch(color, () => { input.value = color; input.dispatchEvent(new Event('input', { bubbles: true })); });
       node.setAttribute('aria-pressed', String(input.value.toLowerCase() === color));
+      enableColorActions(node,color,current().id);
       holders.append(node);
     });
     addButton.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3C6.7 3 3 6.8 3 11.7c0 5 3.8 9.3 8.4 9.3 2 0 3-1.1 2.2-2.7-.8-1.7.1-3.1 2-3.1h2.2c2.2 0 3.2-1.5 3.2-3.7C21 6.7 17 3 12 3Z"/><circle cx="7" cy="10" r="1.5" fill="#df8e9c" stroke="none"/><circle cx="10" cy="6.8" r="1.5" fill="#dfbd6e" stroke="none"/><circle cx="14.5" cy="7" r="1.5" fill="#8cae81" stroke="none"/><circle cx="17.4" cy="10.4" r="1.5" fill="#6da9c6" stroke="none"/><circle cx="7.5" cy="15" r="1.4" fill="#fffdf8"/></svg>';
@@ -112,7 +113,7 @@ export function setupColorPalettes({ input, holders, addButton, panel, title, co
       select.setAttribute('aria-pressed', String(selected === palette.id));
       const label = document.createElement('span'); label.textContent = palette.name;
       const preview = document.createElement('span'); preview.className = 'palette-preview';
-      palette.colors.forEach(color => { const dot = document.createElement('i'); dot.style.background = color; preview.append(dot); });
+      palette.colors.forEach(color => { const dot = document.createElement('i'); dot.style.background = color; enableColorActions(dot,color,palette.id); preview.append(dot); });
       select.append(label, preview); entry.append(select);
       if (!PRESETS.some(p => p.id === palette.id)) {
         entry.append(button('×', 'palette-remove-set', () => {
@@ -159,6 +160,60 @@ export function setupColorPalettes({ input, holders, addButton, panel, title, co
     if (!panel.hidden && !panel.contains(event.target) && !addButton.contains(event.target)) close();
   });
   document.addEventListener('keydown', event => { if (event.key === 'Escape') close(); });
+const colorMenu=document.createElement('div');
+  colorMenu.className='palette-color-menu';colorMenu.hidden=true;
+  colorMenu.setAttribute('role','dialog');colorMenu.setAttribute('aria-label','色の操作');
+  document.body.append(colorMenu);
+  function dismissColorMenu(){colorMenu.hidden=true;}
+  function locateColorMenu(anchor){
+    const v=window.visualViewport, left=v?.offsetLeft??0,top=v?.offsetTop??0;
+    const width=v?.width??innerWidth,height=v?.height??innerHeight;
+    colorMenu.style.maxHeight=Math.max(80,height-24)+'px';
+    colorMenu.style.left=Math.max(left+12,Math.min(anchor.left,left+width-colorMenu.offsetWidth-12))+'px';
+    colorMenu.style.top=Math.max(top+12,Math.min(anchor.top-colorMenu.offsetHeight-8,top+height-colorMenu.offsetHeight-12))+'px';
+  }
+  function editablePalette(source){
+    if(!PRESETS.some(p=>p.id===source.id))return source;
+    if(palettes.length>=30){document.getElementById('status').textContent='パレットは30個までです';return null;}
+    const copy={...source,id:'custom-'+crypto.randomUUID(),name:source.name+'（マイ）',colors:[...source.colors]};
+    palettes.push(copy);return copy;
+  }
+  function colorActions(color,sourceId,anchor){
+    colorMenu.replaceChildren();colorMenu.hidden=false;
+    const dismiss=button('閉じる','palette-menu-close',dismissColorMenu);
+    const add=button('上の色欄に追加','',()=>{
+      document.dispatchEvent(new CustomEvent('usapon-quick-color-add',{detail:{color}}));
+      dismissColorMenu();
+    });
+    const remove=button('このパレットから削除','palette-menu-delete',()=>{
+      const source=all().find(p=>p.id===sourceId);if(!source)return;
+      const target=editablePalette(source);if(!target)return;
+      target.colors=target.colors.filter(c=>c!==color);
+      if(selected===sourceId)selected=target.id;
+      save();renderRow();if(!panel.hidden)renderLibrary();dismissColorMenu();
+      document.getElementById('status').textContent='パレットから色を外しました';
+    });
+    remove.insertAdjacentHTML('afterbegin','<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 10v7m4-7v7"/></svg>');
+    colorMenu.append(add,remove,dismiss);locateColorMenu(anchor);
+  }
+  function enableColorActions(node,color,sourceId){
+    let timer=null,held=false,start=null;
+    const cancel=()=>{clearTimeout(timer);timer=null;};
+    const show=()=>{cancel();held=true;colorActions(color,sourceId,node.getBoundingClientRect());};
+    node.addEventListener('pointerdown',e=>{
+      if(e.button!==0)return;
+      held=false;start={x:e.clientX,y:e.clientY};timer=setTimeout(show,550);
+    });
+    node.addEventListener('pointermove',e=>{if(start&&Math.hypot(e.clientX-start.x,e.clientY-start.y)>8)cancel();});
+    ['pointerup','pointercancel','pointerleave','lostpointercapture'].forEach(t=>node.addEventListener(t,cancel));
+    node.addEventListener('contextmenu',e=>{e.preventDefault();e.stopPropagation();show();});
+    node.addEventListener('click',e=>{if(held){e.preventDefault();e.stopImmediatePropagation();held=false;}},true);
+    node.addEventListener('keydown',e=>{if((e.shiftKey&&e.key==='F10')||e.key==='ContextMenu'){e.preventDefault();show();}});
+  }
+  document.addEventListener('pointerdown',e=>{if(!colorMenu.contains(e.target))dismissColorMenu();});
+  document.addEventListener('keydown',e=>{if(e.key==='Escape')dismissColorMenu();});
+  window.addEventListener('resize',dismissColorMenu);
+  window.addEventListener('scroll',dismissColorMenu,{passive:true});
   renderRow(); renderStock();
   document.addEventListener('usapon-palette-drop', event => {
     const color = event.detail?.color;

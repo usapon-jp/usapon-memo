@@ -217,6 +217,13 @@ export function setupCircularColorPicker({ root, input, toggle, panel, wheel, br
     if (!quickColors.includes(color)) { quickColors.push(color); saveQuick(); renderQuick(); }
   });
   renderQuick(); syncPreview();
+  document.addEventListener('usapon-quick-color-add',event=>{
+    const color=event.detail?.color;
+    if(typeof color!=='string'||!/^#[0-9a-f]{6}$/i.test(color))return;
+    if(!quickColors.includes(color.toLowerCase())){quickColors.push(color.toLowerCase());saveQuick();renderQuick();}
+    document.getElementById('status').textContent='上の色欄に追加しました';
+    quickRow.scrollLeft=quickRow.scrollWidth;
+  });
   syncFields();
   return { open, close };
 }
