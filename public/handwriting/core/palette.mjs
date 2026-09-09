@@ -79,7 +79,7 @@ export function setupColorPalettes({ input, holders, addButton, panel, title, co
       node.setAttribute('aria-pressed', String(input.value.toLowerCase() === color));
       holders.append(node);
     });
-    addButton.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M3 10h18"/></svg>';
+    addButton.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3C6.7 3 3 6.8 3 11.7c0 5 3.8 9.3 8.4 9.3 2 0 3-1.1 2.2-2.7-.8-1.7.1-3.1 2-3.1h2.2c2.2 0 3.2-1.5 3.2-3.7C21 6.7 17 3 12 3Z"/><circle cx="7" cy="10" r="1.5" fill="#df8e9c" stroke="none"/><circle cx="10" cy="6.8" r="1.5" fill="#dfbd6e" stroke="none"/><circle cx="14.5" cy="7" r="1.5" fill="#8cae81" stroke="none"/><circle cx="17.4" cy="10.4" r="1.5" fill="#6da9c6" stroke="none"/><circle cx="7.5" cy="15" r="1.4" fill="#fffdf8"/></svg>';
     addButton.className = 'palette-switch';
     addButton.setAttribute('aria-label', 'パレットを選ぶ：' + current().name);
     addButton.title = current().name + '（パレットを選ぶ）';
