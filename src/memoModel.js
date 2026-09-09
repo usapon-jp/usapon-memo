@@ -1,3 +1,5 @@
+import { validateDocument } from '../public/handwriting/core/document.mjs';
+
 export const MEMO_COLORS = {
   white: { label: 'しろ', className: 'memo-white' },
   yellow: { label: 'きいろ', className: 'memo-yellow' },
@@ -31,6 +33,7 @@ export const DEFAULT_BOARDS = [
 export const DEFAULT_APP_TITLE = 'うさぽんメモ';
 export const DEFAULT_STICKY_TEXT_SIZE = 'standard';
 export const DEFAULT_STICKY_TEXT_WEIGHT = 'standard';
+export const DEFAULT_BOARD_BACKGROUND = 'cork';
 export const DEFAULT_BOARD_TEXT_COLOR = 'milkWhite';
 export const DEFAULT_BOARD_TEXT_SIZE = 'standard';
 export const DEFAULT_BOARD_TEXT_WEIGHT = 'standard';
@@ -44,6 +47,7 @@ export const BOARD_ITEM_MAX_Y = 88;
 export const MEMO_CARD_MAX_Y = 88;
 export const STICKY_TEXT_SIZES = new Set(['small', 'standard', 'large']);
 export const STICKY_TEXT_WEIGHTS = new Set(['soft', 'standard', 'bold']);
+export const BOARD_BACKGROUNDS = new Set(['cork', 'notebook', 'paper']);
 export const BOARD_TEXT_COLORS = {
   milkWhite: { label: 'ミルクホワイト', value: '#fff8ea' },
   forest: { label: '深緑', value: '#2f5f4a' },
@@ -270,10 +274,15 @@ const normalizeBoard = (board = {}, index = 0, usedIds = new Set()) => {
     ? timeCapsuleDate.toISOString()
     : null;
 
+  let drawing = null;
+  if (board.drawing) {
+    try { drawing = validateDocument(board.drawing); } catch { /* Preserve other board data in older or malformed backups. */ }
+  }
   return {
     id,
     label,
     icon,
+    drawing,
     archived: Boolean(board.archived),
     isTimeCapsule: Boolean(board.isTimeCapsule),
     timeCapsuleAt
@@ -575,6 +584,9 @@ export const normalizeData = (data = {}) => {
   const stickyTextWeight = STICKY_TEXT_WEIGHTS.has(data.stickyTextWeight)
     ? data.stickyTextWeight
     : DEFAULT_STICKY_TEXT_WEIGHT;
+  const boardBackground = BOARD_BACKGROUNDS.has(data.boardBackground)
+    ? data.boardBackground
+    : DEFAULT_BOARD_BACKGROUND;
   const boards = normalizeBoards(data.boards);
   const boardIds = new Set(boards.map(board => board.id));
   const fallbackBoardId = boardIds.has('home') ? 'home' : boards[0].id;
@@ -621,6 +633,7 @@ export const normalizeData = (data = {}) => {
     appTitle,
     stickyTextSize,
     stickyTextWeight,
+    boardBackground,
     boards,
     memos,
     boardItems,

@@ -1,0 +1,31 @@
+.board-ink { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.board-ink-input { position: absolute; inset: 0; z-index: 1100; touch-action: none; cursor: crosshair; user-select: none; }
+.board-drawing-tools { position: fixed; right: max(18px, calc((100vw - 560px) / 2 + 18px)); bottom: calc(env(safe-area-inset-bottom) + 100px); z-index: 1200; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.board-drawing-tools button { border: 0; color: #79644c; background: transparent; padding: 0; display: grid; place-items: center; min-width: 44px; min-height: 44px; border-radius: 50%; cursor: pointer; }
+.board-drawing-tools .board-drawing-toggle { background: #fffaf0; box-shadow: 0 2px 9px #674b3024; }
+.board-drawing-menu { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px; border-radius: 28px; background: #fffaf0f5; box-shadow: 0 3px 14px #674b3024; max-height: calc(100dvh - 290px); overflow-y: auto; }
+.board-drawing-menu > button { width: 48px; height: 46px; flex-shrink: 0; }
+.board-drawing-menu button[aria-pressed="true"] { background: #f5dce0; }
+.board-drawing-menu img { width: 42px; height: 42px; object-fit: contain; }
+.board-drawing-menu img { transform: rotate(-90deg); }
+.board-drawing-options { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 6px 0; }
+.board-drawing-options .board-color-toggle { width: 34px; min-width: 34px; height: 34px; min-height: 34px; border: 3px solid #fff; background: var(--current-color); box-shadow: 0 0 0 1px #725e5838; }
+.board-drawing-options input[type="range"] { width: 48px; accent-color: #c58999; }
+.board-drawing-actions { position: absolute; right: 52px; bottom: 2px; display: flex; align-items: center; gap: 1px; padding: 3px; border-radius: 24px; background: #fffaf0f5; box-shadow: 0 3px 12px #674b3020; }
+.board-drawing-history { display: flex; }
+.board-drawing-actions .board-drawing-clear { display: flex; flex-direction: column; gap: 1px; width: 46px; min-height: 42px; border-radius: 18px; color: #9b6c75; }
+.board-drawing-clear small { font-size: 8px; font-weight: 800; line-height: 1; }
+.board-drawing-tools button:disabled, .board-drawing-tools input:disabled { opacity: .3; cursor: default; }
+.board-color-panel { position: fixed; right: max(76px, calc((100vw - 560px) / 2 + 76px)); bottom: calc(env(safe-area-inset-bottom) + 100px); width: min(292px, calc(100vw - 96px)); max-height: calc(100dvh - 130px); overflow-y: auto; padding: 12px; border: 0; border-radius: 20px; background: #fffdf9f7; box-shadow: 0 12px 38px #59463b2e; backdrop-filter: blur(16px); }
+.board-color-wheel { display: block; width: min(240px, 100%); height: auto; aspect-ratio: 1; margin: 0 auto; border-radius: 50%; cursor: crosshair; touch-action: none; }
+.board-color-brightness { display: block; padding: 2px 8px; }
+.board-color-brightness input { display: block; width: 100%; height: 36px; accent-color: #9fba93; }
+.board-color-palette { display: grid; grid-template-columns: repeat(6, 1fr); gap: 7px; justify-items: center; padding: 5px 2px 8px; }
+.board-color-palette button { width: 34px; min-width: 34px; height: 34px; min-height: 34px; border: 3px solid #fff; background: var(--palette-color); box-shadow: 0 0 0 1px #725e5830; }
+.board-color-palette button[aria-pressed="true"] { outline: 2px solid #806d64; outline-offset: 2px; }
+.board-color-panel .board-color-confirm { display: flex; width: 100%; min-height: 42px; gap: 6px; border-radius: 12px; color: #fff; background: linear-gradient(135deg,#ed93a2,#df7184); font-size: 12px; font-weight: 800; }
+@media (max-width: 390px) {
+  .board-color-panel { padding: 10px; }
+  .board-color-palette { gap: 5px; }
+  .board-color-palette button { width: 31px; min-width: 31px; height: 31px; min-height: 31px; }
+}

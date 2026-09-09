@@ -1,4 +1,5 @@
 import html2canvas from 'html2canvas';
+import BoardDrawing from './BoardDrawing';
 import { forwardRef, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
@@ -31,6 +32,7 @@ import {
 } from 'lucide-react';
 import {
   BOARD_TEXT_COLORS,
+  BOARD_BACKGROUNDS,
   BOARD_ITEM_MAX_Y,
   MEMO_COLORS,
   PHOTO_CROP_RATIOS,
@@ -45,6 +47,7 @@ import {
   DEFAULT_BOARD_TEXT_COLOR,
   DEFAULT_BOARD_TEXT_SIZE,
   DEFAULT_BOARD_TEXT_WEIGHT,
+  DEFAULT_BOARD_BACKGROUND,
   MEMO_CARD_MAX_Y,
   DEFAULT_NOTE_HEIGHT,
   DEFAULT_NOTE_WIDTH,
@@ -211,6 +214,7 @@ const MAX_PHOTO_DATA_URL_LENGTH = 620000;
 const PHOTO_CANVAS_BACKGROUND = '#f3eadc';
 const BACKUP_VERSION = 1;
 const STORAGE_FULL_MESSAGE = '写真保存処理に失敗しました。';
+const AUTOSAVE_ERROR_MESSAGE = '変更を端末に保存できませんでした。設定からバックアップを書き出してください。';
 const ENABLE_CREATE_SETTINGS_PANEL = false;
 const BOARD_SNAPSHOT_WIDTH = 800;
 const BOARD_SNAPSHOT_RETRY_WIDTH = 640;
@@ -813,6 +817,7 @@ export default function App() {
   const appTitle = data.appTitle || DEFAULT_APP_TITLE;
   const stickyTextSize = STICKY_TEXT_SIZES.has(data.stickyTextSize) ? data.stickyTextSize : DEFAULT_STICKY_TEXT_SIZE;
   const stickyTextWeight = STICKY_TEXT_WEIGHTS.has(data.stickyTextWeight) ? data.stickyTextWeight : DEFAULT_STICKY_TEXT_WEIGHT;
+  const boardBackground = BOARD_BACKGROUNDS.has(data.boardBackground) ? data.boardBackground : DEFAULT_BOARD_BACKGROUND;
   const unlockedStickerIds = (Array.isArray(data.unlockedStickerIds) ? data.unlockedStickerIds : DEFAULT_STICKER_IDS)
     .filter(id => !AUTUMN_PAID_STICKER_IDS.includes(id) && !AUTUMN_TRIAL_ENTITLEMENT_STICKER_IDS.includes(id));
   const availableAutumnStickerIds = Object.keys(autumnStickerAccess.sources || {});
@@ -876,9 +881,9 @@ export default function App() {
     if (!mediaReady) return;
     const ok = saveMemoData(data, { reason: 'autosave' });
     if (!ok) {
-      setStorageError(STORAGE_FULL_MESSAGE);
+      setStorageError(AUTOSAVE_ERROR_MESSAGE);
     } else {
-      setStorageError(current => current === STORAGE_FULL_MESSAGE ? '' : current);
+      setStorageError(current => current === AUTOSAVE_ERROR_MESSAGE ? '' : current);
     }
   }, [data, mediaReady]);
 
@@ -1393,6 +1398,11 @@ export default function App() {
     }));
   };
 
+  const updateBoardBackground = (nextBackground) => {
+    if (!BOARD_BACKGROUNDS.has(nextBackground)) return;
+    setData(current => ({ ...current, boardBackground: nextBackground }));
+  };
+
   const exportBackup = async () => {
     const media = await getAllMediaRecords();
     const payload = createBackupPayload(data, media);
@@ -1520,7 +1530,7 @@ export default function App() {
     const sourceBoard = boards.find(item => item.id === boardId);
     if (!sourceBoard) return;
 
-    const nextBoard = createBoard(`${sourceBoard.label} コピー`);
+    const nextBoard = { ...createBoard(`${sourceBoard.label} コピー`), drawing: sourceBoard.drawing ? structuredClone(sourceBoard.drawing) : null };
     captureUndo('ボードの複製');
     setData(current => ({
       ...current,
@@ -1671,6 +1681,7 @@ export default function App() {
           appTitle={appTitle}
           stickyTextSize={stickyTextSize}
           stickyTextWeight={stickyTextWeight}
+          boardBackground={boardBackground}
           visibleStickerIds={displayVisibleStickerIds}
           activeBoardId={activeBoardId}
           boards={homeBoards}
@@ -1790,12 +1801,14 @@ export default function App() {
           appTitle={appTitle}
           stickyTextSize={stickyTextSize}
           stickyTextWeight={stickyTextWeight}
+          boardBackground={boardBackground}
           storageBreakdown={storageBreakdown}
           mediaBreakdown={mediaBreakdown}
           storageEstimate={storageEstimate}
           onBack={() => setPage('home')}
           onUpdateAppTitle={updateAppTitle}
           onUpdateStickyTextSettings={updateStickyTextSettings}
+          onUpdateBoardBackground={updateBoardBackground}
           onRequestNotifications={requestBrowserNotifications}
           onExportBackup={exportBackup}
           onImportBackup={importBackup}
@@ -1847,6 +1860,7 @@ export default function App() {
           mediaUrlsById={mediaUrlsById}
           stickyTextSize={stickyTextSize}
           stickyTextWeight={stickyTextWeight}
+          boardBackground={boardBackground}
         />
       )}
       <HomeScreenInstallGuide
@@ -1896,10 +1910,11 @@ function HomeScreenInstallGuide({ open, context, hasData, onExportBackup, onClos
   </section></div>;
 }
 
-function BoardSnapshotStage({ refTarget, board, memos, boardItems, mediaUrlsById, stickyTextSize, stickyTextWeight }) {
+function BoardSnapshotStage({ refTarget, board, memos, boardItems, mediaUrlsById, stickyTextSize, stickyTextWeight, boardBackground }) {
   return (
     <div className="snapshot-capture-stage" ref={refTarget} aria-hidden="true">
-      <div className="sticky-board cork-board">
+      <div className={`sticky-board cork-board board-background-${boardBackground}`}>
+        <BoardDrawing value={board.drawing} readOnly />
         {sortMemosForBoard(memos).map(memo => (
           <BoardMemo
             key={memo.id}
@@ -1922,7 +1937,7 @@ function BoardSnapshotStage({ refTarget, board, memos, boardItems, mediaUrlsById
             onPointerDown={() => {}}
           />
         ))}
-        {memos.length === 0 && boardItems.length === 0 && (
+        {memos.length === 0 && boardItems.length === 0 && !board.drawing?.strokes.length && (
           <div className="board-empty cork-empty snapshot-empty">
             <StickyNote size={28} />
             <strong>{board.label}</strong>
@@ -1938,6 +1953,7 @@ function HomePage({
   appTitle,
   stickyTextSize,
   stickyTextWeight,
+  boardBackground,
   visibleStickerIds = DEFAULT_STICKER_IDS,
   activeBoardId,
   boards,
@@ -1977,6 +1993,7 @@ function HomePage({
   onCloseNotifications
 }) {
   const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [drawingMode, setDrawingMode] = useState(false);
   const [mainMenuOpen, setMainMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [boardMenu, setBoardMenu] = useState(null);
@@ -2483,6 +2500,7 @@ function HomePage({
   };
 
   const startBoardPress = (event) => {
+    if (drawingMode || event.target.closest('.board-drawing-tools, .board-ink-input')) return;
     if (event.target.closest('.board-card, .board-item, input, textarea')) return;
     window.clearTimeout(boardPressTimerRef.current);
     boardLongPressFiredRef.current = false;
@@ -2687,6 +2705,7 @@ function HomePage({
   };
 
   const handleTouchStart = (event) => {
+    if (drawingMode) return;
     if (
       boardReorderMode
       || draggingMemoId
@@ -2705,6 +2724,7 @@ function HomePage({
   };
 
   const handleTouchEnd = (event) => {
+    if (drawingMode) { swipeStartRef.current = null; return; }
     if (swipeStartRef.current === null) return;
     const touch = event.changedTouches[0];
     const distance = touch.clientX - swipeStartRef.current.x;
@@ -3217,7 +3237,7 @@ function HomePage({
         onPointerCancel={clearBoardPress}
         onPointerLeave={clearBoardPress}
       >
-        <div ref={boardRef} className="sticky-board cork-board" onClick={(event) => {
+        <div ref={boardRef} className={`sticky-board cork-board board-background-${boardBackground}`} onClick={(event) => {
           if (boardLongPressFiredRef.current) {
             event.stopPropagation();
             boardLongPressFiredRef.current = false;
@@ -3225,7 +3245,10 @@ function HomePage({
           }
           markCurrentBoardActive();
         }}>
-          {memos.length === 0 && boardItems.length === 0 ? (
+          <BoardDrawing key={activeBoard.id} value={activeBoard.drawing}
+            onChange={drawing => onUpdateBoard(activeBoard.id, { drawing })}
+            onModeChange={setDrawingMode} onError={onShowToast} />
+          {memos.length === 0 && boardItems.length === 0 && !activeBoard.drawing?.strokes.length && !drawingMode ? (
             <button
               type="button"
               className="board-empty cork-empty"
@@ -5027,12 +5050,14 @@ function SettingsPage({
   appTitle,
   stickyTextSize,
   stickyTextWeight,
+  boardBackground,
   storageBreakdown,
   mediaBreakdown,
   storageEstimate,
   onBack,
   onUpdateAppTitle,
   onUpdateStickyTextSettings,
+  onUpdateBoardBackground,
   onRequestNotifications,
   onExportBackup,
   onImportBackup,
@@ -5107,6 +5132,23 @@ function SettingsPage({
               </button>
             ))}
           </div>
+        </div>
+      </div>
+
+      <div className="settings-card board-background-card">
+        <strong>ボードの背景</strong>
+        <div className="board-background-options" role="group" aria-label="ボードの背景">
+          {[
+            ['cork', 'コルク'],
+            ['notebook', '方眼'],
+            ['paper', '白い紙']
+          ].map(([id, label]) => (
+            <button key={id} type="button" className={boardBackground === id ? 'active' : ''}
+              aria-pressed={boardBackground === id} onClick={() => onUpdateBoardBackground(id)}>
+              <span className={`board-background-preview board-background-${id}`} aria-hidden="true" />
+              <small>{label}</small>
+            </button>
+          ))}
         </div>
       </div>
 
