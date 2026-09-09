@@ -3,6 +3,8 @@ import { InputSession } from './core/input.mjs';
 import { StrokeBuilder } from './core/stroke.mjs';
 import { paintSegment, renderDocument, exportPng, exportStampPng, exportStampDataUrl, BrushStrokeRenderer } from './core/render.mjs';
 import { sendToMemo } from './host-bridge.mjs';
+import { setupCircularColorPicker } from './core/color-picker.mjs';
+import { setupColorPalettes } from './core/palette.mjs';
 const $ = id => document.getElementById(id);
 const canvas = $('drawing'); const ctx = canvas.getContext('2d');
 const NARROW_CANVAS_QUERY = '(max-width: 600px)';
@@ -203,8 +205,11 @@ $('sizeValue').addEventListener('change', () => {
   updateSizeUi();
 });
 updateSizeUi();
+setupCircularColorPicker({ root: $('colorPicker'), input: $('color'), toggle: $('colorToggle'), panel: $('colorPanel'), wheel: $('colorWheel'), brightness: $('colorBrightness'), brightnessValue: $('colorBrightnessValue'), hex: $('colorHex'), confirm: $('colorConfirm') });
+setupColorPalettes({ input: $('color'), holders: $('paletteHolders'), addButton: $('paletteAdd'), panel: $('palettePanel'), title: $('paletteTitle'), colors: $('paletteColors'), addColor: $('paletteAddColor'), deleteButton: $('paletteDelete'), closeButton: $('paletteClose') });
 for (const dot of document.querySelectorAll('.color-dot')) dot.addEventListener('click', () => {
   $('color').value = dot.dataset.color;
+  $('color').dispatchEvent(new Event('input', { bubbles: true }));
   document.querySelectorAll('.color-dot').forEach(item => item.classList.toggle('is-selected', item === dot));
 });
 $('color').addEventListener('input', () => document.querySelectorAll('.color-dot').forEach(item => item.classList.remove('is-selected')));
