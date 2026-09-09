@@ -202,3 +202,15 @@
 @media(max-width:480px){.palette-switch{flex-basis:39px;width:39px;min-width:39px;max-width:39px;height:39px}}
 .palette-color-menu{position:fixed;z-index:120;width:min(250px,calc(100vw - 24px));display:grid;gap:4px;padding:8px;border:1px solid #e4d6ca;border-radius:16px;background:#fffdf8;box-shadow:0 8px 28px #654c4630;overflow:auto;overscroll-behavior:contain}
 .palette-color-menu[hidden]{display:none}.palette-color-menu button{min-height:44px;border-radius:10px;text-align:left;font-size:12px}.palette-color-menu button:hover{background:#f5eadb}.palette-color-menu strong{padding:8px;font-size:12px}.palette-menu-delete{color:#b65e70;display:flex;gap:7px;align-items:center}.palette-menu-delete svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8}.palette-menu-close{color:#8a8076}.palette-holders .palette-color,.palette-preview i{-webkit-touch-callout:none;user-select:none;touch-action:pan-x}
+.size-range #size{touch-action:none;user-select:none;-webkit-user-select:none}
+.size-favorites{position:absolute;inset:0;pointer-events:none}
+.size-favorites i{position:absolute;top:34px;width:5px;height:5px;border-radius:50%;background:#b8788d;transform:translateX(-50%)}
+.handwriting-help{box-sizing:border-box;width:min(520px,calc(100vw - 24px));max-height:82dvh;padding:0;border:1px solid #e7ddcf;border-radius:22px;background:#fffdf8;color:#655950;box-shadow:0 18px 60px #473b3926}
+.handwriting-help::backdrop{background:#443d3545}
+.help-heading{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid #eee5da}
+.help-heading h2{font-size:18px;margin:0}
+.help-heading button{width:44px;height:44px;border:0;border-radius:50%;background:#f2ece3;color:inherit;font-size:24px}
+.help-content{padding:4px 20px 20px}
+.help-content details{border-bottom:1px solid #eee5da;padding:12px 0}
+.help-content summary{cursor:pointer;font-weight:600;min-height:24px;padding:4px 0}
+.help-content p{font-size:14px;line-height:1.85;margin:10px 0;color:#74675e}

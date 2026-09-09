@@ -1,3 +1,4 @@
+import { BRUSH_SIZES } from './brush-sizes.mjs';
 export const LIMITS = Object.freeze({ strokes: 2000, points: 100000, undo: 50, jsonBytes: 12 * 1024 * 1024 });
 export const BRUSHES = Object.freeze(['pen', 'eraser', 'pencil', 'marker', 'crayon', 'watercolor']);
 export function newDocument(canvas = { width: 1000, height: 750 }) {
@@ -19,7 +20,7 @@ export function validateDocument(value) {
   }
   const ids = new Set();
   const strokes = value.strokes.map(s => {
-    if (!s || typeof s.id !== 'string' || ids.has(s.id) || s.id.length > 100 || !BRUSHES.includes(s.tool) || !['pen', 'touch', 'mouse'].includes(s.input) || !/^#[0-9a-f]{6}$/i.test(s.color) || !finite(s.size, 1, 60) || !(s.brushVersion === 1 || (['pencil', 'marker', 'watercolor', 'crayon'].includes(s.tool) && s.brushVersion === 2) || (['pencil', 'watercolor', 'crayon'].includes(s.tool) && s.brushVersion === 3)) || (s.opacity !== undefined && !finite(s.opacity, 0, 1)) || !finite(s.smoothingMs, 0, 100) || !Array.isArray(s.points) || !s.points.length) fail();
+if (!s || typeof s.id !== 'string' || ids.has(s.id) || s.id.length > 100 || !BRUSHES.includes(s.tool) || !['pen', 'touch', 'mouse'].includes(s.input) || !/^#[0-9a-f]{6}$/i.test(s.color) || !finite(s.size, 1, Math.max(60, BRUSH_SIZES[s.tool]?.max ?? 0)) || !(s.brushVersion === 1 || (['pencil', 'marker', 'watercolor', 'crayon'].includes(s.tool) && s.brushVersion === 2) || (['pencil', 'watercolor', 'crayon'].includes(s.tool) && s.brushVersion === 3)) || (s.opacity !== undefined && !finite(s.opacity, 0, 1)) || !finite(s.smoothingMs, 0, 100) || !Array.isArray(s.points) || !s.points.length) fail();
     ids.add(s.id); count += s.points.length;
     if (!layerIds.has(s.layerId ?? layers[0].id)) fail();
     if (count > LIMITS.points) fail();

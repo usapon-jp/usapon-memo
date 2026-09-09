@@ -1,5 +1,8 @@
 import { DrawingHistory, LIMITS, newDocument, validateDocument } from './core/document.mjs';
 import { InputSession } from './core/input.mjs';
+import { BRUSH_SIZES } from './core/brush-sizes.mjs';
+import { setupSizeFavorites } from './core/size-favorites.mjs';
+import { setupHelp } from './core/help.mjs';
 import { StrokeBuilder } from './core/stroke.mjs';
 import { paintSegment, renderDocument, exportPng, exportStampPng, exportStampDataUrl, BrushStrokeRenderer } from './core/render.mjs';
 import { sendToMemo } from './host-bridge.mjs';
@@ -180,10 +183,26 @@ window.addEventListener('beforeunload', e => { if (dirty || stroke) { e.preventD
 $('penOnly').addEventListener('change', () => { input.cancelAll(); input.penOnly = $('penOnly').checked; });
 $('paper').addEventListener('change', () => $('surface').classList.toggle('paper', $('paper').checked));
 const sizeControl = document.querySelector('.size');
+const toolSizes = Object.fromEntries(Object.keys(BRUSH_SIZES).map(key => [key, 8]));
+function configureSize() {
+  const config = BRUSH_SIZES[tool];
+  for (const id of ['size', 'sizeValue']) {
+    $(id).min = config.min;
+    $(id).max = config.max;
+    $(id).value = toolSizes[tool];
+  }
+  document.querySelectorAll('[data-size]').forEach((item, index) => {
+    item.dataset.size = String(config.presets[index]);
+    item.title = String(config.presets[index]);
+  });
+  updateSizeUi();
+}
 for (const button of document.querySelectorAll('[data-drawing-tool]')) button.addEventListener('click', () => {
   input.cancelAll();
   const mode = button.dataset.drawingTool;
   tool = mode;
+  configureSize();
+  sizeFavorites.refresh();
   document.querySelector('.opacity-adjust').hidden = tool === 'eraser';
   document.querySelectorAll('[data-drawing-tool]').forEach(item => item.setAttribute('aria-pressed', String(item === button)));
   sizeControl.classList.add('is-open');
@@ -192,16 +211,19 @@ for (const button of document.querySelectorAll('[data-drawing-tool]')) button.ad
 $('drawing').addEventListener('pointerdown', () => sizeControl.classList.remove('is-open'));
 $('surface').addEventListener('pointerdown', () => sizeControl.classList.remove('is-open'));
 const moreMenu = document.querySelector('.more');
+setupHelp();
 document.addEventListener('pointerdown', event => {
   if (moreMenu.open && !moreMenu.contains(event.target)) moreMenu.open = false;
   if (!pasteOptions.hidden && !pasteOptions.contains(event.target) && event.target !== $('paste')) closePasteOptions();
   if (sizeControl.classList.contains('is-open') && !sizeControl.contains(event.target) && !event.target.closest('[data-drawing-tool]')) sizeControl.classList.remove('is-open');
 });
 function updateSizeUi() {
+  toolSizes[tool] = Number($('size').value);
   $('sizeValue').value = $('size').value;
   document.querySelectorAll('[data-size]').forEach(item => item.classList.toggle('is-selected', item.dataset.size === $('size').value));
 }
 $('size').addEventListener('input', updateSizeUi);
+const sizeFavorites = setupSizeFavorites({ slider: $('size'), getTool: () => tool, onChange: updateSizeUi, message });
 $('opacity').addEventListener('input', () => { $('opacityValue').textContent = `${$('opacity').value}%`; });
 for (const preset of document.querySelectorAll('[data-size]')) preset.addEventListener('click', () => {
   $('size').value = preset.dataset.size;
@@ -209,13 +231,14 @@ for (const preset of document.querySelectorAll('[data-size]')) preset.addEventLi
 });
 $('sizeValue').addEventListener('input', () => {
   const value = Number($('sizeValue').value);
-  if (Number.isFinite(value) && value >= 1 && value <= 32) {
+  if (Number.isFinite(value) && value >= 1 && value <= BRUSH_SIZES[tool].max) {
     $('size').value = String(Math.round(value));
+    toolSizes[tool] = Number($('size').value);
     document.querySelectorAll('[data-size]').forEach(item => item.classList.toggle('is-selected', item.dataset.size === $('size').value));
   }
 });
 $('sizeValue').addEventListener('change', () => {
-  const value = Math.min(32, Math.max(1, Math.round(Number($('sizeValue').value) || 8)));
+  const value = Math.min(BRUSH_SIZES[tool].max, Math.max(1, Math.round(Number($('sizeValue').value) || 8)));
   $('size').value = String(value);
   updateSizeUi();
 });
