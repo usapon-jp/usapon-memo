@@ -65,7 +65,8 @@ import {
   STICKER_PACKS,
   STICKY_TEXT_SIZES,
   STICKY_TEXT_WEIGHTS,
-  sortMemos
+  sortMemos,
+  sortMemosForBoard
 } from './memoModel.js';
 import { LOCAL_STORAGE_QUOTA_BYTES, loadMemoData, saveMemoData } from './storage.js';
 import {
@@ -1899,7 +1900,7 @@ function BoardSnapshotStage({ refTarget, board, memos, boardItems, mediaUrlsById
   return (
     <div className="snapshot-capture-stage" ref={refTarget} aria-hidden="true">
       <div className="sticky-board cork-board">
-        {memos.map(memo => (
+        {sortMemosForBoard(memos).map(memo => (
           <BoardMemo
             key={memo.id}
             memo={memo}
@@ -2159,7 +2160,7 @@ function HomePage({
     const point = getBoardPoint(clientX, clientY, gesture.boardRect);
     return {
       x: clamp(point.x - gesture.grabOffsetX, 1, maxX),
-      y: clamp(point.y - gesture.grabOffsetY, 1, maxY)
+      y: clamp(point.y - gesture.grabOffsetY, 0, maxY)
     };
   };
 
@@ -3250,7 +3251,7 @@ function HomePage({
               <span>写真やメモを、少しずつ集めるボードです</span>
             </button>
           ) : (
-            memos.map(memo => (
+            sortMemosForBoard(memos).map(memo => (
               <BoardMemo
                 key={memo.id}
                 memo={memo}
@@ -3893,7 +3894,7 @@ function MemoCreatePage({
   const [imageBusy, setImageBusy] = useState(false);
   const [selectedStickerId, setSelectedStickerId] = useState('');
   const [movingStickerId, setMovingStickerId] = useState('');
-  const [draggingSticker, setDraggingSticker] = useState(null);
+  const [activeStickerPackId, setActiveStickerPackId] = useState('default');
   const [photoToolsOpen, setPhotoToolsOpen] = useState(true);
   const [resizingCard, setResizingCard] = useState(false);
   const primaryInputRef = useRef(null);
@@ -3921,10 +3922,19 @@ function MemoCreatePage({
   const firstChecklistItem = draft.checklist[0] || null;
   const selectedPaletteColor = draft.cardType === 'photo' ? draft.tapeColor : draft.color;
   const paletteLabel = draft.cardType === 'photo' ? 'マステ色' : 'メモ色';
-  const visibleStickers = useMemo(
-    () => visibleStickerIds.map(id => STICKER_MAP[id]).filter(Boolean),
+  const visibleStickerPacks = useMemo(
+    () => Object.entries(STICKER_PACKS).map(([id, pack]) => ({
+      id,
+      label: pack.label,
+      stickers: pack.stickerIds
+        .filter(stickerId => visibleStickerIds.includes(stickerId))
+        .map(stickerId => STICKER_MAP[stickerId])
+        .filter(Boolean)
+    })).filter(pack => pack.stickers.length > 0),
     [visibleStickerIds]
   );
+  const activeStickerPack = visibleStickerPacks.find(pack => pack.id === activeStickerPackId)
+    || visibleStickerPacks[0];
   const createCardStyle = {
     ...getCreateCardSizeStyle(draft),
     '--memo-tape-color': getTapeColor(draft.cardType === 'photo' ? draft.tapeColor : draft.color),
@@ -3934,6 +3944,11 @@ function MemoCreatePage({
   useEffect(() => {
     draftRef.current = draft;
   }, [draft]);
+
+  useEffect(() => {
+    if (activeStickerPack || visibleStickerPacks.length === 0) return;
+    setActiveStickerPackId(visibleStickerPacks[0].id);
+  }, [activeStickerPack, visibleStickerPacks]);
 
   const resizeChecklistTextarea = (element) => {
     if (!element) return;
@@ -4300,8 +4315,6 @@ function MemoCreatePage({
     };
   };
 
-  const getStickerPositionFromEvent = (event) => getStickerPositionFromPoint(event.clientX, event.clientY);
-
   const isPointInsideCreateCard = (clientX, clientY) => {
     if (!createCardRef.current) return false;
     const rect = createCardRef.current.getBoundingClientRect();
@@ -4458,38 +4471,12 @@ function MemoCreatePage({
     resetStickerGesture();
   };
 
-  const startStickerAdd = (event, assetId) => {
+  const addStickerToCorner = (event, assetId) => {
     if (draft.cardType === 'photo' || !STICKER_MAP[assetId]) return;
     event.preventDefault();
     event.stopPropagation();
-    event.currentTarget.setPointerCapture(event.pointerId);
     setSelectedStickerId('');
-    setDraggingSticker({ assetId, x: event.clientX, y: event.clientY });
-
-    const moveStickerPreview = (moveEvent) => {
-      setDraggingSticker({ assetId, x: moveEvent.clientX, y: moveEvent.clientY });
-    };
-
-    const stopStickerAdd = (upEvent) => {
-      if (isPointInsideCreateCard(upEvent.clientX, upEvent.clientY)) {
-        addSticker(assetId, getStickerPositionFromPoint(upEvent.clientX, upEvent.clientY));
-      }
-      setDraggingSticker(null);
-      window.removeEventListener('pointermove', moveStickerPreview);
-      window.removeEventListener('pointerup', stopStickerAdd);
-      window.removeEventListener('pointercancel', stopStickerAdd);
-    };
-
-    window.addEventListener('pointermove', moveStickerPreview);
-    window.addEventListener('pointerup', stopStickerAdd);
-    window.addEventListener('pointercancel', stopStickerAdd);
-  };
-
-  const dropSticker = (event) => {
-    const assetId = event.dataTransfer.getData('text/plain');
-    if (!STICKER_MAP[assetId]) return;
-    event.preventDefault();
-    addSticker(assetId, getStickerPositionFromEvent(event));
+    addSticker(assetId, { x: 82, y: 80 });
   };
 
   const deleteSticker = (id) => {
@@ -4542,9 +4529,7 @@ function MemoCreatePage({
           >
             <MoreHorizontal size={32} strokeWidth={3} />
           </button>
-        ) : (
-          <span className="create-nav-spacer" aria-hidden="true" />
-        )}
+        ) : <button type="button" className="create-save-button" onClick={cleanAndSave} disabled={!canSave || imageBusy}><Check size={17} strokeWidth={2.6} />ホームに追加</button>}
       </header>
 
       <StickyNoteCard
@@ -4562,8 +4547,6 @@ function MemoCreatePage({
         onPointerUp={stopContentAdjust}
         onPointerCancel={stopContentAdjust}
         onPointerLeave={stopContentAdjust}
-        onDragOver={(event) => draft.cardType !== 'photo' && event.preventDefault()}
-        onDrop={(event) => draft.cardType !== 'photo' && dropSticker(event)}
         stickerLayer={draft.cardType !== 'photo' ? (
           <StickerLayer
             stickers={draft.stickers}
@@ -4818,13 +4801,6 @@ function MemoCreatePage({
         />
       </StickyNoteCard>
 
-      <footer className="create-actions">
-        <button type="button" onClick={cleanAndSave} disabled={!canSave || imageBusy}>
-          <Check size={23} strokeWidth={2.6} />
-          ホームに追加
-        </button>
-      </footer>
-
       <section className="memo-options">
         <div className="color-row" aria-label={paletteLabel}>
           {COLOR_OPTIONS.map(color => (
@@ -4843,21 +4819,42 @@ function MemoCreatePage({
         </div>
 
         {draft.cardType !== 'photo' && (
-          <div>
-            <div className="sticker-palette" aria-label="スタンプ">
-              {visibleStickers.map(sticker => (
+          <div className="sticker-library">
+            <div className="sticker-set-tabs" role="tablist" aria-label="スタンプの種類">
+              {visibleStickerPacks.map(pack => (
+                <button
+                  key={pack.id}
+                  id={`memo-sticker-tab-${pack.id}`}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeStickerPack?.id === pack.id}
+                  aria-controls="memo-sticker-panel"
+                  title={pack.label}
+                  aria-label={pack.label}
+                  onClick={() => setActiveStickerPackId(pack.id)}
+                >
+                  <img src={pack.stickers[0].src} alt="" draggable={false} />
+                  <span>{pack.label}</span>
+                </button>
+              ))}
+            </div>
+            <div
+              className="sticker-palette"
+              id="memo-sticker-panel"
+              role="tabpanel"
+              aria-labelledby={activeStickerPack ? `memo-sticker-tab-${activeStickerPack.id}` : undefined}
+            >
+              {(activeStickerPack?.stickers || []).map(sticker => (
                 <button
                   key={sticker.id}
                   type="button"
-                  draggable={false}
-                  onPointerDown={(event) => startStickerAdd(event, sticker.id)}
-                  aria-label={`${sticker.label}を追加`}
+                  onClick={(event) => addStickerToCorner(event, sticker.id)}
+                  aria-label={`${sticker.label}を右下に追加`}
                 >
                   <img src={sticker.src} alt="" draggable={false} />
                 </button>
               ))}
             </div>
-            <small>付箋へドラッグして貼ります</small>
           </div>
         )}
 
@@ -4871,15 +4868,6 @@ function MemoCreatePage({
         )}
       </section>
 
-      {draggingSticker && STICKER_MAP[draggingSticker.assetId]?.src && (
-        <div
-          className="sticker-drag-preview"
-          style={{ left: `${draggingSticker.x}px`, top: `${draggingSticker.y}px` }}
-          aria-hidden="true"
-        >
-          <img src={STICKER_MAP[draggingSticker.assetId].src} alt="" />
-        </div>
-      )}
     </section>
   );
 }

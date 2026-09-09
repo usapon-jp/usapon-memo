@@ -636,3 +636,7 @@ export const sortMemos = (memos) => [...memos].sort((a, b) => {
   if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
   return new Date(b.updatedAt) - new Date(a.updatedAt);
 });
+
+export const sortMemosForBoard = (memos) => [...memos].sort((a, b) => (
+  new Date(a.updatedAt) - new Date(b.updatedAt)
+));
