@@ -42,9 +42,12 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(request).then((response) => {
         const copy = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put('/usapon-memo/', copy));
+        caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
         return response;
-      }).catch(() => caches.match('/usapon-memo/'))
+      }).catch(async () => (
+        await caches.match(request)
+        || await caches.match('/usapon-memo/')
+      ))
     );
     return;
   }

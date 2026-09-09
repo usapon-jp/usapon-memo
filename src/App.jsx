@@ -76,6 +76,7 @@ import {
   putMediaRecords
 } from './mediaStorage.js';
 import { canAutoOfferInstall, detectInstallContext, INSTALL_GUIDE_HIDDEN_KEY } from './installGuide.js';
+import { HANDWRITING_TRANSFER_KEY, parseHandwritingTransfer } from './handwritingTransfer.js';
 import {
   AUTUMN_FREE_STICKER_ID,
   AUTUMN_PAID_STICKER_IDS,
@@ -807,6 +808,7 @@ export default function App() {
   const snapshotStageRef = useRef(null);
   const autumnStickerSourcesRef = useRef({});
   const autumnStickerRequestRef = useRef(0);
+  const handwritingTransferConsumedRef = useRef(false);
   const appTitle = data.appTitle || DEFAULT_APP_TITLE;
   const stickyTextSize = STICKY_TEXT_SIZES.has(data.stickyTextSize) ? data.stickyTextSize : DEFAULT_STICKY_TEXT_SIZE;
   const stickyTextWeight = STICKY_TEXT_WEIGHTS.has(data.stickyTextWeight) ? data.stickyTextWeight : DEFAULT_STICKY_TEXT_WEIGHT;
@@ -878,6 +880,49 @@ export default function App() {
       setStorageError(current => current === STORAGE_FULL_MESSAGE ? '' : current);
     }
   }, [data, mediaReady]);
+
+  useEffect(() => {
+    if (!mediaReady || handwritingTransferConsumedRef.current) return;
+    handwritingTransferConsumedRef.current = true;
+    let raw = '';
+    try {
+      raw = sessionStorage.getItem(HANDWRITING_TRANSFER_KEY) || '';
+      sessionStorage.removeItem(HANDWRITING_TRANSFER_KEY);
+    } catch (error) {
+      console.warn('[usapon-memo handwriting transfer read failed]', error);
+    }
+    const transfer = parseHandwritingTransfer(raw);
+    if (!transfer) return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete('handwritingPaste');
+    window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
+    const pasteHandwriting = async () => {
+      try {
+        const mediaRecord = await saveMedia(MEDIA_KINDS.boardImage, {
+          dataUrl: transfer.dataUrl,
+          mimeType: 'image/png',
+          naturalWidth: transfer.width,
+          naturalHeight: transfer.height
+        });
+        addBoardItem({
+          type: 'image',
+          boardId: activeBoardId,
+          imageDataUrl: '',
+          imageId: mediaRecord.id,
+          imageMimeType: 'image/png',
+          naturalWidth: transfer.width,
+          naturalHeight: transfer.height,
+          x: 28,
+          y: 28
+        });
+        setAppToast(transfer.backgroundIncluded ? '背景つきの手書きを貼り付けました。' : '手書きを貼り付けました。');
+      } catch (error) {
+        console.error('[usapon-memo handwriting transfer save failed]', error);
+        setStorageError(STORAGE_FULL_MESSAGE);
+      }
+    };
+    void pasteHandwriting();
+  }, [mediaReady]);
 
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get('install') === '1' && !installContext.isStandalone) {
@@ -3111,6 +3156,10 @@ function HomePage({
             <StickyNote size={19} />
             ステッカー
           </button>
+          <button type="button" onClick={() => { window.location.href = `${import.meta.env.BASE_URL}handwriting/index.html`; }}>
+            <Pencil size={19} />
+            手書き
+          </button>
           <button type="button" onClick={() => openMenuPage('timeCapsule')}>
             <Clock size={19} />
             タイムカプセル
@@ -3314,6 +3363,10 @@ function HomePage({
             <button type="button" onClick={() => chooseAddType('link')}>
               <LinkIcon size={24} />
               リンク
+            </button>
+            <button type="button" onClick={() => { window.location.href = `${import.meta.env.BASE_URL}handwriting/index.html`; }}>
+              <Pencil size={24} />
+              手書き
             </button>
           </div>
         </div>

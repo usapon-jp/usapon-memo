@@ -3340,7 +3340,7 @@ body {
 
 .add-sheet > div {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -3355,6 +3355,10 @@ body {
   color: #795b3e;
   font-weight: 900;
   cursor: pointer;
+}
+
+.add-sheet button:not(.sheet-close) svg {
+  transform: translateY(2px);
 }
 
 .sheet-close {

@@ -21,6 +21,7 @@ VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_your_key
 ## 機能
 
 - PWA対応
+- 手書きメモ（端末内保存・スタンプPNG保存）
 - 付箋ボード上での自由配置
 - 自由メモ / チェックリスト作成
 - メモ編集

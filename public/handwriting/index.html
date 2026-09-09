@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="theme-color" content="#fffaf0"><title>手書き · うさぽんメモ</title><link rel="stylesheet" href="style.css"></head>
+<body><main>
+  <header><div class="brand"><a class="back-link" href="../" aria-label="うさぽんメモへ戻る" title="戻る"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5 8 12l7 7"/></svg></a><span>手書き</span></div><div class="header-actions"><button id="save" class="save-button" aria-label="この端末に保存" title="この端末に保存">保存</button><button id="paste" class="paste-button" aria-haspopup="dialog" aria-expanded="false">貼り付ける</button><details class="more"><summary aria-label="その他の操作" title="その他">•••</summary><div class="menu"><button id="clear">まっさらにする</button><button id="load">保存した続きを開く</button><button id="png">スタンプとして保存</button><div class="under"><label><input id="penOnly" type="checkbox"> 指では描かない</label><label><input id="paper" type="checkbox" checked> 便箋を表示</label></div></div></details><div id="pasteOptions" class="paste-options" role="dialog" aria-label="貼り付け方" hidden><button type="button" data-paste-background="false">背景なし</button><button type="button" data-paste-background="true">背景あり</button></div></div></header>
+  <section class="editor" aria-label="手書きエンジン検証">
+    <div id="surface" class="surface paper"><canvas id="drawing" width="1000" height="750" aria-label="手書き描画面"></canvas></div>
+<div class="dock">
+    <div class="toolbar">
+      <div class="history"><button id="undo" aria-label="1操作戻す" title="戻す"><svg class="historyIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6 4 11l5 5"/><path d="M4 11h9a6 6 0 0 1 6 6"/></svg></button><button id="redo" aria-label="1操作やり直す" title="やり直す"><svg class="historyIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6 5 5-5 5"/><path d="M20 11h-9a6 6 0 0 0-6 6"/></svg></button></div>
+      <div class="size" aria-label="太さを選ぶ">
+        <div class="stroke-presets" aria-label="基本の太さ">
+          <button type="button" data-size="2" aria-label="とても細い"><svg viewBox="0 0 48 28" aria-hidden="true"><path d="M4 18c8-13 13 8 21-3s11-5 19 2"/></svg></button>
+          <button type="button" data-size="5" aria-label="細い"><svg viewBox="0 0 48 28" aria-hidden="true"><path d="M4 18c8-13 13 8 21-3s11-5 19 2"/></svg></button>
+          <button type="button" data-size="8" aria-label="ふつう"><svg viewBox="0 0 48 28" aria-hidden="true"><path d="M4 18c8-13 13 8 21-3s11-5 19 2"/></svg></button>
+          <button type="button" data-size="14" aria-label="太い"><svg viewBox="0 0 48 28" aria-hidden="true"><path d="M4 18c8-13 13 8 21-3s11-5 19 2"/></svg></button>
+          <button type="button" data-size="24" aria-label="とても太い"><svg viewBox="0 0 48 28" aria-hidden="true"><path d="M4 18c8-13 13 8 21-3s11-5 19 2"/></svg></button>
+        </div>
+        <div class="size-adjust"><span aria-hidden="true">●</span><div class="size-range"><input id="size" aria-label="太さを微調整" type="range" min="1" max="32" value="8"></div><input id="sizeValue" class="size-number" type="number" min="1" max="32" value="8" inputmode="numeric" aria-label="太さを数値で入力"></div>
+        <label class="opacity-adjust"><span>不透明度</span><input id="opacity" type="range" min="1" max="100" value="100" aria-label="不透明度"><output id="opacityValue">100%</output></label>
+      </div>
+      <div class="tools" aria-label="描画ツール"><button id="pen" data-drawing-tool="pen" aria-pressed="false" aria-label="ペン" title="ペン"><img src="assets/tools/pen-icon.png" alt=""></button><button id="marker" data-drawing-tool="marker" aria-pressed="false" aria-label="マーカー" title="マーカー"><img src="assets/tools/marker-icon.png" alt=""></button><button id="pencil" data-drawing-tool="pencil" aria-pressed="true" aria-label="鉛筆" title="鉛筆"><img src="assets/tools/pencil-icon.png" alt=""></button><button id="crayon" data-drawing-tool="crayon" aria-pressed="false" aria-label="クレヨン" title="クレヨン"><img src="assets/tools/crayon-icon.png" alt=""></button><button id="watercolor" data-drawing-tool="watercolor" aria-pressed="false" aria-label="水彩" title="水彩"><img src="assets/tools/watercolor-icon.png" alt=""></button><button id="eraser" data-drawing-tool="eraser" aria-pressed="false" aria-label="消しゴム" title="消しゴム"><img src="assets/tools/eraser-block-icon.png" alt=""></button></div>
+    </div>
+    <div class="options"><div class="palette" aria-label="色を選ぶ"><button class="color-dot is-selected" type="button" data-color="#654c46" aria-label="こげ茶" title="こげ茶"></button><button class="color-dot" type="button" data-color="#df8e9c" aria-label="ピンク" title="ピンク"></button><button class="color-dot" type="button" data-color="#8cae81" aria-label="緑" title="緑"></button><button class="color-dot" type="button" data-color="#6da9c6" aria-label="水色" title="水色"></button></div><label class="custom-color" title="色を作る"><input id="color" aria-label="好きな色を作る" type="color" value="#654c46"><span class="color-create-icon" aria-hidden="true"><i></i></span></label></div>
+</div></section>
+  <div class="lab-debug" hidden><p id="metrics"></p><pre id="inputLog">入力中断はまだありません</pre></div>
+  <p id="status" role="status" aria-live="polite"></p>
+</main><link rel="stylesheet" href="background.css"><script type="module" src="app.mjs"></script><script type="module" src="background.mjs"></script></body></html>

@@ -1,0 +1,7 @@
+.surface[data-background]{background-color:#fff;background-image:none}
+.surface[data-background=ruled]{background-image:linear-gradient(to bottom,transparent calc(100% - 1px),#e3e3df 0);background-size:100% 4.4%}
+.surface[data-background=grid]{background-image:linear-gradient(to right,#e7e7e3 1px,transparent 1px),linear-gradient(to bottom,#e7e7e3 1px,transparent 1px);background-size:2% 2.6666667%}
+.surface[data-background=checker]{background-image:conic-gradient(#ddd 25%,#fff 0 50%,#ddd 0 75%,#fff 0);background-size:24px 24px}
+.surface[data-background=dark]{background-color:#343438}
+.menu #background{min-width:0;flex:1;min-height:44px;border:1px solid #e7e3df;border-radius:10px;background:#fffefc;color:inherit;padding:0 8px;font:inherit}
+#background:focus-visible{outline:3px solid #bd8193;outline-offset:3px}
