@@ -2,7 +2,7 @@
 export class StrokeBuilder {
   constructor({ tool, input, color, size, time, opacity = 1 }) {
     const smoothingMs = tool === 'pen' ? (input === 'pen' ? 8 : input === 'touch' ? 28 : 16) : (input === 'pen' ? 5 : input === 'touch' ? 22 : 10);
-    this.stroke = { id: crypto.randomUUID(), tool, input, color, size, opacity, brushVersion: ['pencil', 'watercolor', 'crayon'].includes(tool) ? 3 : tool === 'marker' ? 2 : 1, smoothingMs, points: [] };
+this.stroke = { id: crypto.randomUUID(), tool, input, color, size, opacity, brushVersion: ['crayon', 'pencil'].includes(tool) ? 4 : ['pencil', 'watercolor', 'crayon'].includes(tool) ? 3 : tool === 'marker' ? 2 : 1, smoothingMs, points: [] };
     this.firstTime = time; this.lastInput = null;
   }
   sample({ x, y, time, pressure }) {

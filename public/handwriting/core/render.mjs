@@ -26,6 +26,57 @@ export class BrushStrokeRenderer {
     this.painted = 0;
     this.travel = 0;
     this.scale = canvas.width / dimensions.width;
+    if (stroke.tool === 'crayon' && stroke.brushVersion === 4) {
+      const nib = canvas.ownerDocument.createElement('canvas');
+      nib.width = nib.height = Math.max(24, Math.ceil(stroke.size*2));
+      const n = nib.getContext('2d'), edge = nib.width;
+      n.fillStyle = stroke.color;
+      let seed = 41793;
+      const random = () => { seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296; };
+      for(let i=0;i<Math.max(80,Math.round(edge*edge*.22));i++) {
+        const x=random()*edge,y=random()*edge;
+        const radius=Math.hypot(x-edge/2,y-edge/2)/(edge*.5);
+        const patch=.55+.23*Math.sin(x*.31+y*.12)+.18*Math.sin(y*.43-x*.17);
+        if(radius>1 || random()>patch*Math.min(1,(1-radius)*7))continue;
+        n.globalAlpha=.18+random()*.4;
+        n.beginPath();n.ellipse(x,y,.6+random()*1.6,.4+random()*.9,random()*Math.PI,0,Math.PI*2);n.fill();
+      }
+      this.crayonNib=nib;this.nibRemaining=0;this.nibCount=0;
+    }
+    if (stroke.brushVersion === 4 && stroke.tool === 'pencil' && stroke.size > 12) {
+      const pencil = stroke.tool === 'pencil';
+      const tile = canvas.ownerDocument.createElement('canvas');
+      tile.width = tile.height = 192;
+      const texture = tile.getContext('2d');
+      texture.fillStyle = stroke.color;
+      texture.globalAlpha = pencil ? .52 : .88;
+      texture.fillRect(0, 0, 192, 192);
+      let seed = 9173;
+      const random = () => { seed = (Math.imul(seed,1664525)+1013904223) >>> 0; return seed / 4294967296; };
+      // Fixed fine grain and broad gentle density variation, generated once per stroke.
+      for (let i = 0; i < 9000; i++) {
+        const x = random()*192, y = random()*192;
+        const density = pencil ? .94 : .72 + .14*Math.sin(x*Math.PI/48) + .10*Math.sin(y*Math.PI/96);
+        if (random() > density) continue;
+        texture.globalAlpha = .25 + random()*.25;
+        texture.beginPath(); texture.arc(x,y,pencil ? .25+random()*.4 : .3+random()*.65,0,Math.PI*2); texture.fill();
+      }
+      if (!pencil) {
+        // Paper tooth: irregular clear gaps rather than dark dots on a pale base.
+        texture.globalCompositeOperation = 'destination-out';
+        for (let i = 0; i < 4400; i++) {
+          const x = random()*192, y = random()*192;
+          const patch = .5 + .25*Math.sin(x*.12+y*.08) + .2*Math.sin(y*.19-x*.07);
+          texture.globalAlpha = .35 + random()*.65;
+          const r = .25 + random()*(.75 + patch*1.2);
+          texture.beginPath(); texture.ellipse(x,y,r,r*(.4+random()*.7),random()*Math.PI,0,Math.PI*2); texture.fill();
+        }
+        texture.globalCompositeOperation = 'source-over';
+      }
+      this.crayonTexture = tile;
+      this.crayonWash = canvas.ownerDocument.createElement('canvas');
+      this.crayonWash.width = canvas.width; this.crayonWash.height = canvas.height;
+    }
     if (stroke.tool === 'watercolor' && stroke.brushVersion >= 2) {
       this.wash = canvas.ownerDocument.createElement('canvas');
       this.wash.width = canvas.width; this.wash.height = canvas.height;
@@ -50,6 +101,45 @@ export class BrushStrokeRenderer {
     ctx.fillStyle = s.color;
     for (let index = this.painted; index < s.points.length; index++) {
       const b = s.points[index], a = s.points[Math.max(0, index - 1)];
+      if (this.crayonNib) {
+        const distance=Math.hypot(b[0]-a[0],b[1]-a[1]);
+        const spacing=Math.max(.6,s.size*.1);
+        const dab=t=>{
+          const pressure=a[2]+(b[2]-a[2])*t,r=strokeRadius(s,pressure);
+          ctx.save();ctx.translate(a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t);
+          ctx.rotate((this.nibCount++ * 2.399963) % (Math.PI*2));
+          ctx.drawImage(this.crayonNib,-r,-r,r*2,r*2);ctx.restore();
+        };
+        if(index===0){dab(0);this.nibRemaining=spacing;}
+        else if(distance>0){
+          let offset=this.nibRemaining;
+          while(offset<=distance){dab(offset/distance);offset+=spacing;}
+          this.nibRemaining=offset-distance;
+        }
+        continue;
+      }
+      if (this.crayonTexture) {
+        if (s.tool === 'pencil') paintSegment(ctx, { ...s, tool: 'pen' }, a, b);
+        else {
+          const distance = Math.hypot(b[0]-a[0],b[1]-a[1]);
+          const steps = Math.max(1,Math.ceil(distance/Math.max(1,s.size*.06)));
+          for (let j=0;j<=steps;j++) {
+            const t=j/steps, x=a[0]+(b[0]-a[0])*t, y=a[1]+(b[1]-a[1])*t;
+            const radius=strokeRadius(s,a[2]+(b[2]-a[2])*t);
+            // World-anchored irregular edge stays stable across redraws and direction changes.
+            ctx.beginPath();
+            for (let k=0;k<64;k++) {
+              const angle=k*Math.PI/32, ex=x+Math.cos(angle)*radius, ey=y+Math.sin(angle)*radius;
+              const tooth=.5+.22*Math.sin(ex*1.9+ey*.7)+.18*Math.sin(ey*2.7-ex*1.2)+.1*Math.sin(ex*.31+ey*.47);
+              const r=radius-Math.min(6,radius*.23)*tooth;
+              const px=x+Math.cos(angle)*r,py=y+Math.sin(angle)*r;
+              if(k===0)ctx.moveTo(px,py);else ctx.lineTo(px,py);
+            }
+            ctx.closePath();ctx.fill();
+          }
+        }
+        continue;
+      }
       if (s.tool === 'watercolor' && s.brushVersion >= 2) {
         const count = Math.max(1,Math.ceil(Math.hypot(b[0]-a[0],b[1]-a[1])/Math.max(.4,s.size*.10)));
         for(let j=0;j<=count;j++) {
@@ -84,12 +174,12 @@ export class BrushStrokeRenderer {
       for (let j = 0; j <= count; j++) {
         const t = j / count, pressure = a[2] + (b[2] - a[2]) * t;
         const densePencil = s.tool === 'pencil' && s.brushVersion >= 2;
-        const finePencil = s.tool === 'pencil' && s.brushVersion === 3;
+        const finePencil = s.tool === 'pencil' && s.brushVersion >= 3;
         const texturedCrayon = s.tool === 'crayon' && s.brushVersion >= 2;
         const along = (this.travel + distance * t) / Math.max(8, s.size);
         // Two gentle, unequal wavelengths avoid evenly spaced stripes. No animation.
         const variation = .46 * Math.sin(along * 1.7 + .8) + .22 * Math.sin(along * .63 + 2.1);
-        const density = texturedCrayon ? 1 + (s.brushVersion === 3 && variation < 0 ? variation * .6 : variation) : 1;
+        const density = texturedCrayon ? 1 + (s.brushVersion >= 3 && variation < 0 ? variation * .6 : variation) : 1;
         const radius = strokeRadius(s, pressure), grains = s.tool === 'pencil' ? (finePencil ? 44 : densePencil ? 22 : 9) : Math.round(15 * density);
         for (let k = 0; k < grains; k++) {
           const angle = random() * Math.PI * 2, spread = Math.pow(random(), finePencil ? .7 : .5) * radius;
@@ -110,6 +200,18 @@ export class BrushStrokeRenderer {
     ctx.globalCompositeOperation = 'source-over';
     const tool = this.stroke.tool;
     const opacity = this.stroke.opacity ?? 1;
+    if (this.crayonTexture) {
+      const wash = this.crayonWash.getContext('2d');
+      wash.clearRect(0,0,this.crayonWash.width,this.crayonWash.height);
+      wash.drawImage(this.mask,0,0);
+      wash.save(); wash.globalCompositeOperation = 'source-in';
+      wash.scale(this.scale,this.scale);
+      wash.fillStyle = wash.createPattern(this.crayonTexture,'repeat');
+      wash.fillRect(0,0,this.crayonWash.width/this.scale,this.crayonWash.height/this.scale);
+      wash.restore();
+      ctx.globalAlpha = opacity;
+      ctx.drawImage(this.crayonWash,0,0); ctx.restore(); return;
+    }
     if (this.wash) {
       const wash=this.wash.getContext('2d');
       wash.save(); wash.setTransform(1,0,0,1,0,0);wash.clearRect(0,0,this.wash.width,this.wash.height);
@@ -138,7 +240,7 @@ export class BrushStrokeRenderer {
     }
     ctx.drawImage(this.mask, 0, 0); ctx.restore();
   }
-  dispose() { this.mask.width = this.mask.height = 1; if(this.wash)this.wash.width=this.wash.height=1; if(this.texture)this.texture.width=this.texture.height=1; }
+  dispose() { this.mask.width = this.mask.height = 1; if(this.wash)this.wash.width=this.wash.height=1; if(this.texture)this.texture.width=this.texture.height=1; if(this.crayonTexture)this.crayonTexture.width=this.crayonTexture.height=1; if(this.crayonWash)this.crayonWash.width=this.crayonWash.height=1; if(this.crayonNib)this.crayonNib.width=this.crayonNib.height=1; }
 }
 function renderFlat(canvas, document) {
   const ctx = canvas.getContext('2d');
