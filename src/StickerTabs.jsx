@@ -7,6 +7,7 @@ export default function StickerTabs({ stickerIds, initialPack = 'default', onSel
   const [selected, setSelected] = useState(initialPack);
   const packs = availableStickerPacks(stickerIds, preferences, Boolean(onPreferencesChange));
   const active = packs.find(pack => pack.id === selected) || packs[0];
+  const paletteRows = Math.max(1, ...packs.map(pack => Math.ceil(pack.stickerIds.length / 4)));
   function move(id, delta) {
     const order = packs.map(p => p.id); const index = order.indexOf(id); const next = index + delta;
     if (next < 0 || next >= order.length) return;
@@ -25,7 +26,7 @@ export default function StickerTabs({ stickerIds, initialPack = 'default', onSel
         <img src={STICKER_CATALOG.find(s => s.id === pack.stickerIds[0])?.src} alt="" draggable={false} /><span>{pack.label}</span>
       </button>)}
     </div>}
-    <div className="sticker-palette" id={`${prefix}-panel`} role="tabpanel" aria-labelledby={!onPreferencesChange && active ? `${prefix}-${active.id}` : undefined} aria-label={onPreferencesChange ? active?.label : undefined}>
+    <div className="sticker-palette" style={{ height: `min(48dvh, ${paletteRows * 90 + 6}px)` }} id={`${prefix}-panel`} role="tabpanel" aria-labelledby={!onPreferencesChange && active ? `${prefix}-${active.id}` : undefined} aria-label={onPreferencesChange ? active?.label : undefined}>
       {(active?.stickerIds || []).map(id => { const sticker = STICKER_CATALOG.find(s => s.id === id); return onSelect
         ? <button key={id} type="button" aria-label={`${sticker.label}を貼る`} onClick={event => onSelect(id, event)}><img src={sticker.src} alt="" draggable={false} /></button>
         : <div className="sticker-preview-tile" key={id}><img src={sticker.src} alt={sticker.label} draggable={false} /></div>; })}

@@ -2021,6 +2021,7 @@ function HomePage({
   const [trashActive, setTrashActive] = useState(false);
   const [quickAdd, setQuickAdd] = useState(null);
   const [directText, setDirectText] = useState(null);
+  const [stickerNote, setStickerNote] = useState(null);
   const [selectedBoardItemId, setSelectedBoardItemId] = useState('');
   const [pasteMenu, setPasteMenu] = useState(null);
   const [stickerPicker, setStickerPicker] = useState(null);
@@ -2489,6 +2490,8 @@ function HomePage({
       if (cardDragStartedRef.current && shouldDelete) {
         onDeleteBoardItem(item.id);
         setSelectedBoardItemId('');
+      } else if (!cardDragStartedRef.current && stopEvent.type !== 'pointercancel' && item.type === 'sticker' && item.assetId === 'autumn-trial-sticky') {
+        setStickerNote({ ...item });
       } else if (!cardDragStartedRef.current && item.type === 'text') {
         markCurrentBoardActive();
         setSelectedBoardItemId(item.id);
@@ -3413,6 +3416,14 @@ function HomePage({
         </div>
       )}
 
+      {stickerNote && <div className="sticker-note-editor" role="dialog" aria-modal="true" aria-label="付箋を編集">
+        <header><button type="button" onClick={() => setStickerNote(null)}>キャンセル</button><strong>付箋を編集</strong><button type="button" onClick={() => {
+          onBeginMove('付箋の文字を編集');
+          onMoveBoardItem(stickerNote.id, { text: stickerNote.text });
+          setStickerNote(null);
+        }}>保存</button></header>
+        <div className="sticker-note-paper"><img src={STICKER_MAP[stickerNote.assetId]?.src} alt="" /><textarea autoFocus aria-label="付箋の文字" placeholder="文字を入力" value={stickerNote.text || ''} onChange={event => setStickerNote(current => ({ ...current, text: event.target.value }))} /></div>
+      </div>}
       {quickAdd && (
         <div className="quick-add-menu" style={{ left: `${quickAdd.clientX}px`, top: `${quickAdd.clientY}px` }} role="dialog" aria-label="直接追加">
           <button type="button" onClick={startDirectText}>
@@ -3690,10 +3701,11 @@ function BoardMemo({
       style={style}
       onPointerDown={onPointerDown}
       onContextMenu={onContextMenu}
-      onClick={cardType === 'link' ? (event) => {
-        if (event.target.closest('.board-memo-body')) return;
+      onClick={(event) => {
+        if (event.target.closest('.board-memo-body, button, input, textarea')) return;
+        event.stopPropagation();
         handleMemoBodyOpen();
-      } : undefined}
+      }}
       stickerLayer={<StickerLayer stickers={memo.stickers} />}
     >
       <div className="board-memo-body content-offset-layer" style={getContentOffsetStyle(memo)} role="button" tabIndex={0} onClick={(event) => {
@@ -3846,7 +3858,7 @@ function BoardFreeItem({ item, mediaUrlsById = {}, isDragging, isSelected = fals
 
   return (
     <article
-      className={`board-item board-free-${item.type} ${isDragging ? 'is-dragging' : ''} ${isSelected ? 'is-selected' : ''}`}
+      className={`board-item board-free-${item.type} ${item.assetId === 'autumn-trial-sticky' ? 'board-sticker-note' : ''} ${isDragging ? 'is-dragging' : ''} ${isSelected ? 'is-selected' : ''}`}
       data-memo-id={item.id}
       data-board-item-id={item.id}
       style={style}
@@ -3855,7 +3867,7 @@ function BoardFreeItem({ item, mediaUrlsById = {}, isDragging, isSelected = fals
       {item.type === 'image' ? (
         imageSrc ? <img src={imageSrc} alt="" draggable={false} /> : <span>画像を読み込めません</span>
       ) : item.type === 'sticker' ? (
-        <img src={sticker.src} alt={sticker.label} draggable={false} />
+        <><img src={sticker.src} alt={sticker.label} draggable={false} />{item.assetId === 'autumn-trial-sticky' && item.text && <span className="sticker-note-text">{item.text}</span>}</>
       ) : (
         <span>{item.text}</span>
       )}
