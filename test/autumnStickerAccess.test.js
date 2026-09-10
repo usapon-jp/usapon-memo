@@ -3,12 +3,15 @@ import assert from 'node:assert/strict';
 import {
   AUTUMN_ENTITLEMENT_ID,
   AUTUMN_FREE_STICKER_ID,
+  AUTUMN_PAID_STAMP_IDS,
+  AUTUMN_PAID_STATIONERY_IDS,
   AUTUMN_PAID_STICKER_IDS,
   AUTUMN_STICKER_IDS,
   AUTUMN_TRIAL_ENTITLEMENT_STICKER_IDS,
   AUTUMN_TRIAL_PRODUCT_KEY,
   AUTUMN_TRIAL_STICKER_IDS,
   PACKAGE_THEME_PACK_ASSETS_BUCKET,
+  getAutumnPaidAssetFileName,
   getAutumnStickerConfig,
   memoAuthRedirectUrl,
   signInWithGoogle,
@@ -22,11 +25,15 @@ const visibleStickerIdsForAccess = (ids, availableAutumnIds) => ids.filter((id) 
   !AUTUMN_STICKER_IDS.includes(id) || availableAutumnIds.includes(id)
 ));
 
-test('秋セットは26点で、無料素材はIMG9803だけ', () => {
+test('秋フルセットはスタンプ26点と文房具12点で、無料素材はIMG9803だけ', () => {
   assert.equal(AUTUMN_FREE_STICKER_ID, 'autumn-stamp-9803');
-  assert.equal(AUTUMN_PAID_STICKER_IDS.length, 25);
-  assert.equal(AUTUMN_STICKER_IDS.length, 26);
+  assert.equal(AUTUMN_PAID_STAMP_IDS.length, 25);
+  assert.equal(AUTUMN_PAID_STATIONERY_IDS.length, 12);
+  assert.equal(AUTUMN_PAID_STICKER_IDS.length, 37);
+  assert.equal(AUTUMN_STICKER_IDS.length, 38);
   assert.equal(AUTUMN_PAID_STICKER_IDS.includes(AUTUMN_FREE_STICKER_ID), false);
+  assert.equal(getAutumnPaidAssetFileName('autumn-sticky-02'), 'autumn-sticky-02.png');
+  assert.equal(new Set(AUTUMN_PAID_STATIONERY_IDS.map(getAutumnPaidAssetFileName)).size, 12);
 });
 
 test('既存の合言葉レシートはIMG9803だけを端末に保存し、有料秋セットに合言葉はない', () => {
@@ -130,7 +137,7 @@ test('ログインし直すとGoogleのアカウント選択を表示しメモ�
   } finally { if (previous === undefined) delete globalThis.window; else globalThis.window = previous; }
 });
 
-test('有料セットだけの購入者にも無料柄を含めた26点を表示する', async () => {
+test('有料セットだけの購入者にも無料柄を含めた38点を表示する', async () => {
  const client = {
   auth: {getSession: async () => ({data:{session:{user:{id:'paid-user'}}}})},
   schema: name => ({from:()=>query({data:name==='package'?[{theme_pack_id:'autumn-letter-set'}]:[],error:null})}),

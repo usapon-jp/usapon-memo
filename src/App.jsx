@@ -60,6 +60,7 @@ import {
   DEFAULT_STICKY_TEXT_SIZE,
   DEFAULT_STICKY_TEXT_WEIGHT,
   DEFAULT_STICKER_IDS,
+  getBoardStickerInitialScale,
   MAX_VISIBLE_STICKERS,
   isBoardItemVisible,
   isMemoVisibleOnBoard,
@@ -70,6 +71,7 @@ import {
   STICKER_PACKS,
   STICKY_TEXT_SIZES,
   STICKY_TEXT_WEIGHTS,
+  sortBoardItemsForBoard,
   sortMemos,
   sortMemosForBoard
 } from './memoModel.js';
@@ -83,7 +85,7 @@ import {
 } from './mediaStorage.js';
 import { canAutoOfferInstall, detectInstallContext, INSTALL_GUIDE_HIDDEN_KEY } from './installGuide.js';
 import { HANDWRITING_TRANSFER_KEY, parseHandwritingTransfer } from './handwritingTransfer.js';
-import { getBoardItemPinchScale, hasBoardItemDragStarted } from './boardItemGesture.js';
+import { getBoardItemPinchScale, getGestureRotation, hasBoardItemDragStarted } from './boardItemGesture.js';
 import {
   AUTUMN_FREE_STICKER_ID,
   AUTUMN_PAID_STICKER_IDS,
@@ -1130,7 +1132,7 @@ export default function App() {
   const allMemos = useMemo(() => sortMemos(data.memos), [data.memos]);
   const allBoardItems = useMemo(() => data.boardItems || [], [data.boardItems]);
   const visibleBoardItems = useMemo(
-    () => allBoardItems.filter(item => item.boardId === activeBoardId && isBoardItemVisible(item)),
+    () => sortBoardItemsForBoard(allBoardItems.filter(item => item.boardId === activeBoardId && isBoardItemVisible(item))),
     [activeBoardId, allBoardItems]
   );
   const boardById = useMemo(() => Object.fromEntries(boards.map(board => [board.id, board])), [boards]);
@@ -1145,7 +1147,7 @@ export default function App() {
   );
   const snapshotBoardItems = useMemo(
     () => snapshotRequest
-      ? allBoardItems.filter(item => item.boardId === snapshotRequest.boardId && isBoardItemVisible(item))
+      ? sortBoardItemsForBoard(allBoardItems.filter(item => item.boardId === snapshotRequest.boardId && isBoardItemVisible(item)))
       : [],
     [allBoardItems, snapshotRequest]
   );
@@ -2442,7 +2444,11 @@ function HomePage({
         const points = Array.from(cardPointersRef.current.values()).slice(0, 2);
         const center = getPointerCenter(points[0], points[1]);
         const nextScale = clamp(gesture.scale * (getPointerDistance(points[0], points[1]) / gesture.distance), 0.55, 2.4);
-        const nextRotation = clamp(gesture.rotation + getPointerAngle(points[0], points[1]) - gesture.angle, -180, 180);
+        const nextRotation = clamp(
+          getGestureRotation(gesture.rotation, gesture.angle, getPointerAngle(points[0], points[1])),
+          -180,
+          180
+        );
         const patch = {
           x: clamp(gesture.x + ((center.x - gesture.center.x) / gesture.boardRect.width) * 100, -8, 88),
           y: clamp(gesture.y + ((center.y - gesture.center.y) / gesture.boardRect.height) * 100, -8, MEMO_CARD_MAX_Y),
@@ -2573,7 +2579,11 @@ function HomePage({
             gesture.distance,
             getPointerDistance(points[0], points[1])
           ), 0.3, 3.2),
-          rotation: clamp(gesture.rotation + getPointerAngle(points[0], points[1]) - gesture.angle, -180, 180)
+          rotation: clamp(
+            getGestureRotation(gesture.rotation, gesture.angle, getPointerAngle(points[0], points[1])),
+            -180,
+            180
+          )
         });
       } else if (cardGestureRef.current?.type === 'drag') {
         if (!cardDragStartedRef.current && !hasBoardItemDragStarted(origin, moveEvent)) return;
@@ -2639,13 +2649,16 @@ function HomePage({
       window.removeEventListener('pointermove', moveItem);
       window.removeEventListener('pointerup', stopItem);
       window.removeEventListener('pointercancel', stopItem);
-      if (!cardDragStartedRef.current && !cancelled && item.type === 'sticker' && item.assetId === 'autumn-trial-sticky') {
-        setStickerNote({ ...item });
-      } else if (!cardDragStartedRef.current && !cancelled && item.type === 'text') {
-        markCurrentBoardActive();
-        setSelectedBoardItemId(item.id);
-        setQuickAdd(null);
-        setPasteMenu(null);
+      if (!cardDragStartedRef.current && !cancelled) {
+        onMoveBoardItem(item.id, {});
+        if (item.type === 'sticker' && STICKER_MAP[item.assetId]?.boardTextMode) {
+          setStickerNote({ ...item });
+        } else if (item.type === 'text') {
+          markCurrentBoardActive();
+          setSelectedBoardItemId(item.id);
+          setQuickAdd(null);
+          setPasteMenu(null);
+        }
       }
       clearCardPreview();
       cardDragStartedRef.current = false;
@@ -2756,7 +2769,7 @@ function HomePage({
       assetId,
       x: stickerPicker.x,
       y: stickerPicker.y,
-      scale: 1,
+      scale: getBoardStickerInitialScale(assetId),
       rotation: 0
     });
     setStickerPicker(null);
@@ -3567,13 +3580,18 @@ function HomePage({
         </div>
       )}
 
-      {stickerNote && <div className="sticker-note-editor" role="dialog" aria-modal="true" aria-label="付箋を編集">
-        <header><button type="button" onClick={() => setStickerNote(null)}>キャンセル</button><strong>付箋を編集</strong><button type="button" onClick={() => {
-          onBeginMove('付箋の文字を編集');
+      {stickerNote && <div className="sticker-note-editor" role="dialog" aria-modal="true" aria-label="素材に書き込む">
+        <header><button type="button" onClick={() => setStickerNote(null)}>キャンセル</button><strong>素材に書く</strong><button type="button" onClick={() => {
+          onBeginMove('素材の文字を編集');
           onMoveBoardItem(stickerNote.id, { text: stickerNote.text });
           setStickerNote(null);
         }}>保存</button></header>
-        <div className="sticker-note-paper"><img src={STICKER_MAP[stickerNote.assetId]?.src} alt="" /><textarea autoFocus aria-label="付箋の文字" placeholder="文字を入力" value={stickerNote.text || ''} onChange={event => setStickerNote(current => ({ ...current, text: event.target.value }))} /></div>
+        <div className={`sticker-note-paper sticker-note-${STICKER_MAP[stickerNote.assetId]?.boardTextVariant || 'sticky'}`}>
+          <img src={STICKER_MAP[stickerNote.assetId]?.src} alt="" />
+          {STICKER_MAP[stickerNote.assetId]?.boardTextMode === 'singleline'
+            ? <input autoFocus type="text" maxLength={36} aria-label="素材の文字" placeholder="一行入力" value={stickerNote.text || ''} onChange={event => setStickerNote(current => ({ ...current, text: event.target.value.replace(/[\r\n]+/g, ' ') }))} />
+            : <textarea autoFocus maxLength={300} aria-label="素材の文字" placeholder="文字を入力" value={stickerNote.text || ''} onChange={event => setStickerNote(current => ({ ...current, text: event.target.value }))} />}
+        </div>
       </div>}
       {quickAdd && (
         <div className="quick-add-menu" style={{ left: `${quickAdd.clientX}px`, top: `${quickAdd.clientY}px` }} role="dialog" aria-label="直接追加">
@@ -4005,11 +4023,12 @@ function BoardFreeItem({ item, mediaUrlsById = {}, isDragging, isSelected = fals
 
   const imageSrc = item.imageDataUrl || (item.imageId ? mediaUrlsById[item.imageId] : '');
   const sticker = item.type === 'sticker' ? STICKER_MAP[item.assetId] : null;
+  const stickerTextVariant = sticker?.boardTextMode ? (sticker.boardTextVariant || 'sticky') : '';
   if (item.type === 'sticker' && !sticker?.src) return null;
 
   return (
     <article
-      className={`board-item board-free-${item.type} ${item.assetId === 'autumn-trial-sticky' ? 'board-sticker-note' : ''} ${isDragging ? 'is-dragging' : ''} ${isSelected ? 'is-selected' : ''}`}
+      className={`board-item board-free-${item.type} ${stickerTextVariant ? `board-sticker-note board-sticker-note-${stickerTextVariant}` : ''} ${isDragging ? 'is-dragging' : ''} ${isSelected ? 'is-selected' : ''}`}
       data-memo-id={item.id}
       data-board-item-id={item.id}
       style={style}
@@ -4018,7 +4037,7 @@ function BoardFreeItem({ item, mediaUrlsById = {}, isDragging, isSelected = fals
       {item.type === 'image' ? (
         imageSrc ? <img src={imageSrc} alt="" draggable={false} /> : <span>画像を読み込めません</span>
       ) : item.type === 'sticker' ? (
-        <><img src={sticker.src} alt={sticker.label} draggable={false} />{item.assetId === 'autumn-trial-sticky' && item.text && <span className="sticker-note-text">{item.text}</span>}</>
+        <><img src={sticker.src} alt={sticker.label} draggable={false} />{stickerTextVariant && item.text && <span className="sticker-note-text">{item.text}</span>}</>
       ) : (
         <span>{item.text}</span>
       )}

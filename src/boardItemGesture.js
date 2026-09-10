@@ -14,3 +14,8 @@ export const getBoardItemPinchScale = (
   const ratio = Math.max(currentDistance, 1) / Math.max(startDistance, 1);
   return baseScale * Math.pow(ratio, sensitivity);
 };
+
+export const getGestureRotation = (baseRotation, startAngle, currentAngle) => {
+  const shortestDelta = ((currentAngle - startAngle + 540) % 360) - 180;
+  return baseRotation + shortestDelta;
+};

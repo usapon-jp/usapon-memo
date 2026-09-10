@@ -3787,5 +3787,14 @@ body {
 .sticker-note-editor header button { border:0; border-radius:20px; padding:12px; color:#60482f; background:#eee5d4; }
 .sticker-note-paper { position:relative; width:min(340px,100%); margin:auto; }
 .sticker-note-paper img { display:block; width:100%; }
-.sticker-note-paper textarea { position:absolute; top:12%; left:12%; width:76%; height:63%; resize:none; border:0; background:transparent; color:#60482f; font:inherit; line-height:1.5; padding:0; outline:1px dashed rgba(96,72,47,.2); outline-offset:4px; }
-.board-free-sticker.board-sticker-note .sticker-note-text { position:absolute; top:12%; left:12%; width:76%; height:63%; min-width:0; padding:0; border-radius:0; background:transparent; font-size:4px; font-weight:500; line-height:1.5; white-space:pre-wrap; overflow-wrap:anywhere; overflow:hidden; pointer-events:none; }
+.sticker-note-paper textarea,.sticker-note-paper input { position:absolute; top:12%; left:12%; box-sizing:border-box; width:76%; height:63%; resize:none; border:0; background:transparent; color:#60482f; font:inherit; line-height:1.5; padding:0; outline:1px dashed rgba(96,72,47,.2); outline-offset:4px; }
+.sticker-note-paper input { height:34%; }
+.sticker-note-cover textarea { top:6%; left:8%; width:84%; height:68%; }
+.sticker-note-wide textarea { top:12%; left:8%; width:84%; height:70%; }
+.sticker-note-heading input { top:27%; left:7%; width:72%; height:46%; text-align:center; }
+.sticker-note-tape input { top:30%; left:10%; width:80%; height:40%; padding:0 7px; background:rgba(255,255,255,.48); text-align:center; }
+.board-free-sticker.board-sticker-note .sticker-note-text { position:absolute; top:12%; left:12%; width:76%; height:63%; min-width:0; padding:0; border-radius:0; background:transparent; font-size:6px; font-weight:600; line-height:1.5; white-space:pre-wrap; overflow-wrap:anywhere; overflow:hidden; pointer-events:none; }
+.board-sticker-note-cover .sticker-note-text { top:6%; left:8%; width:84%; height:68%; }
+.board-sticker-note-wide .sticker-note-text { top:12%; left:8%; width:84%; height:70%; }
+.board-sticker-note-heading .sticker-note-text { top:27%; left:7%; width:72%; height:46%; line-height:1; text-align:center; white-space:nowrap; text-overflow:ellipsis; }
+.board-sticker-note-tape .sticker-note-text { top:30%; left:10%; box-sizing:border-box; width:80%; height:40%; padding:0 2px; background:rgba(255,255,255,.48); line-height:1; text-align:center; white-space:nowrap; text-overflow:ellipsis; }

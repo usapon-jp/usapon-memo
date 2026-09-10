@@ -74,10 +74,22 @@ export const STICKER_CATALOG = [
   { id: 'autumn-stamp-9800', label: '秋スタンプ 9800', src: '', packId: 'autumn' },
   { id: 'autumn-stamp-9801', label: '秋スタンプ 9801', src: '', packId: 'autumn' },
   { id: 'autumn-stamp-9802', label: '秋スタンプ 9802', src: '', packId: 'autumn' },
-  { id: 'autumn-trial-cover', label: '秋のお試し 表紙', src: '/usapon-memo/assets/stickers/autumn-trial/autumn-trial-cover.png', packId: 'autumnTrial' },
-  { id: 'autumn-trial-sticky', label: '秋のお試し 付箋', src: '/usapon-memo/assets/stickers/autumn-trial/autumn-trial-sticky.png', packId: 'autumnTrial' },
-  { id: 'autumn-trial-heading', label: '秋のお試し 見出し', src: '/usapon-memo/assets/stickers/autumn-trial/autumn-trial-heading.png', packId: 'autumnTrial' },
-  { id: 'autumn-trial-tape', label: '秋のお試し マステ', src: '/usapon-memo/assets/stickers/autumn-trial/autumn-trial-tape.png', packId: 'autumnTrial' },
+  { id: 'autumn-trial-cover', label: '秋のお試し 表紙', src: '/usapon-memo/assets/stickers/autumn-trial/autumn-trial-cover.png', packId: 'autumnTrial', boardTextMode: 'multiline', boardTextVariant: 'cover', boardInitialScale: 1.8 },
+  { id: 'autumn-trial-sticky', label: '秋のお試し 付箋', src: '/usapon-memo/assets/stickers/autumn-trial/autumn-trial-sticky.png', packId: 'autumnTrial', boardTextMode: 'multiline', boardTextVariant: 'sticky', boardInitialScale: 1.5 },
+  { id: 'autumn-trial-heading', label: '秋のお試し 見出し', src: '/usapon-memo/assets/stickers/autumn-trial/autumn-trial-heading.png', packId: 'autumnTrial', boardTextMode: 'singleline', boardTextVariant: 'heading', boardInitialScale: 1.7 },
+  { id: 'autumn-trial-tape', label: '秋のお試し マステ', src: '/usapon-memo/assets/stickers/autumn-trial/autumn-trial-tape.png', packId: 'autumnTrial', boardTextMode: 'singleline', boardTextVariant: 'tape', boardInitialScale: 1.6 },
+  { id: 'autumn-sticky-01', label: '秋付箋 生成り正方形', src: '', packId: 'autumn', boardTextMode: 'multiline', boardTextVariant: 'sticky', boardInitialScale: 1.5 },
+  { id: 'autumn-sticky-02', label: '秋付箋 薄黄色横長', src: '', packId: 'autumn', boardTextMode: 'multiline', boardTextVariant: 'wide', boardInitialScale: 1.7 },
+  { id: 'autumn-sticky-03', label: '秋付箋 セージ罫線', src: '', packId: 'autumn', boardTextMode: 'multiline', boardTextVariant: 'sticky', boardInitialScale: 1.5 },
+  { id: 'autumn-sticky-04', label: '秋付箋 破り紙風', src: '', packId: 'autumn', boardTextMode: 'multiline', boardTextVariant: 'sticky', boardInitialScale: 1.5 },
+  { id: 'autumn-sticky-05', label: '秋付箋 トレーシングペーパー風', src: '', packId: 'autumn', boardTextMode: 'multiline', boardTextVariant: 'sticky', boardInitialScale: 1.5 },
+  { id: 'autumn-heading-01', label: '秋見出し どんぐり', src: '', packId: 'autumn', boardTextMode: 'singleline', boardTextVariant: 'heading', boardInitialScale: 1.7 },
+  { id: 'autumn-heading-02', label: '秋見出し イチョウ', src: '', packId: 'autumn', boardTextMode: 'singleline', boardTextVariant: 'heading', boardInitialScale: 1.7 },
+  { id: 'autumn-heading-03', label: '秋見出し 木', src: '', packId: 'autumn', boardTextMode: 'singleline', boardTextVariant: 'heading', boardInitialScale: 1.7 },
+  { id: 'autumn-heading-04', label: '秋見出し 栗', src: '', packId: 'autumn', boardTextMode: 'singleline', boardTextVariant: 'heading', boardInitialScale: 1.7 },
+  { id: 'autumn-heading-05', label: '秋見出し さつまいも', src: '', packId: 'autumn', boardTextMode: 'singleline', boardTextVariant: 'heading', boardInitialScale: 1.7 },
+  { id: 'autumn-tape-01', label: '秋マステ さつまいもうさぎ', src: '', packId: 'autumn', boardTextMode: 'singleline', boardTextVariant: 'tape', boardInitialScale: 1.6 },
+  { id: 'autumn-tape-02', label: '秋マステ イチョウうさぎ', src: '', packId: 'autumn', boardTextMode: 'singleline', boardTextVariant: 'tape', boardInitialScale: 1.6 },
   { id: 'autumn-stamp-9803', label: '秋スタンプ（お試し）', src: '/usapon-memo/assets/stickers/autumn-stamp-9803.png', packId: 'autumn' },
   { id: 'autumn-stamp-9804', label: '秋スタンプ 9804', src: '', packId: 'autumn' },
   { id: 'autumn-stamp-9805', label: '秋スタンプ 9805', src: '', packId: 'autumn' },
@@ -124,6 +136,11 @@ export const STICKER_PACKS = {
 };
 export const MAX_VISIBLE_STICKERS = 15;
 const STICKER_ASSETS = new Set(STICKER_CATALOG.map(sticker => sticker.id));
+
+export const getBoardStickerInitialScale = (assetId) => {
+  if (assetId === 'autumn-stamp-9800') return 0.58;
+  return STICKER_CATALOG.find(sticker => sticker.id === assetId)?.boardInitialScale || 1;
+};
 
 const LEGACY_COLOR_MAP = {
   routine: 'yellow',
@@ -655,5 +672,9 @@ export const sortMemos = (memos) => [...memos].sort((a, b) => {
 });
 
 export const sortMemosForBoard = (memos) => [...memos].sort((a, b) => (
+  new Date(a.updatedAt) - new Date(b.updatedAt)
+));
+
+export const sortBoardItemsForBoard = (items) => [...items].sort((a, b) => (
   new Date(a.updatedAt) - new Date(b.updatedAt)
 ));

@@ -4,7 +4,7 @@ export const AUTUMN_ENTITLEMENT_ID = 'autumn-letter-set';
 export const AUTUMN_FREE_STICKER_ID = 'autumn-stamp-9803';
 export const AUTUMN_TRIAL_PRODUCT_KEY = 'goodnotes-autumn-trial-set';
 export const PACKAGE_THEME_PACK_ASSETS_BUCKET = 'package-theme-pack-assets';
-export const AUTUMN_PAID_STICKER_IDS = [
+export const AUTUMN_PAID_STAMP_IDS = [
   'autumn-stamp-9798', 'autumn-stamp-9799', 'autumn-stamp-9800', 'autumn-stamp-9801',
   'autumn-stamp-9802', 'autumn-stamp-9804', 'autumn-stamp-9805', 'autumn-stamp-9806',
   'autumn-stamp-9807', 'autumn-stamp-9809', 'autumn-stamp-9810', 'autumn-stamp-9811',
@@ -13,6 +13,12 @@ export const AUTUMN_PAID_STICKER_IDS = [
   'autumn-stamp-9820', 'autumn-stamp-9821', 'autumn-stamp-9822', 'autumn-stamp-9823',
   'autumn-stamp-extra'
 ];
+export const AUTUMN_PAID_STATIONERY_IDS = [
+  'autumn-sticky-01', 'autumn-sticky-02', 'autumn-sticky-03', 'autumn-sticky-04', 'autumn-sticky-05',
+  'autumn-heading-01', 'autumn-heading-02', 'autumn-heading-03', 'autumn-heading-04', 'autumn-heading-05',
+  'autumn-tape-01', 'autumn-tape-02'
+];
+export const AUTUMN_PAID_STICKER_IDS = [...AUTUMN_PAID_STAMP_IDS, ...AUTUMN_PAID_STATIONERY_IDS];
 export const AUTUMN_STICKER_IDS = [
   ...AUTUMN_PAID_STICKER_IDS.slice(0, 5),
   AUTUMN_FREE_STICKER_ID,
@@ -59,7 +65,7 @@ export const memoSupabase = isSupabaseConfigured(config)
   })
   : null;
 
-const assetFileName = (id) => `${id}.png`;
+export const getAutumnPaidAssetFileName = (id) => `${id}.png`;
 
 export function revokePaidStickerSources(sources = {}, urlApi = URL) {
   AUTUMN_PAID_STICKER_IDS.forEach((id) => {
@@ -105,7 +111,7 @@ export async function loadAutumnStickerAccess(client = memoSupabase, settings = 
     try {
       const { data: blob, error: downloadError } = await client.storage
         .from(settings.bucket)
-        .download(`${AUTUMN_ENTITLEMENT_ID}/${assetFileName(id)}`);
+        .download(`${AUTUMN_ENTITLEMENT_ID}/${getAutumnPaidAssetFileName(id)}`);
       return downloadError ? null : [id, URL.createObjectURL(blob)];
     } catch {
       return null;

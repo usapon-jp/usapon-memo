@@ -5,7 +5,7 @@ import { DEFAULT_STICKER_IDS, STICKER_PACKS, normalizeData } from '../src/memoMo
 test('セット別に15個を超える購入済み素材をすべて選べる', () => {
  const ids = [...DEFAULT_STICKER_IDS, ...STICKER_PACKS.autumn.stickerIds, ...STICKER_PACKS.autumnTrial.stickerIds];
  const packs = availableStickerPacks(ids);
- assert.equal(packs.find(p => p.id === 'autumn').stickerIds.length, 26);
+ assert.equal(packs.find(p => p.id === 'autumn').stickerIds.length, 38);
  assert.equal(packs.find(p => p.id === 'autumnTrial').stickerIds.length, 5);
 });
 test('未受取の素材は一覧に出さず、旧合言葉の受取済み素材は保持する', () => {
