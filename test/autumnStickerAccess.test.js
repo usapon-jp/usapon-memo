@@ -9,6 +9,7 @@ import {
   AUTUMN_TRIAL_STICKER_IDS,
   PACKAGE_THEME_PACK_ASSETS_BUCKET,
   getAutumnStickerConfig,
+  memoAuthRedirectUrl,
   isSupabaseConfigured,
   loadAutumnStickerAccess,
   revokePaidStickerSources
@@ -107,4 +108,11 @@ test('取り消された無料お試し権利では素材を解放しない', as
   const result = await loadAutumnStickerAccess(client, getAutumnStickerConfig({}));
   assert.equal(result.status, 'not-entitled');
   assert.deepEqual(result.sources, {});
+});
+
+ test('Googleログインは開いたページにかかわらず登録済みのメモURLへ戻る', () => {
+  for (const suffix of ['', '/', '/index.html', '/?materials=received', '/index.html?install=1#memo']) {
+    assert.equal(memoAuthRedirectUrl(`https://usapon-jp.github.io/usapon-memo${suffix}`), 'https://usapon-jp.github.io/usapon-memo/');
+  }
+  assert.equal(memoAuthRedirectUrl('http://127.0.0.1:4191/usapon-memo/index.html'), 'http://127.0.0.1:4191/usapon-memo/');
 });

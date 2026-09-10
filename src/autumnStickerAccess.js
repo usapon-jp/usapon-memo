@@ -123,12 +123,20 @@ export async function loadAutumnStickerAccess(client = memoSupabase, settings = 
   };
 }
 
+export function memoAuthRedirectUrl(href, baseUrl = '/usapon-memo/') {
+  const page = new URL(href);
+  // Always use the registered application root, never index.html or a nested page.
+  const redirect = new URL(baseUrl, page.origin);
+  redirect.search = '';
+  redirect.hash = '';
+  if (!redirect.pathname.endsWith('/')) redirect.pathname += '/';
+  return redirect.toString();
+}
+
 export async function signInWithGoogle(client = memoSupabase) {
   if (!client) throw new Error('共有ログインはまだ設定されていません。');
-  const redirectTo = new URL(window.location.href);
-  redirectTo.search = '';
-  redirectTo.hash = '';
-  const { error } = await client.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: redirectTo.toString() } });
+  const redirectTo = memoAuthRedirectUrl(window.location.href, import.meta.env?.BASE_URL || '/usapon-memo/');
+  const { error } = await client.auth.signInWithOAuth({ provider: 'google', options: { redirectTo } });
   if (error) throw error;
 }
 
