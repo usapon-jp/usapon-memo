@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check, Pencil, Undo2, Redo2, Sparkles } from 'lucide-react';
+import { Sticker, Check, Pencil, Undo2, Redo2, Sparkles } from 'lucide-react';
 import { newDocument, validateDocument, LIMITS } from '../public/handwriting/core/document.mjs';
 import { StrokeBuilder } from '../public/handwriting/core/stroke.mjs';
 import { renderDocument, paintStroke } from '../public/handwriting/core/render.mjs';
@@ -98,7 +98,7 @@ function CircularColorPicker({ color, onChange, onClose }) {
   </section>;
 }
 
-export default function BoardDrawing({ value, onChange, onModeChange, onError, readOnly = false }) {
+export default function BoardDrawing({ value, onChange, onModeChange, onError, onStickers, readOnly = false }) {
   const canvasRef = useRef(null);
   const live = useRef({ value, stroke: null, pointer: null, frame: null });
   const [open, setOpen] = useState(false);
@@ -231,6 +231,7 @@ export default function BoardDrawing({ value, onChange, onModeChange, onError, r
       onKeyDown={event => { if (event.key === 'Escape') colorOpen ? setColorOpen(false) : close(); }}>
       {colorOpen && tool !== 'eraser' && <CircularColorPicker color={color} onChange={setColor} onClose={() => setColorOpen(false)} />}
       {open && <div className="board-drawing-menu" role="toolbar" aria-label="手書きの文房具">
+        {onStickers && <button type="button" title="ステッカー" aria-label="ボードにステッカーを貼る" onClick={() => { close(); onStickers(); }}><Sticker size={27} /></button>}
         {TOOLS.map(([id, label, defaultSize]) => <button key={id} type="button" title={label} aria-label={label} aria-pressed={tool === id}
           onClick={() => { setTool(id); setSize(defaultSize); }}>
           <img alt="" draggable="false" src={`${import.meta.env.BASE_URL}handwriting/assets/tools/${id === 'eraser' ? 'eraser-block' : id}-icon.png`} />

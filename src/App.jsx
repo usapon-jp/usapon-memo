@@ -1,3 +1,4 @@
+import StickerTabs from "./StickerTabs";
 import { MaterialNotice } from "./MaterialNotice";
 import html2canvas from 'html2canvas';
 import BoardDrawing from './BoardDrawing';
@@ -1397,7 +1398,8 @@ export default function App() {
     setData(current => normalizeData({
       ...current,
       unlockedStickerIds: patch.unlockedStickerIds || current.unlockedStickerIds,
-      visibleStickerIds: patch.visibleStickerIds || current.visibleStickerIds
+      visibleStickerIds: patch.visibleStickerIds || current.visibleStickerIds,
+      stickerSetPreferences: patch.stickerSetPreferences || current.stickerSetPreferences
     }));
   };
 
@@ -1686,7 +1688,8 @@ export default function App() {
           stickyTextSize={stickyTextSize}
           stickyTextWeight={stickyTextWeight}
           boardBackground={boardBackground}
-          visibleStickerIds={displayVisibleStickerIds}
+          visibleStickerIds={effectiveUnlockedStickerIds}
+          stickerSetPreferences={data.stickerSetPreferences}
           activeBoardId={activeBoardId}
           boards={homeBoards}
           allBoards={boards}
@@ -1733,7 +1736,8 @@ export default function App() {
           draft={draft}
           stickyTextSize={stickyTextSize}
           stickyTextWeight={stickyTextWeight}
-          visibleStickerIds={displayVisibleStickerIds}
+          visibleStickerIds={effectiveUnlockedStickerIds}
+          stickerSetPreferences={data.stickerSetPreferences}
           setDraft={setDraft}
           onBack={() => setPage('home')}
           onSave={saveMemo}
@@ -1824,6 +1828,7 @@ export default function App() {
       {page === 'stickers' && (
         <StickerPage
           initialPack={materialPack}
+          stickerSetPreferences={data.stickerSetPreferences}
           unlockedStickerIds={effectiveUnlockedStickerIds}
           visibleStickerIds={displayVisibleStickerIds}
           onBack={() => setPage('home')}
@@ -1961,6 +1966,7 @@ function HomePage({
   stickyTextWeight,
   boardBackground,
   visibleStickerIds = DEFAULT_STICKER_IDS,
+  stickerSetPreferences,
   activeBoardId,
   boards,
   allBoards,
@@ -2580,8 +2586,8 @@ function HomePage({
   };
 
   const openBoardStickerPicker = () => {
-    const position = quickAdd || pasteMenu;
-    if (!position) return;
+    const rect = boardRef.current?.getBoundingClientRect();
+    const position = quickAdd || pasteMenu || (rect ? getBoardPositionFromEvent({ clientX: rect.left + rect.width / 2, clientY: Math.max(rect.top, 120) + Math.min(rect.height, window.innerHeight - 220) / 2 }) : { x: 45, y: 20 });
     setStickerPicker(position);
     setQuickAdd(null);
     setPasteMenu(null);
@@ -3258,7 +3264,7 @@ function HomePage({
         }}>
           <BoardDrawing key={activeBoard.id} value={activeBoard.drawing}
             onChange={drawing => onUpdateBoard(activeBoard.id, { drawing })}
-            onModeChange={setDrawingMode} onError={onShowToast} />
+            onModeChange={setDrawingMode} onError={onShowToast} onStickers={openBoardStickerPicker} />
           {memos.length === 0 && boardItems.length === 0 && !activeBoard.drawing?.strokes.length && !drawingMode ? (
             <button
               type="button"
@@ -3446,18 +3452,11 @@ function HomePage({
       )}
 
       {stickerPicker && (
-        <div
-          className="quick-add-menu board-sticker-picker"
-          style={{ left: `${stickerPicker.clientX}px`, top: `${stickerPicker.clientY}px` }}
-          role="dialog"
-          aria-label="ステッカーを選択"
-        >
-          {visibleStickerIds.map(id => STICKER_MAP[id]).filter(Boolean).map(sticker => (
-            <button key={sticker.id} type="button" onClick={() => addBoardSticker(sticker.id)} aria-label={`${sticker.label}を貼る`}>
-              <img src={sticker.src} alt="" draggable={false} />
-              {sticker.label}
-            </button>
-          ))}
+        <div className="board-sticker-backdrop" onClick={() => setStickerPicker(null)}>
+          <div className="board-sticker-sheet" role="dialog" aria-modal="true" aria-label="ステッカーを選択" onKeyDown={event => { if (event.key === "Escape") setStickerPicker(null); }} onClick={event => event.stopPropagation()}>
+            <div className="board-sticker-heading"><strong>ステッカー</strong><button type="button" aria-label="閉じる" autoFocus onClick={() => setStickerPicker(null)}><X size={20} /></button></div>
+            <StickerTabs stickerIds={visibleStickerIds} preferences={stickerSetPreferences} onSelect={addBoardSticker} />
+          </div>
         </div>
       )}
 
@@ -3918,6 +3917,7 @@ function MemoCreatePage({
   stickyTextSize,
   stickyTextWeight,
   visibleStickerIds = DEFAULT_STICKER_IDS,
+  stickerSetPreferences,
   setDraft,
   onBack,
   onSave,
@@ -3928,7 +3928,7 @@ function MemoCreatePage({
   const [imageBusy, setImageBusy] = useState(false);
   const [selectedStickerId, setSelectedStickerId] = useState('');
   const [movingStickerId, setMovingStickerId] = useState('');
-  const [activeStickerPackId, setActiveStickerPackId] = useState('default');
+
   const [photoToolsOpen, setPhotoToolsOpen] = useState(true);
   const [resizingCard, setResizingCard] = useState(false);
   const primaryInputRef = useRef(null);
@@ -3956,19 +3956,6 @@ function MemoCreatePage({
   const firstChecklistItem = draft.checklist[0] || null;
   const selectedPaletteColor = draft.cardType === 'photo' ? draft.tapeColor : draft.color;
   const paletteLabel = draft.cardType === 'photo' ? 'マステ色' : 'メモ色';
-  const visibleStickerPacks = useMemo(
-    () => Object.entries(STICKER_PACKS).map(([id, pack]) => ({
-      id,
-      label: pack.label,
-      stickers: pack.stickerIds
-        .filter(stickerId => visibleStickerIds.includes(stickerId))
-        .map(stickerId => STICKER_MAP[stickerId])
-        .filter(Boolean)
-    })).filter(pack => pack.stickers.length > 0),
-    [visibleStickerIds]
-  );
-  const activeStickerPack = visibleStickerPacks.find(pack => pack.id === activeStickerPackId)
-    || visibleStickerPacks[0];
   const createCardStyle = {
     ...getCreateCardSizeStyle(draft),
     '--memo-tape-color': getTapeColor(draft.cardType === 'photo' ? draft.tapeColor : draft.color),
@@ -3979,10 +3966,7 @@ function MemoCreatePage({
     draftRef.current = draft;
   }, [draft]);
 
-  useEffect(() => {
-    if (activeStickerPack || visibleStickerPacks.length === 0) return;
-    setActiveStickerPackId(visibleStickerPacks[0].id);
-  }, [activeStickerPack, visibleStickerPacks]);
+
 
   const resizeChecklistTextarea = (element) => {
     if (!element) return;
@@ -4853,43 +4837,7 @@ function MemoCreatePage({
         </div>
 
         {draft.cardType !== 'photo' && (
-          <div className="sticker-library">
-            <div className="sticker-set-tabs" role="tablist" aria-label="スタンプの種類">
-              {visibleStickerPacks.map(pack => (
-                <button
-                  key={pack.id}
-                  id={`memo-sticker-tab-${pack.id}`}
-                  type="button"
-                  role="tab"
-                  aria-selected={activeStickerPack?.id === pack.id}
-                  aria-controls="memo-sticker-panel"
-                  title={pack.label}
-                  aria-label={pack.label}
-                  onClick={() => setActiveStickerPackId(pack.id)}
-                >
-                  <img src={pack.stickers[0].src} alt="" draggable={false} />
-                  <span>{pack.label}</span>
-                </button>
-              ))}
-            </div>
-            <div
-              className="sticker-palette"
-              id="memo-sticker-panel"
-              role="tabpanel"
-              aria-labelledby={activeStickerPack ? `memo-sticker-tab-${activeStickerPack.id}` : undefined}
-            >
-              {(activeStickerPack?.stickers || []).map(sticker => (
-                <button
-                  key={sticker.id}
-                  type="button"
-                  onClick={(event) => addStickerToCorner(event, sticker.id)}
-                  aria-label={`${sticker.label}を右下に追加`}
-                >
-                  <img src={sticker.src} alt="" draggable={false} />
-                </button>
-              ))}
-            </div>
-          </div>
+          <StickerTabs stickerIds={visibleStickerIds} preferences={stickerSetPreferences} onSelect={(id,event) => addStickerToCorner(event,id)} />
         )}
 
         {ENABLE_CREATE_SETTINGS_PANEL && settingsOpen && (
@@ -5218,255 +5166,22 @@ function SettingsPage({
   );
 }
 
-function StickerPage({
-  initialPack,
-  unlockedStickerIds,
-  visibleStickerIds,
-  onBack,
-  onUpdate,
-  onShowToast,
-  autumnAccess,
-  onRefreshAutumn,
-  onSignInAutumn,
-  onSignOutAutumn
-}) {
-  const [tab, setTab] = useState('manage');
-  const [code, setCode] = useState('');
-  const [draggingStickerId, setDraggingStickerId] = useState('');
-  const [openPackIds, setOpenPackIds] = useState(() => initialPack ? [initialPack] : ['default']);
-  useEffect(() => { if (initialPack) { setTab('manage'); setOpenPackIds([initialPack]); requestAnimationFrame(() => document.querySelector(`[data-material-pack="${initialPack}"]`)?.scrollIntoView({ block: 'center' })); } }, [initialPack]);
-  const visibleStickerIdsRef = useRef(visibleStickerIds);
-  const unlockedSet = useMemo(() => new Set(unlockedStickerIds), [unlockedStickerIds]);
-  const visibleSet = useMemo(() => new Set(visibleStickerIds), [visibleStickerIds]);
-  const unlockedStickers = STICKER_CATALOG.filter(sticker => unlockedSet.has(sticker.id));
-  const visibleStickers = visibleStickerIds.map(id => STICKER_MAP[id]).filter(Boolean);
-  const stickerPacks = Object.entries(STICKER_PACKS)
-    .map(([packId, pack]) => ({
-      id: packId,
-      ...pack,
-      stickers: pack.stickerIds
-        .map(id => STICKER_MAP[id])
-        .filter(sticker => sticker && unlockedSet.has(sticker.id))
-    }))
-    .filter(pack => !pack.hiddenFromLibrary && pack.stickers.length > 0);
-
-  useEffect(() => {
-    visibleStickerIdsRef.current = visibleStickerIds;
-  }, [visibleStickerIds]);
-
-  const updateVisible = (nextIds) => {
-    visibleStickerIdsRef.current = nextIds;
-    onUpdate({ visibleStickerIds: nextIds });
-  };
-
-  const toggleSticker = (id) => {
-    if (visibleSet.has(id)) {
-      updateVisible(visibleStickerIds.filter(item => item !== id));
-      return;
-    }
-    if (visibleStickerIds.length >= MAX_VISIBLE_STICKERS) {
-      onShowToast?.(`表示できるステッカーは${MAX_VISIBLE_STICKERS}個までです。`);
-      return;
-    }
-    updateVisible([...visibleStickerIds, id]);
-  };
-
-  const moveVisibleStickerToIndex = (id, nextIndex) => {
-    const currentIds = visibleStickerIdsRef.current;
-    const index = currentIds.indexOf(id);
-    if (index < 0) return;
-    const clampedIndex = clamp(nextIndex, 0, currentIds.length - 1);
-    if (index === clampedIndex) return;
-    const nextIds = [...currentIds];
-    const [item] = nextIds.splice(index, 1);
-    nextIds.splice(clampedIndex, 0, item);
-    updateVisible(nextIds);
-  };
-
-  const togglePackOpen = (packId) => {
-    setOpenPackIds(current => (
-      current.includes(packId)
-        ? current.filter(id => id !== packId)
-        : [...current, packId]
-    ));
-  };
-
-  const startStickerSortDrag = (event, stickerId) => {
-    if (event.target.closest('button')) return;
-    event.preventDefault();
-    const card = event.currentTarget;
-    setDraggingStickerId(stickerId);
-    card.setPointerCapture(event.pointerId);
-
-    const moveSortSticker = (moveEvent) => {
-      const target = document.elementFromPoint(moveEvent.clientX, moveEvent.clientY);
-      const targetCard = target?.closest?.('[data-visible-sticker-id]');
-      if (!targetCard) return;
-      const targetId = targetCard.dataset.visibleStickerId;
-      const targetIndex = visibleStickerIdsRef.current.indexOf(targetId);
-      if (targetIndex >= 0) moveVisibleStickerToIndex(stickerId, targetIndex);
-    };
-
-    const stopSortSticker = () => {
-      setDraggingStickerId('');
-      window.removeEventListener('pointermove', moveSortSticker);
-      window.removeEventListener('pointerup', stopSortSticker);
-      window.removeEventListener('pointercancel', stopSortSticker);
-    };
-
-    window.addEventListener('pointermove', moveSortSticker);
-    window.addEventListener('pointerup', stopSortSticker);
-    window.addEventListener('pointercancel', stopSortSticker);
-  };
-
-  const unlockByCode = (event) => {
-    event.preventDefault();
-    const normalizedCode = code.trim().toLowerCase();
-    const packEntry = Object.entries(STICKER_PACKS).find(([, item]) => item.code === normalizedCode);
-    const pack = packEntry?.[1];
-    const packId = packEntry?.[0];
-    if (!pack) {
-      onShowToast?.('合言葉が違います。');
-      return;
-    }
-    const receiptStickerIds = pack.codeStickerIds || pack.stickerIds;
-    const nextUnlocked = [...new Set([...unlockedStickerIds, ...receiptStickerIds])];
-    const appendVisible = receiptStickerIds.filter(id => !visibleSet.has(id));
-    const nextVisible = [...visibleStickerIds, ...appendVisible].slice(0, MAX_VISIBLE_STICKERS);
-    onUpdate({
-      unlockedStickerIds: nextUnlocked,
-      visibleStickerIds: nextVisible
-    });
-    setCode('');
-    setTab('manage');
-    if (packId) {
-      setOpenPackIds(current => [...new Set([...current, packId])]);
-    }
-    onShowToast?.(receiptStickerIds.every(id => unlockedSet.has(id))
-      ? 'このステッカーは追加済みです。'
-      : '追加ステッカーを解放しました。');
-  };
-
-  return (
-    <section className="list-page sticker-page">
-      <SimplePageHeader title="ステッカー" eyebrow="素材" onBack={onBack} />
-      <div className="archive-tabs sticker-tabs" role="tablist" aria-label="ステッカー">
-        <button type="button" className={tab === 'manage' ? 'active' : ''} onClick={() => setTab('manage')}>
-          <span>ステッカー</span>
-          <span>管理</span>
-        </button>
-        <button type="button" className={tab === 'add' ? 'active' : ''} onClick={() => setTab('add')}>
-          <span>ステッカー</span>
-          <span>追加</span>
-        </button>
+function StickerPage({ initialPack, unlockedStickerIds, stickerSetPreferences, onUpdate, onBack, autumnAccess, onRefreshAutumn, onSignInAutumn, onSignOutAutumn }) {
+  const ready = autumnAccess.status === 'ready' || autumnAccess.status === 'trial-ready';
+  return <section className="list-page sticker-page">
+    <SimplePageHeader title="ステッカー管理" eyebrow="素材" onBack={onBack} />
+    <p>表示するセットと、タブの順番を選べます。</p>
+    <StickerTabs key={initialPack || 'default'} stickerIds={unlockedStickerIds} initialPack={initialPack || 'default'} preferences={stickerSetPreferences} onPreferencesChange={preferences => onUpdate({ stickerSetPreferences: preferences })} />
+    <details className="settings-card sticker-account"><summary>アカウント・素材の受け取り</summary>
+      <p>{ready ? '受取済みの素材を表示しています。' : autumnAccess.status === 'loading' ? '素材を確認しています…' : '購入・受取時のGoogleアカウントでログインしてください。'}</p>
+      <div className="settings-actions">
+        <button type="button" onClick={onSignInAutumn}>Googleでログイン</button>
+        <button type="button" onClick={onRefreshAutumn} disabled={autumnAccess.status === 'loading'}>素材を再確認</button>
+        {ready && <button type="button" onClick={onSignOutAutumn}>ログアウト</button>}
       </div>
-
-      {tab === 'manage' ? (
-        <>
-          <section className="settings-card sticker-manage-card">
-            <strong>普段表示するステッカー</strong>
-            <span className="sticker-count">{visibleStickerIds.length} / {MAX_VISIBLE_STICKERS}</span>
-            <div className="sticker-visible-grid" aria-label="表示中のステッカー">
-              {visibleStickers.map(sticker => (
-                <article
-                  key={sticker.id}
-                  className={`sticker-manage-item ${draggingStickerId === sticker.id ? 'is-dragging' : ''}`}
-                  data-visible-sticker-id={sticker.id}
-                  onPointerDown={(event) => startStickerSortDrag(event, sticker.id)}
-                >
-                  <img src={sticker.src} alt="" draggable={false} />
-                  <button type="button" className="subtle-action" onClick={() => toggleSticker(sticker.id)}>
-                    非表示
-                  </button>
-                </article>
-              ))}
-              {Array.from({ length: Math.max(0, MAX_VISIBLE_STICKERS - visibleStickers.length) }).map((_, index) => (
-                <div key={`empty-${index}`} className="sticker-empty-slot" aria-hidden="true" />
-              ))}
-            </div>
-          </section>
-
-          <section className="settings-card sticker-library-card">
-            <strong>使えるステッカー</strong>
-            <div className="sticker-pack-list">
-              {stickerPacks.map(pack => {
-                const isOpen = openPackIds.includes(pack.id);
-                const visibleCount = pack.stickers.filter(sticker => visibleSet.has(sticker.id)).length;
-                return (
-                  <section key={pack.id} className="sticker-pack" data-material-pack={pack.id}>
-                    <button
-                      type="button"
-                      className="sticker-pack-header"
-                      onClick={() => togglePackOpen(pack.id)}
-                      aria-expanded={isOpen}
-                    >
-                      <span>{pack.label}</span>
-                      <small>{visibleCount} / {pack.stickers.length}</small>
-                    </button>
-                    {isOpen && (
-                      <div className="sticker-library-grid">
-                        {pack.stickers.map(sticker => (
-                          <button
-                            key={sticker.id}
-                            type="button"
-                            className={visibleSet.has(sticker.id) ? 'active' : ''}
-                            onClick={() => toggleSticker(sticker.id)}
-                            aria-label={`${sticker.label}を${visibleSet.has(sticker.id) ? '非表示' : '表示'}`}
-                          >
-                            <img src={sticker.src} alt="" draggable={false} />
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </section>
-                );
-              })}
-            </div>
-            {unlockedStickers.length === 0 && <small>使えるステッカーはまだありません。</small>}
-          </section>
-        </>
-      ) : (
-        <section className="settings-card sticker-add-card">
-          <strong>ステッカーの追加</strong>
-          <section className="autumn-sticker-access" aria-live="polite">
-            <strong>秋のスタンプ</strong>
-            {autumnAccess.status === 'loading' && <p>購入済みスタンプを確認しています。</p>}
-            {autumnAccess.status === 'unconfigured' && <p>共有ログインの設定後に、購入済みスタンプを確認できます。</p>}
-            {autumnAccess.status === 'signed-out' && <p>ショップで受け取った無料お試し5柄・購入済みセットは、同じGoogleアカウントで確認できます。</p>}
-            {autumnAccess.status === 'not-entitled' && <p>ショップで無料セットを受け取ったアカウント、または購入したGoogleアカウントで確認してください。</p>}
-            {autumnAccess.status === 'assets-unavailable' && <p>購入権利を確認しましたが、素材を読み込めませんでした。もう一度確認してください。</p>}
-            {autumnAccess.status === 'ready' && <p>購入済みの秋スタンプを読み込みました。</p>}
-            {autumnAccess.status === 'trial-ready' && <p>無料お試しセットを読み込みました。</p>}
-            {autumnAccess.status === 'error' && <p>確認できませんでした。{autumnAccess.error}</p>}
-            <div className="settings-actions">
-              {(autumnAccess.status === 'signed-out' || autumnAccess.status === 'not-entitled') && (
-                <button type="button" className="subtle-action" onClick={onSignInAutumn}>Googleで確認</button>
-              )}
-              {(autumnAccess.status === 'ready' || autumnAccess.status === 'trial-ready') && (
-                <button type="button" className="subtle-action" onClick={onSignOutAutumn}>ログアウト</button>
-              )}
-              <button type="button" className="subtle-action" onClick={onRefreshAutumn} disabled={autumnAccess.status === 'loading'}>もう一度確認</button>
-            </div>
-          </section>
-          <p>配布済みのお試しスタンプ1点を受け取る</p>
-          <form onSubmit={unlockByCode}>
-            <label>
-              <span>合言葉</span>
-              <input
-                value={code}
-                placeholder="入力する"
-                autoComplete="off"
-                onChange={(event) => setCode(event.target.value)}
-              />
-            </label>
-            <button type="submit" className="subtle-action settings-wide-action">
-              追加する
-            </button>
-          </form>
-        </section>
-      )}
-    </section>
-  );
+      <a href="https://usapon-digital-shop.vercel.app/purchased">ショップで受取状況を確認</a>
+    </details>
+  </section>;
 }
 
 function DiaryPhotoCard({ photo, imageSrc, onPatch, onDelete }) {

@@ -641,6 +641,10 @@ export const normalizeData = (data = {}) => {
     notifiedTimeCapsuleBoardIds,
     unlockedStickerIds,
     visibleStickerIds,
+    stickerSetPreferences: {
+      order: [...new Set([...(Array.isArray(data.stickerSetPreferences?.order) ? data.stickerSetPreferences.order.filter(id => Object.hasOwn(STICKER_PACKS, id)) : []), ...Object.keys(STICKER_PACKS)])],
+      hidden: [...new Set((Array.isArray(data.stickerSetPreferences?.hidden) ? data.stickerSetPreferences.hidden : []).filter(id => Object.hasOwn(STICKER_PACKS, id)))]
+    },
     diaryPhotoTransformRecoveryVersion
   };
 };
