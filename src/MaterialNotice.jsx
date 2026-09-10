@@ -63,12 +63,13 @@ export function MaterialNotice({ app, userId, status, packs, onLogin, onView }) 
     }
     return <dialog ref={dialog} className="material-notice" aria-labelledby="material-notice-title" onCancel={finish}>
     <h2 id="material-notice-title">{mode === "ready" ? "新しい素材が使えるようになりました" : mode === "login" ? "素材を使う準備をしましょう" : "購入・受取済みの素材を確認しましょう"}</h2>
-    <p>{mode === "ready" ? "購入・受取済みの素材を、このアプリでも楽しめます。" : mode === "login" ? "購入・受取時と同じGoogleアカウントでログインしてください。" : "購入・受取時のGoogleアカウントを選び直してください。"}</p>
+    <p>{mode === "ready" ? "購入・受取済みの素材を、このアプリでも楽しめます。" : mode === "login" ? "購入・受取時と同じGoogleアカウントでログインしてください。" : "アカウントか受取状況を確認してください。"}</p>
     {error && <p role="alert">{error}</p>}
     <div className="material-notice-actions">
       {mode === "ready" && <button type="button" onClick={() => { const pack = newPack; finish(); onView(pack); }}>素材を見る</button>}
       {(mode === "login" || mode === "missing") && <button type="button" onClick={() => { setError(""); Promise.resolve().then(onLogin).catch(() => setError("ログインを開始できませんでした。もう一度お試しください。")); }}>{mode === "missing" ? "Googleアカウントでログインし直す" : "Googleでログイン"}</button>}
-      <button type="button" onClick={finish}>あとで</button>
+      {mode === "missing" && <a href="https://usapon-digital-shop.vercel.app/purchased">ショップへ戻る</a>}
+      <button type="button" onClick={finish}>{mode === "missing" ? "閉じる" : "あとで"}</button>
     </div>
   </dialog>;
 }
