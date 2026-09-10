@@ -113,6 +113,7 @@ export async function loadAutumnStickerAccess(client = memoSupabase, settings = 
     revokePaidStickerSources(sources);
     return { status: 'assets-unavailable', sources: {}, error: '購入済み素材をすべて読み込めませんでした。' };
   }
+  if (paidEntitled) sources[AUTUMN_FREE_STICKER_ID] = settings.freeStickerUrl;
   if (trialEntitled) Object.assign(sources, getAutumnTrialStickerSources(import.meta.env));
   return {
     userId: session.user.id,

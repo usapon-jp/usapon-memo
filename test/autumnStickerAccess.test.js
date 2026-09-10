@@ -128,3 +128,14 @@ test('ログインし直すとGoogleのアカウント選択を表示しメモ�
     assert.equal(args.options.queryParams.prompt, 'select_account');
   } finally { if (previous === undefined) delete globalThis.window; else globalThis.window = previous; }
 });
+
+test('有料セットだけの購入者にも無料柄を含めた26点を表示する', async () => {
+ const client = {
+  auth: {getSession: async () => ({data:{session:{user:{id:'paid-user'}}}})},
+  schema: name => ({from:()=>query({data:name==='package'?[{theme_pack_id:'autumn-letter-set'}]:[],error:null})}),
+  storage: {from:()=>({download:async()=>({data:new Blob(['test']),error:null})})}
+ };
+ const result = await loadAutumnStickerAccess(client,getAutumnStickerConfig({}));
+ try { assert.equal(result.status,'ready'); assert.deepEqual(Object.keys(result.sources).sort(),[...AUTUMN_STICKER_IDS].sort()); }
+ finally { revokePaidStickerSources(result.sources); }
+});
