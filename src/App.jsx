@@ -1,6 +1,5 @@
 import StickerTabs from "./StickerTabs";
 import { MaterialNotice } from "./MaterialNotice";
-import html2canvas from 'html2canvas';
 import BoardDrawing from './BoardDrawing';
 import { forwardRef, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -84,6 +83,7 @@ import {
 } from './mediaStorage.js';
 import { canAutoOfferInstall, detectInstallContext, INSTALL_GUIDE_HIDDEN_KEY } from './installGuide.js';
 import { HANDWRITING_TRANSFER_KEY, parseHandwritingTransfer } from './handwritingTransfer.js';
+import { getBoardItemPinchScale, hasBoardItemDragStarted } from './boardItemGesture.js';
 import {
   AUTUMN_FREE_STICKER_ID,
   AUTUMN_PAID_STICKER_IDS,
@@ -337,6 +337,7 @@ const canvasToCompressedJpeg = (sourceCanvas, maxWidth = BOARD_SNAPSHOT_WIDTH, q
 };
 
 const captureBoardElement = async (element, options = {}) => {
+  const { default: html2canvas } = await import('html2canvas');
   const canvas = await html2canvas(element, {
     backgroundColor: PHOTO_CANVAS_BACKGROUND,
     scale: 1,
@@ -818,6 +819,9 @@ export default function App() {
   const autumnStickerSourcesRef = useRef({});
   const autumnStickerRequestRef = useRef(0);
   const handwritingTransferConsumedRef = useRef(false);
+  const latestDataRef = useRef(data);
+  const autosaveTimerRef = useRef(null);
+  latestDataRef.current = data;
   const appTitle = data.appTitle || DEFAULT_APP_TITLE;
   const stickyTextSize = STICKY_TEXT_SIZES.has(data.stickyTextSize) ? data.stickyTextSize : DEFAULT_STICKY_TEXT_SIZE;
   const stickyTextWeight = STICKY_TEXT_WEIGHTS.has(data.stickyTextWeight) ? data.stickyTextWeight : DEFAULT_STICKY_TEXT_WEIGHT;
@@ -881,15 +885,40 @@ export default function App() {
     return record;
   };
 
-  useEffect(() => {
-    if (!mediaReady) return;
-    const ok = saveMemoData(data, { reason: 'autosave' });
-    if (!ok) {
+  const saveLatestData = (reason = 'autosave', reportResult = true) => {
+    if (!mediaReady) return true;
+    window.clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = null;
+    const ok = saveMemoData(latestDataRef.current, { reason });
+    if (reportResult && !ok) {
       setStorageError(AUTOSAVE_ERROR_MESSAGE);
-    } else {
+    } else if (reportResult) {
       setStorageError(current => current === AUTOSAVE_ERROR_MESSAGE ? '' : current);
     }
+    return ok;
+  };
+
+  useEffect(() => {
+    if (!mediaReady) return undefined;
+    window.clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = window.setTimeout(() => saveLatestData(), 250);
+    return () => window.clearTimeout(autosaveTimerRef.current);
   }, [data, mediaReady]);
+
+  useEffect(() => {
+    if (!mediaReady) return undefined;
+    const flushForBackground = () => {
+      if (document.visibilityState === 'hidden') saveLatestData('visibility-hidden', false);
+    };
+    const flushForPageHide = () => saveLatestData('pagehide', false);
+    document.addEventListener('visibilitychange', flushForBackground);
+    window.addEventListener('pagehide', flushForPageHide);
+    return () => {
+      document.removeEventListener('visibilitychange', flushForBackground);
+      window.removeEventListener('pagehide', flushForPageHide);
+      if (autosaveTimerRef.current) saveLatestData('unmount', false);
+    };
+  }, [mediaReady]);
 
   useEffect(() => {
     if (!mediaReady || handwritingTransferConsumedRef.current) return;
@@ -1013,16 +1042,24 @@ export default function App() {
     if (updateState) setAutumnStickerAccess(current => ({ ...current, sources: {} }));
   };
 
-  const refreshAutumnStickerAccess = async () => {
+  const usedPaidAutumnStickerIds = useMemo(() => [...new Set([
+    ...(data.memos || []).flatMap(memo => memo.stickers || []).map(sticker => sticker.assetId),
+    ...(data.boardItems || []).filter(item => item.type === 'sticker').map(item => item.assetId)
+  ].filter(id => AUTUMN_PAID_STICKER_IDS.includes(id)))], [data.memos, data.boardItems]);
+
+  const refreshAutumnStickerAccess = async ({ loadAllAssets = false, preserveSources = false } = {}) => {
     const requestId = ++autumnStickerRequestRef.current;
-    clearPaidAutumnStickerSources();
+    if (!preserveSources) clearPaidAutumnStickerSources();
     setAutumnStickerAccess(current => ({ ...current, status: 'loading', error: '' }));
     try {
-      const next = await loadAutumnStickerAccess();
+      const next = await loadAutumnStickerAccess(undefined, undefined, {
+        assetIds: loadAllAssets ? AUTUMN_PAID_STICKER_IDS : usedPaidAutumnStickerIds
+      });
       if (requestId !== autumnStickerRequestRef.current) {
         revokePaidStickerSources(next.sources);
         return;
       }
+      if (preserveSources) revokePaidStickerSources(autumnStickerSourcesRef.current);
       AUTUMN_STICKER_IDS.forEach((id) => {
         if (id !== AUTUMN_FREE_STICKER_ID && STICKER_MAP[id]) STICKER_MAP[id].src = next.sources[id] || '';
       });
@@ -1038,6 +1075,11 @@ export default function App() {
     }
   };
 
+  const ensureAutumnStickerAssets = () => {
+    if (autumnStickerAccess.allPaidAssetsLoaded) return;
+    void refreshAutumnStickerAccess({ loadAllAssets: true, preserveSources: true });
+  };
+
   useEffect(() => {
     void refreshAutumnStickerAccess();
     const { data: { subscription } } = memoSupabase?.auth.onAuthStateChange(() => {
@@ -1049,6 +1091,10 @@ export default function App() {
       clearPaidAutumnStickerSources(false);
     };
   }, []);
+
+  useEffect(() => {
+    if (page === 'stickers' || page === 'create') ensureAutumnStickerAssets();
+  }, [page]);
 
   useEffect(() => {
     if (!appToast) return undefined;
@@ -1705,6 +1751,7 @@ export default function App() {
           onAdd={openNewCard}
           onAddBoardItem={addBoardItem}
           onSaveMedia={saveMedia}
+          onPrepareStickers={ensureAutumnStickerAssets}
           onBoardChange={setActiveBoardId}
           onOpenList={() => setPage('list')}
           onOpenPage={setPage}
@@ -1982,6 +2029,7 @@ function HomePage({
   onAdd,
   onAddBoardItem,
   onSaveMedia,
+  onPrepareStickers,
   onBoardChange,
   onOpenList,
   onOpenPage,
@@ -2038,6 +2086,8 @@ function HomePage({
   const cardPointersRef = useRef(new globalThis.Map());
   const cardGestureRef = useRef(null);
   const cardDragStartedRef = useRef(false);
+  const cardPreviewFrameRef = useRef(null);
+  const pendingCardPreviewRef = useRef(null);
   const activeBoardIdRef = useRef(activeBoardId);
   const boardsRef = useRef(boards);
   const dragMemoRef = useRef(null);
@@ -2138,6 +2188,7 @@ function HomePage({
     window.clearTimeout(longPressTimerRef.current);
     window.clearTimeout(boardPressTimerRef.current);
     window.clearTimeout(memoLongPressTimerRef.current);
+    window.cancelAnimationFrame(cardPreviewFrameRef.current);
   }, []);
 
   const commitAppTitle = () => {
@@ -2159,14 +2210,51 @@ function HomePage({
     };
   };
 
-  const patchDraggedMemo = (id, patch) => {
-    updateDragMemo(patch);
-    onMove(id, patch);
+  const applyCardGeometry = (card, patch) => {
+    if (!card || !patch) return;
+    if (Number.isFinite(patch.x)) card.style.left = `${patch.x}%`;
+    if (Number.isFinite(patch.y)) card.style.top = `${patch.y}%`;
+    if (Number.isFinite(patch.scale)) card.style.setProperty('--scale', patch.scale);
+    if (Number.isFinite(patch.rotation)) card.style.setProperty('--rotation', `${patch.rotation}deg`);
   };
 
-  const patchDraggedBoardItem = (id, patch) => {
+  const renderCardPreview = () => {
+    cardPreviewFrameRef.current = null;
+    const patch = pendingCardPreviewRef.current;
+    pendingCardPreviewRef.current = null;
+    applyCardGeometry(activeCardRef.current, patch);
+  };
+
+  const previewDraggedCard = (patch) => {
     updateDragMemo(patch);
-    onMoveBoardItem(id, patch);
+    pendingCardPreviewRef.current = { ...(pendingCardPreviewRef.current || {}), ...patch };
+    if (!cardPreviewFrameRef.current) {
+      cardPreviewFrameRef.current = window.requestAnimationFrame(renderCardPreview);
+    }
+  };
+
+  const flushCardPreview = () => {
+    if (cardPreviewFrameRef.current) {
+      window.cancelAnimationFrame(cardPreviewFrameRef.current);
+      renderCardPreview();
+    }
+  };
+
+  const clearCardPreview = () => {
+    window.cancelAnimationFrame(cardPreviewFrameRef.current);
+    cardPreviewFrameRef.current = null;
+    pendingCardPreviewRef.current = null;
+  };
+
+  const getDraggedCardPatch = () => {
+    const current = dragMemoRef.current;
+    if (!current) return null;
+    return {
+      x: current.x,
+      y: current.y,
+      scale: current.scale || 1,
+      rotation: current.rotation || 0
+    };
   };
 
   const patchSelectedBoardText = (patch) => {
@@ -2298,6 +2386,7 @@ function HomePage({
 
     const startMemoDrag = () => {
       if (cardDragStartedRef.current) return;
+      window.clearTimeout(memoLongPressTimerRef.current);
       cardDragStartedRef.current = true;
       onBeginMove('メモの移動');
       setDraggingMemoId(memo.id);
@@ -2321,6 +2410,7 @@ function HomePage({
       }, 500);
       setDraggingMemoId(null);
       setTrashHover(false);
+      clearCardPreview();
       activeCardRef.current = null;
       cardGestureRef.current = null;
       dragMemoRef.current = null;
@@ -2359,12 +2449,12 @@ function HomePage({
           scale: nextScale,
           rotation: nextRotation
         };
-        patchDraggedMemo(memo.id, patch);
+        previewDraggedCard(patch);
       } else if (cardGestureRef.current?.type === 'drag') {
         if (!cardDragStartedRef.current && moveDistance <= 8) return;
         moveEvent.preventDefault();
         startMemoDrag();
-        patchDraggedMemo(memo.id, getMemoPointPatch(moveEvent.clientX, moveEvent.clientY, cardGestureRef.current));
+        previewDraggedCard(getMemoPointPatch(moveEvent.clientX, moveEvent.clientY, cardGestureRef.current));
       }
       window.requestAnimationFrame(() => updateTrashHover(moveEvent.clientX, moveEvent.clientY));
     };
@@ -2383,7 +2473,17 @@ function HomePage({
         return;
       }
 
-      const shouldDelete = trashActiveRef.current || isPointInTrash(stopEvent.clientX, stopEvent.clientY);
+      const cancelled = stopEvent.type === 'pointercancel';
+      const shouldDelete = !cancelled && (trashActiveRef.current || isPointInTrash(stopEvent.clientX, stopEvent.clientY));
+      if (cancelled) {
+        clearCardPreview();
+        applyCardGeometry(activeCardRef.current, memo);
+      } else {
+        flushCardPreview();
+      }
+      const finalPatch = getDraggedCardPatch();
+      if (cardDragStartedRef.current && shouldDelete) onDeleteMemo(memo.id);
+      else if (cardDragStartedRef.current && !cancelled && finalPatch) onMove(memo.id, finalPatch);
       setDraggingMemoId(null);
       setTrashHover(false);
       activeCardRef.current = null;
@@ -2398,7 +2498,7 @@ function HomePage({
           suppressCardTapRef.current = false;
         }, 350);
       }
-      if (cardDragStartedRef.current && shouldDelete) onDeleteMemo(memo.id);
+      clearCardPreview();
       cardDragStartedRef.current = false;
     };
 
@@ -2412,8 +2512,11 @@ function HomePage({
     event.preventDefault();
     event.stopPropagation();
     const origin = { clientX: event.clientX, clientY: event.clientY };
-    cardDragStartedRef.current = false;
-    dragMemoRef.current = { ...item };
+    const isContinuingItemGesture = cardGestureRef.current?.memoId === item.id && cardPointersRef.current.size > 0;
+    if (!isContinuingItemGesture) {
+      cardDragStartedRef.current = false;
+      dragMemoRef.current = { ...item };
+    }
     activeCardRef.current = event.currentTarget;
     cardPointersRef.current.set(event.pointerId, {
       pointerId: event.pointerId,
@@ -2421,10 +2524,6 @@ function HomePage({
       clientY: event.clientY
     });
     event.currentTarget.setPointerCapture(event.pointerId);
-
-    cardGestureRef.current = cardPointersRef.current.size >= 2
-      ? createPinchGesture(item)
-      : createDragGesture(event, item);
 
     const startItemDrag = () => {
       if (cardDragStartedRef.current) return;
@@ -2437,6 +2536,16 @@ function HomePage({
           : 'テキストの移動');
       setDraggingBoardItemId(item.id);
     };
+
+    if (isContinuingItemGesture) {
+      if (cardPointersRef.current.size >= 2) {
+        cardGestureRef.current = createPinchGesture(item);
+        startItemDrag();
+      }
+      return;
+    }
+
+    cardGestureRef.current = createDragGesture(event, item);
 
     const moveItem = (moveEvent) => {
       if (!cardPointersRef.current.has(moveEvent.pointerId)) return;
@@ -2456,29 +2565,72 @@ function HomePage({
         const points = Array.from(cardPointersRef.current.values()).slice(0, 2);
         const center = getPointerCenter(points[0], points[1]);
         const maxX = getBoardItemMaxX();
-        patchDraggedBoardItem(item.id, {
+        previewDraggedCard({
           x: clamp(gesture.x + ((center.x - gesture.center.x) / gesture.boardRect.width) * 100, -8, maxX),
           y: clamp(gesture.y + ((center.y - gesture.center.y) / gesture.boardRect.height) * 100, -8, BOARD_ITEM_MAX_Y),
-          scale: clamp(gesture.scale * (getPointerDistance(points[0], points[1]) / gesture.distance), 0.3, 3.2),
+          scale: clamp(getBoardItemPinchScale(
+            gesture.scale,
+            gesture.distance,
+            getPointerDistance(points[0], points[1])
+          ), 0.3, 3.2),
           rotation: clamp(gesture.rotation + getPointerAngle(points[0], points[1]) - gesture.angle, -180, 180)
         });
       } else if (cardGestureRef.current?.type === 'drag') {
-        const moveDistance = Math.hypot(moveEvent.clientX - origin.clientX, moveEvent.clientY - origin.clientY);
-        if (!cardDragStartedRef.current && moveDistance <= 8) return;
+        if (!cardDragStartedRef.current && !hasBoardItemDragStarted(origin, moveEvent)) return;
         moveEvent.preventDefault();
         startItemDrag();
-        patchDraggedBoardItem(
-          item.id,
-          getMemoPointPatch(moveEvent.clientX, moveEvent.clientY, cardGestureRef.current, BOARD_ITEM_MAX_Y, getBoardItemMaxX())
-        );
+        previewDraggedCard(getMemoPointPatch(
+          moveEvent.clientX,
+          moveEvent.clientY,
+          cardGestureRef.current,
+          BOARD_ITEM_MAX_Y,
+          getBoardItemMaxX()
+        ));
       }
       window.requestAnimationFrame(() => updateTrashHover(moveEvent.clientX, moveEvent.clientY));
     };
 
     const stopItem = (stopEvent) => {
       cardPointersRef.current.delete(stopEvent.pointerId);
-      if (cardPointersRef.current.size > 0) return;
-      const shouldDelete = trashActiveRef.current || isPointInTrash(stopEvent.clientX, stopEvent.clientY);
+      if (cardPointersRef.current.size >= 2) {
+        cardGestureRef.current = createPinchGesture(item);
+        return;
+      }
+      if (cardPointersRef.current.size === 1) {
+        const point = Array.from(cardPointersRef.current.values())[0];
+        cardGestureRef.current = createDragGesture(point, dragMemoRef.current || item);
+        return;
+      }
+      if (
+        stopEvent.type !== 'pointercancel'
+        && !cardDragStartedRef.current
+        && cardGestureRef.current?.type === 'drag'
+        && hasBoardItemDragStarted(origin, stopEvent)
+      ) {
+        startItemDrag();
+        previewDraggedCard(getMemoPointPatch(
+          stopEvent.clientX,
+          stopEvent.clientY,
+          cardGestureRef.current,
+          BOARD_ITEM_MAX_Y,
+          getBoardItemMaxX()
+        ));
+      }
+      const cancelled = stopEvent.type === 'pointercancel';
+      const shouldDelete = !cancelled && (trashActiveRef.current || isPointInTrash(stopEvent.clientX, stopEvent.clientY));
+      if (cancelled) {
+        clearCardPreview();
+        applyCardGeometry(activeCardRef.current, item);
+      } else {
+        flushCardPreview();
+      }
+      const finalPatch = getDraggedCardPatch();
+      if (cardDragStartedRef.current && shouldDelete) {
+        onDeleteBoardItem(item.id);
+        setSelectedBoardItemId('');
+      } else if (cardDragStartedRef.current && !cancelled && finalPatch) {
+        onMoveBoardItem(item.id, finalPatch);
+      }
       setDraggingBoardItemId(null);
       setTrashHover(false);
       activeCardRef.current = null;
@@ -2487,17 +2639,15 @@ function HomePage({
       window.removeEventListener('pointermove', moveItem);
       window.removeEventListener('pointerup', stopItem);
       window.removeEventListener('pointercancel', stopItem);
-      if (cardDragStartedRef.current && shouldDelete) {
-        onDeleteBoardItem(item.id);
-        setSelectedBoardItemId('');
-      } else if (!cardDragStartedRef.current && stopEvent.type !== 'pointercancel' && item.type === 'sticker' && item.assetId === 'autumn-trial-sticky') {
+      if (!cardDragStartedRef.current && !cancelled && item.type === 'sticker' && item.assetId === 'autumn-trial-sticky') {
         setStickerNote({ ...item });
-      } else if (!cardDragStartedRef.current && item.type === 'text') {
+      } else if (!cardDragStartedRef.current && !cancelled && item.type === 'text') {
         markCurrentBoardActive();
         setSelectedBoardItemId(item.id);
         setQuickAdd(null);
         setPasteMenu(null);
       }
+      clearCardPreview();
       cardDragStartedRef.current = false;
     };
 
@@ -2592,6 +2742,7 @@ function HomePage({
     const rect = boardRef.current?.getBoundingClientRect();
     const position = quickAdd || pasteMenu || (rect ? getBoardPositionFromEvent({ clientX: rect.left + rect.width / 2, clientY: Math.max(rect.top, 120) + Math.min(rect.height, window.innerHeight - 220) / 2 }) : { x: 45, y: 20 });
     setStickerPicker(position);
+    onPrepareStickers?.();
     setQuickAdd(null);
     setPasteMenu(null);
   };

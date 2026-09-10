@@ -68,13 +68,13 @@ export function revokePaidStickerSources(sources = {}, urlApi = URL) {
   });
 }
 
-export async function loadAutumnStickerAccess(client = memoSupabase, settings = config) {
+export async function loadAutumnStickerAccess(client = memoSupabase, settings = config, options = {}) {
   const sources = {};
-  if (!client) return { status: 'unconfigured', sources, error: '' };
+  if (!client) return { status: 'unconfigured', sources, allPaidAssetsLoaded: true, error: '' };
 
   const { data: { session }, error: sessionError } = await client.auth.getSession();
-  if (sessionError) return { status: 'error', sources, error: sessionError.message };
-  if (!session?.user) return { status: 'signed-out', sources, error: '' };
+  if (sessionError) return { status: 'error', sources, allPaidAssetsLoaded: true, error: sessionError.message };
+  if (!session?.user) return { status: 'signed-out', sources, allPaidAssetsLoaded: true, error: '' };
 
   const { data: paidData, error: paidError } = await client.schema('package')
     .from('theme_pack_entitlements')
@@ -94,9 +94,14 @@ export async function loadAutumnStickerAccess(client = memoSupabase, settings = 
   ));
   if (!paidEntitled && !trialEntitled) {
     const accessError = paidError || trialError;
-    return { status: accessError ? 'error' : 'not-entitled', sources, error: accessError?.message || '' };
+    return { status: accessError ? 'error' : 'not-entitled', sources, allPaidAssetsLoaded: true, error: accessError?.message || '' };
   }
-  const downloaded = await Promise.all((paidEntitled ? AUTUMN_PAID_STICKER_IDS : []).map(async (id) => {
+  const requestedPaidStickerIds = paidEntitled
+    ? (Array.isArray(options.assetIds)
+        ? AUTUMN_PAID_STICKER_IDS.filter(id => options.assetIds.includes(id))
+        : AUTUMN_PAID_STICKER_IDS)
+    : [];
+  const downloaded = await Promise.all(requestedPaidStickerIds.map(async (id) => {
     try {
       const { data: blob, error: downloadError } = await client.storage
         .from(settings.bucket)
@@ -119,6 +124,7 @@ export async function loadAutumnStickerAccess(client = memoSupabase, settings = 
     userId: session.user.id,
     packs: [...(paidEntitled ? ['autumn-letter-set'] : []), ...(trialEntitled ? ['goodnotes-autumn-trial-set'] : [])],
     status: paidEntitled ? 'ready' : 'trial-ready',
+    allPaidAssetsLoaded: !paidEntitled || requestedPaidStickerIds.length === AUTUMN_PAID_STICKER_IDS.length,
     sources,
     error: paidError?.message || trialError?.message || ''
   };

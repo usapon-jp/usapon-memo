@@ -52,9 +52,7 @@ const stripPersistedMediaPayloads = (data = {}) => ({
   ]))
 });
 
-export const getMemoStorageDebugInfo = (data, extra = {}) => {
-  const normalized = stripPersistedMediaPayloads(normalizeData(data));
-  const nextRaw = JSON.stringify(normalized);
+const createMemoStorageDebugInfo = (normalized, nextRaw, extra = {}) => {
   const currentRaw = localStorage.getItem(STORAGE_KEY) || '';
   const currentUsageBytes = getStringBytes(currentRaw);
   const attemptedSaveBytes = getStringBytes(nextRaw);
@@ -72,6 +70,11 @@ export const getMemoStorageDebugInfo = (data, extra = {}) => {
   };
 };
 
+export const getMemoStorageDebugInfo = (data, extra = {}) => {
+  const normalized = stripPersistedMediaPayloads(normalizeData(data));
+  return createMemoStorageDebugInfo(normalized, JSON.stringify(normalized), extra);
+};
+
 export const getStorageKey = () => STORAGE_KEY;
 
 export const loadMemoData = () => {
@@ -87,9 +90,10 @@ export const loadMemoData = () => {
 
 export const saveMemoData = (data, debugContext = {}) => {
   const normalized = stripPersistedMediaPayloads(normalizeData(data));
-  const debugInfo = getMemoStorageDebugInfo(normalized, debugContext);
+  const nextRaw = JSON.stringify(normalized);
+  const debugInfo = createMemoStorageDebugInfo(normalized, nextRaw, debugContext);
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
+    localStorage.setItem(STORAGE_KEY, nextRaw);
     if (debugContext.logSuccess) {
       console.log('[usapon-memo storage ok]', debugInfo);
     }

@@ -2936,6 +2936,8 @@ body {
 .board-card.is-dragging:active {
   z-index: 1000;
   transition: none;
+  box-shadow: 0 10px 18px rgba(74, 46, 24, 0.12);
+  will-change: transform;
 }
 
 .link-preview {
@@ -2973,7 +2975,8 @@ body {
 .board-item.is-dragging {
   z-index: 1001;
   transition: none;
-  filter: drop-shadow(0 18px 22px rgba(72, 45, 24, 0.22));
+  filter: none;
+  will-change: transform;
 }
 
 .board-item.is-selected {
@@ -3020,6 +3023,15 @@ body {
   object-fit: contain;
   pointer-events: none;
   filter: drop-shadow(0 10px 12px rgba(84, 54, 28, 0.18));
+}
+
+@media (pointer: coarse) {
+  .board-free-sticker::before {
+    content: "";
+    position: absolute;
+    inset: -12px;
+    border-radius: 16px;
+  }
 }
 
 .board-free-sticker span {
@@ -3775,5 +3787,5 @@ body {
 .sticker-note-editor header button { border:0; border-radius:20px; padding:12px; color:#60482f; background:#eee5d4; }
 .sticker-note-paper { position:relative; width:min(340px,100%); margin:auto; }
 .sticker-note-paper img { display:block; width:100%; }
-.sticker-note-paper textarea { position:absolute; top:12%; left:12%; width:76%; height:63%; resize:none; border:0; background:transparent; color:#60482f; font:inherit; line-height:1.5; padding:0; }
+.sticker-note-paper textarea { position:absolute; top:12%; left:12%; width:76%; height:63%; resize:none; border:0; background:transparent; color:#60482f; font:inherit; line-height:1.5; padding:0; outline:1px dashed rgba(96,72,47,.2); outline-offset:4px; }
 .board-free-sticker.board-sticker-note .sticker-note-text { position:absolute; top:12%; left:12%; width:76%; height:63%; min-width:0; padding:0; border-radius:0; background:transparent; font-size:4px; font-weight:500; line-height:1.5; white-space:pre-wrap; overflow-wrap:anywhere; overflow:hidden; pointer-events:none; }

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  AUTUMN_ENTITLEMENT_ID,
   AUTUMN_FREE_STICKER_ID,
   AUTUMN_PAID_STICKER_IDS,
   AUTUMN_STICKER_IDS,
@@ -136,6 +137,23 @@ test('有料セットだけの購入者にも無料柄を含めた26点を表示
   storage: {from:()=>({download:async()=>({data:new Blob(['test']),error:null})})}
  };
  const result = await loadAutumnStickerAccess(client,getAutumnStickerConfig({}));
- try { assert.equal(result.status,'ready'); assert.deepEqual(Object.keys(result.sources).sort(),[...AUTUMN_STICKER_IDS].sort()); }
+ try { assert.equal(result.status,'ready'); assert.equal(result.allPaidAssetsLoaded,true); assert.deepEqual(Object.keys(result.sources).sort(),[...AUTUMN_STICKER_IDS].sort()); }
  finally { revokePaidStickerSources(result.sources); }
+});
+
+test('起動時はボードで使用中の有料素材だけを読み込める', async () => {
+ const downloaded = [];
+ const client = {
+  auth: {getSession: async () => ({data:{session:{user:{id:'paid-user'}}}})},
+  schema: name => ({from:()=>query({data:name==='package'?[{theme_pack_id:'autumn-letter-set'}]:[],error:null})}),
+  storage: {from:()=>({download:async path=>{ downloaded.push(path); return {data:new Blob(['test']),error:null}; }})}
+ };
+ const target = AUTUMN_PAID_STICKER_IDS[3];
+ const result = await loadAutumnStickerAccess(client,getAutumnStickerConfig({}),{assetIds:[target]});
+ try {
+  assert.equal(result.status,'ready');
+  assert.equal(result.allPaidAssetsLoaded,false);
+  assert.deepEqual(downloaded,[`${AUTUMN_ENTITLEMENT_ID}/${target}.png`]);
+  assert.deepEqual(Object.keys(result.sources).sort(),[AUTUMN_FREE_STICKER_ID,target].sort());
+ } finally { revokePaidStickerSources(result.sources); }
 });
