@@ -115,6 +115,8 @@ export async function loadAutumnStickerAccess(client = memoSupabase, settings = 
   }
   if (trialEntitled) Object.assign(sources, getAutumnTrialStickerSources(import.meta.env));
   return {
+    userId: session.user.id,
+    packs: [...(paidEntitled ? ['autumn-letter-set'] : []), ...(trialEntitled ? ['goodnotes-autumn-trial-set'] : [])],
     status: paidEntitled ? 'ready' : 'trial-ready',
     sources,
     error: paidError?.message || trialError?.message || ''

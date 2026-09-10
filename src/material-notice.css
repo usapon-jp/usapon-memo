@@ -1,0 +1,7 @@
+.material-notice { border:0; border-radius:20px; padding:24px; width:min(440px,calc(100vw - 32px)); max-height:85dvh; overflow:auto; box-sizing:border-box; color:#60482f; background:#fffaf2; box-shadow:0 16px 50px #0003; }
+.material-notice::backdrop { background:#30261d66; }
+.material-notice h2 { font-size:20px; line-height:1.5; margin:0 0 12px; }
+.material-notice p { font-size:15px; line-height:1.8; }
+.material-notice-actions { display:flex; flex-wrap:wrap; gap:12px; margin-top:20px; }
+.material-notice-actions button,.material-notice-actions a { min-height:44px; padding:10px 18px; border:0; border-radius:24px; background:#f5e8d5; color:#60482f; cursor:pointer; font:inherit; }
+.material-notice-actions > :first-child { background:#ea767a; color:white; }

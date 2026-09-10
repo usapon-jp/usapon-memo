@@ -1,3 +1,4 @@
+import { MaterialNotice } from "./MaterialNotice";
 import html2canvas from 'html2canvas';
 import BoardDrawing from './BoardDrawing';
 import { forwardRef, useEffect, useMemo, useRef, useState } from 'react';
@@ -804,6 +805,7 @@ export default function App() {
   const [mediaReady, setMediaReady] = useState(false);
   const [installContext] = useState(detectInstallContext);
   const [installGuideOpen, setInstallGuideOpen] = useState(false);
+  const [materialPack, setMaterialPack] = useState('');
   const [autumnStickerAccess, setAutumnStickerAccess] = useState({ status: 'loading', sources: {}, error: '' });
   const [installGuideHidden, setInstallGuideHidden] = useState(() => {
     try { return localStorage.getItem(INSTALL_GUIDE_HIDDEN_KEY) === '1'; } catch { return false; }
@@ -1676,6 +1678,7 @@ export default function App() {
         <InstagramInstallNotice hasData={data.memos.length > 0} onOpen={() => setInstallGuideOpen(true)} />
       )}
 
+      <MaterialNotice app="memo" userId={autumnStickerAccess.userId} status={autumnStickerAccess.status === 'not-entitled' ? 'none' : autumnStickerAccess.status === 'assets-unavailable' ? 'error' : autumnStickerAccess.status} packs={autumnStickerAccess.packs || []} onLogin={() => signInWithGoogle()} onView={pack => { setMaterialPack(pack === 'autumn-letter-set' ? 'autumn' : 'autumnTrial'); setPage('stickers'); }} />
       {page === 'home' && (
         <HomePage
           appTitle={appTitle}
@@ -1818,6 +1821,7 @@ export default function App() {
 
       {page === 'stickers' && (
         <StickerPage
+          initialPack={materialPack}
           unlockedStickerIds={effectiveUnlockedStickerIds}
           visibleStickerIds={displayVisibleStickerIds}
           onBack={() => setPage('home')}
@@ -5208,6 +5212,7 @@ function SettingsPage({
 }
 
 function StickerPage({
+  initialPack,
   unlockedStickerIds,
   visibleStickerIds,
   onBack,
@@ -5221,7 +5226,8 @@ function StickerPage({
   const [tab, setTab] = useState('manage');
   const [code, setCode] = useState('');
   const [draggingStickerId, setDraggingStickerId] = useState('');
-  const [openPackIds, setOpenPackIds] = useState(() => ['default']);
+  const [openPackIds, setOpenPackIds] = useState(() => initialPack ? [initialPack] : ['default']);
+  useEffect(() => { if (initialPack) { setTab('manage'); setOpenPackIds([initialPack]); requestAnimationFrame(() => document.querySelector(`[data-material-pack="${initialPack}"]`)?.scrollIntoView({ block: 'center' })); } }, [initialPack]);
   const visibleStickerIdsRef = useRef(visibleStickerIds);
   const unlockedSet = useMemo(() => new Set(unlockedStickerIds), [unlockedStickerIds]);
   const visibleSet = useMemo(() => new Set(visibleStickerIds), [visibleStickerIds]);
@@ -5380,7 +5386,7 @@ function StickerPage({
                 const isOpen = openPackIds.includes(pack.id);
                 const visibleCount = pack.stickers.filter(sticker => visibleSet.has(sticker.id)).length;
                 return (
-                  <section key={pack.id} className="sticker-pack">
+                  <section key={pack.id} className="sticker-pack" data-material-pack={pack.id}>
                     <button
                       type="button"
                       className="sticker-pack-header"
