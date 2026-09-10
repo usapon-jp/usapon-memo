@@ -3,6 +3,7 @@ import html2canvas from 'html2canvas';
 import BoardDrawing from './BoardDrawing';
 import { forwardRef, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  LogIn,
   ArrowLeft,
   Bell,
   BookOpen,
@@ -1704,6 +1705,7 @@ export default function App() {
           onBoardChange={setActiveBoardId}
           onOpenList={() => setPage('list')}
           onOpenPage={setPage}
+          onGoogleLogin={() => void signInWithGoogle().catch(error => setAppToast(error.message || "ログインを開始できませんでした。"))}
           onEdit={openEditMemo}
           onBeginMove={beginMove}
           onMove={patchMemo}
@@ -1977,6 +1979,7 @@ function HomePage({
   onBoardChange,
   onOpenList,
   onOpenPage,
+  onGoogleLogin,
   onEdit,
   onBeginMove,
   onMove,
@@ -3165,6 +3168,10 @@ function HomePage({
             <X size={20} />
           </button>
           <p>メニュー</p>
+          <button type="button" onClick={() => { setMainMenuOpen(false); onGoogleLogin(); }}>
+            <LogIn size={19} />
+            Googleでログイン
+          </button>
           <button type="button" onClick={() => openMenuPage('settings')}>
             <MoreHorizontal size={19} />
             設定
