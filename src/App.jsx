@@ -2057,6 +2057,8 @@ function HomePage({
 }) {
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [drawingMode, setDrawingMode] = useState(false);
+  const [boardZoom, setBoardZoom] = useState(1);
+  const [boardZoomOrigin, setBoardZoomOrigin] = useState({ x: 50, y: 50 });
   const [mainMenuOpen, setMainMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [boardMenu, setBoardMenu] = useState(null);
@@ -2123,6 +2125,11 @@ function HomePage({
   useEffect(() => {
     if (!titleEditing) setTitleDraft(appTitle);
   }, [appTitle, titleEditing]);
+
+  useEffect(() => {
+    setBoardZoom(1);
+    setBoardZoomOrigin({ x: 50, y: 50 });
+  }, [activeBoardId]);
 
   const scrollBoardTabIntoView = (boardId = activeBoardIdRef.current, behavior = 'smooth') => {
     const activeTab = boardTabRefsRef.current.get(boardId);
@@ -3421,7 +3428,8 @@ function HomePage({
         onPointerCancel={clearBoardPress}
         onPointerLeave={clearBoardPress}
       >
-        <div ref={boardRef} className={`sticky-board cork-board board-background-${boardBackground}`} onClick={(event) => {
+        <div ref={boardRef} className={`sticky-board cork-board board-background-${boardBackground} ${boardZoom > 1 ? 'is-zoomed' : ''}`}
+          style={{ '--board-zoom': boardZoom, '--board-zoom-origin-x': `${boardZoomOrigin.x}%`, '--board-zoom-origin-y': `${boardZoomOrigin.y}%` }} onClick={(event) => {
           if (boardLongPressFiredRef.current) {
             event.stopPropagation();
             boardLongPressFiredRef.current = false;
@@ -3431,7 +3439,16 @@ function HomePage({
         }}>
           <BoardDrawing key={activeBoard.id} value={activeBoard.drawing}
             onChange={drawing => onUpdateBoard(activeBoard.id, { drawing })}
-            onModeChange={setDrawingMode} onError={onShowToast} onStickers={openBoardStickerPicker} />
+            onModeChange={isDrawing => {
+              setDrawingMode(isDrawing);
+              if (!isDrawing) setBoardZoom(1);
+            }}
+            zoom={boardZoom}
+            onZoomChange={({ zoom, origin }) => {
+              setBoardZoom(zoom);
+              setBoardZoomOrigin(origin);
+            }}
+            onError={onShowToast} onStickers={openBoardStickerPicker} />
           {memos.length === 0 && boardItems.length === 0 && !activeBoard.drawing?.strokes.length && !drawingMode ? (
             <button
               type="button"

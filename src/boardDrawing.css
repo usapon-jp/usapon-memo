@@ -24,7 +24,6 @@
 .board-color-palette { display: grid; grid-template-columns: repeat(6, 1fr); gap: 7px; justify-items: center; padding: 5px 2px 8px; }
 .board-color-palette button { width: 34px; min-width: 34px; height: 34px; min-height: 34px; border: 3px solid #fff; background: var(--palette-color); box-shadow: 0 0 0 1px #725e5830; }
 .board-color-palette button[aria-pressed="true"] { outline: 2px solid #806d64; outline-offset: 2px; }
-.board-color-panel .board-color-confirm { display: flex; width: 100%; min-height: 42px; gap: 6px; border-radius: 12px; color: #fff; background: linear-gradient(135deg,#ed93a2,#df7184); font-size: 12px; font-weight: 800; }
 @media (max-width: 390px) {
   .board-color-panel { padding: 10px; }
   .board-color-palette { gap: 5px; }

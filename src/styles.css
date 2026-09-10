@@ -2814,6 +2814,11 @@ body {
   overflow: hidden;
 }
 
+.cork-board.is-zoomed {
+  transform: scale(var(--board-zoom));
+  transform-origin: var(--board-zoom-origin-x) var(--board-zoom-origin-y);
+}
+
 .board-background-notebook {
   background-color: #fbfaf1;
   background-image:

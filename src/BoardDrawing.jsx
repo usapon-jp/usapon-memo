@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { Sticker, Check, Pencil, Undo2, Redo2, Sparkles } from 'lucide-react';
-import { newDocument, validateDocument, LIMITS } from '../public/handwriting/core/document.mjs';
+import { Sticker, ChevronDown, Pencil, Undo2, Redo2, Sparkles } from 'lucide-react';
+import { DrawingHistory, newDocument } from '../public/handwriting/core/document.mjs';
+import { InputSession } from '../public/handwriting/core/input.mjs';
 import { StrokeBuilder } from '../public/handwriting/core/stroke.mjs';
 import { renderDocument, paintStroke } from '../public/handwriting/core/render.mjs';
 import { hexToHsv, hsvToHex } from '../public/handwriting/core/color-picker.mjs';
@@ -18,7 +19,11 @@ const PALETTE = [
   ['#82916b', '深緑'], ['#735679', '紫'], ['#41434f', '墨色']
 ];
 
-function CircularColorPicker({ color, onChange, onClose }) {
+const sameDocumentRevision = (left, right) => (
+  left === right || Boolean(left && right && left.id === right.id && left.revision === right.revision)
+);
+
+function CircularColorPicker({ color, onChange, onSelect }) {
   const wheelRef = useRef(null);
   const pointerMode = useRef(null);
   const [hsv, setHsv] = useState(() => hexToHsv(color));
@@ -85,39 +90,44 @@ function CircularColorPicker({ color, onChange, onClose }) {
     <canvas ref={wheelRef} className="board-color-wheel" role="slider" tabIndex="0" aria-label="色相と鮮やかさ"
       onPointerDown={event => { event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); updateWheel(event); }}
       onPointerMove={event => { if (event.currentTarget.hasPointerCapture(event.pointerId)) updateWheel(event); }}
-      onPointerUp={event => { pointerMode.current = null; event.currentTarget.releasePointerCapture(event.pointerId); }}
+      onPointerUp={event => { pointerMode.current = null; event.currentTarget.releasePointerCapture(event.pointerId); onSelect(); }}
       onPointerCancel={() => { pointerMode.current = null; }} />
     <label className="board-color-brightness" aria-label="明るさ">
-      <input type="range" min="0" max="1" step="0.01" value={hsv.v} onChange={event => apply({ ...hsv, v: Number(event.target.value) })} />
+      <input type="range" min="0" max="1" step="0.01" value={hsv.v}
+        onChange={event => apply({ ...hsv, v: Number(event.target.value) })} onPointerUp={onSelect} />
     </label>
     <div className="board-color-palette" aria-label="パレット">
       {PALETTE.map(([value, label]) => <button key={value} type="button" aria-label={label} aria-pressed={color.toLowerCase() === value}
-        style={{ '--palette-color': value }} onClick={() => apply(hexToHsv(value))} />)}
+        style={{ '--palette-color': value }} onClick={() => { apply(hexToHsv(value)); onSelect(); }} />)}
     </div>
-    <button type="button" className="board-color-confirm" onClick={onClose}><Check size={18}/><span>この色に決定</span></button>
   </section>;
 }
 
-export default function BoardDrawing({ value, onChange, onModeChange, onError, onStickers, readOnly = false }) {
+export default function BoardDrawing({ value, onChange, onModeChange, onError, onStickers, onZoomChange, zoom = 1, readOnly = false }) {
   const canvasRef = useRef(null);
-  const live = useRef({ value, stroke: null, pointer: null, frame: null });
+  const live = useRef({ value, stroke: null, frame: null });
+  const historyRef = useRef(value ? new DrawingHistory(value) : null);
+  const handlersRef = useRef({});
+  const inputRef = useRef(null);
+  const gestureTouchesRef = useRef(new globalThis.Map());
+  const pinchRef = useRef(null);
+  const configRef = useRef({ tool: null, color: '#594536', size: 4 });
+  const [, setHistoryVersion] = useState(0);
   const [open, setOpen] = useState(false);
   const [tool, setTool] = useState(null);
   const [color, setColor] = useState('#594536');
   const [colorOpen, setColorOpen] = useState(false);
   const [size, setSize] = useState(4);
-  const [past, setPast] = useState([]);
-  const [future, setFuture] = useState([]);
   const expectedValue = useRef(value);
-  live.current.value = value;
+  configRef.current = { tool, color, size };
+  live.current.value = historyRef.current?.document || value;
   const publish = next => {
     expectedValue.current = next;
+    live.current.value = next;
     onChange(next);
   };
-  const commit = next => {
-    setPast(current => [...current.slice(-(LIMITS.undo - 1)), value]);
-    setFuture([]);
-    publish(next);
+  const refreshHistoryControls = () => {
+    setHistoryVersion(current => current + 1);
   };
 
   useEffect(() => {
@@ -162,74 +172,185 @@ export default function BoardDrawing({ value, onChange, onModeChange, onError, o
   }, []);
 
   useEffect(() => {
-    // A global undo or restored backup invalidates this drawing's redo stack.
-    if (value !== expectedValue.current) {
-      setPast([]);
-      setFuture([]);
+    // An unrelated restore replaces the board document and starts a fresh local history.
+    // Matching by document revision keeps the local history intact when React gives us
+    // a structurally cloned version of the just-published drawing.
+    if (!sameDocumentRevision(value, expectedValue.current)) {
+      inputRef.current?.cancelAll('external-document-change');
+      historyRef.current = value ? new DrawingHistory(value) : null;
+      refreshHistoryControls();
     }
     expectedValue.current = value;
+    live.current.value = historyRef.current?.document || value;
     live.current.refresh?.();
   }, [value]);
   useEffect(() => { onModeChange?.(Boolean(tool)); }, [tool, onModeChange]);
-  useEffect(() => () => onModeChange?.(false), [onModeChange]);
+  useEffect(() => () => {
+    inputRef.current?.cancelAll('drawing-unmounted');
+    gestureTouchesRef.current.clear();
+    onModeChange?.(false);
+  }, [onModeChange]);
 
-  const sample = event => {
+  const appendPoint = point => {
     const state = live.current;
-    if (!state.stroke || state.pointer !== event.pointerId) return;
+    if (!state.stroke) return;
     const rect = canvasRef.current.getBoundingClientRect();
     const { document: doc, builder } = state.stroke;
-    const remaining = LIMITS.points - doc.strokes.reduce((n, s) => n + s.points.length, 0);
-    const events = event.nativeEvent?.getCoalescedEvents?.() || [event];
-    for (const point of events.length ? events : [event]) {
-      if (builder.stroke.points.length >= remaining) break;
-      builder.sample({
-        x: Math.max(0, Math.min(doc.canvas.width, (point.clientX - rect.left) / rect.width * doc.canvas.width)),
-        y: Math.max(0, Math.min(doc.canvas.height, (point.clientY - rect.top) / rect.height * doc.canvas.height)),
-        time: point.timeStamp, pressure: point.pressure
-      });
-    }
+    builder.sample({
+      x: Math.max(0, Math.min(doc.canvas.width, (point.x - rect.left) / rect.width * doc.canvas.width)),
+      y: Math.max(0, Math.min(doc.canvas.height, (point.y - rect.top) / rect.height * doc.canvas.height)),
+      time: point.time, pressure: point.pressure
+    });
     if (!state.frame) state.frame = requestAnimationFrame(() => { state.frame = null; state.redraw(); });
   };
-  const start = event => {
-    event.stopPropagation();
-    if (!tool || live.current.pointer !== null || event.button !== 0) return;
-    event.preventDefault();
+  const beginStroke = point => {
+    const { tool: nextTool, color: nextColor, size: nextSize } = configRef.current;
+    if (!nextTool || live.current.stroke) return;
     const rect = canvasRef.current.getBoundingClientRect();
-    const doc = value || newDocument({ width: Math.max(320, Math.min(4096, Math.round(rect.width))), height: Math.max(320, Math.min(4096, Math.round(rect.height))) });
-    if (doc.strokes.length >= LIMITS.strokes || doc.strokes.reduce((n, s) => n + s.points.length, 0) >= LIMITS.points) {
-      onError?.('このボードの手書きがいっぱいです。別のボードをご利用ください。');
+    if (!historyRef.current) {
+      historyRef.current = new DrawingHistory(newDocument({
+        width: Math.max(320, Math.min(4096, Math.round(rect.width))),
+        height: Math.max(320, Math.min(4096, Math.round(rect.height)))
+      }));
+    }
+    const doc = historyRef.current.document;
+    live.current.stroke = { document: doc, builder: new StrokeBuilder({ tool: nextTool, color: nextColor, size: nextSize, input: point.type, time: point.time }) };
+    appendPoint(point);
+  };
+  const cancelStroke = () => {
+    const state = live.current;
+    if (!state.stroke) return;
+    state.stroke = null;
+    state.refresh();
+  };
+  const finishStroke = () => {
+    const state = live.current;
+    if (!state.stroke) return;
+    const { builder } = state.stroke;
+    state.stroke = null;
+    if (!builder.stroke.points.length) {
+      state.refresh();
       return;
     }
-    live.current.pointer = event.pointerId;
-    live.current.stroke = { document: doc, builder: new StrokeBuilder({ tool, color, size, input: event.pointerType, time: event.timeStamp }) };
-    event.currentTarget.setPointerCapture(event.pointerId);
-    sample(event);
-  };
-  const finish = (event, cancelled = false) => {
-    event.stopPropagation();
-    const state = live.current;
-    if (state.pointer !== event.pointerId || !state.stroke) return;
-    if (!cancelled) sample(event);
-    const { document: doc, builder } = state.stroke;
-    state.stroke = null;
-    state.pointer = null;
-    if (!cancelled && builder.stroke.points.length) {
-      const next = validateDocument({ ...doc, revision: doc.revision + 1, strokes: [...doc.strokes, builder.stroke] });
-      state.value = next;
-      commit(next);
+    try {
+      historyRef.current.commit(builder.stroke);
+      publish(historyRef.current.document);
+      refreshHistoryControls();
+    } catch (error) {
+      onError?.(error.message || '手書きを保存できませんでした。');
     }
     state.refresh();
   };
-  const close = () => { setOpen(false); setTool(null); setColorOpen(false); };
+  const undo = () => {
+    const history = historyRef.current;
+    if (live.current.stroke || !history?.undo()) return;
+    publish(history.document);
+    refreshHistoryControls();
+  };
+  const redo = () => {
+    const history = historyRef.current;
+    if (live.current.stroke || !history?.redo()) return;
+    publish(history.document);
+    refreshHistoryControls();
+  };
+  const clear = () => {
+    const history = historyRef.current;
+    if (!history?.clear()) return;
+    publish(history.document);
+    refreshHistoryControls();
+  };
+  handlersRef.current = { begin: beginStroke, append: appendPoint, finish: finishStroke, cancel: cancelStroke, undo };
+  if (!inputRef.current) {
+    inputRef.current = new InputSession({
+      begin: point => handlersRef.current.begin(point),
+      append: point => handlersRef.current.append(point),
+      finish: () => handlersRef.current.finish(),
+      cancel: () => handlersRef.current.cancel(),
+      undo: () => handlersRef.current.undo()
+    });
+  }
+  const pointFromEvent = event => ({
+    id: event.pointerId,
+    type: ['pen', 'touch'].includes(event.pointerType) ? event.pointerType : 'mouse',
+    x: event.clientX,
+    y: event.clientY,
+    time: event.timeStamp,
+    pressure: event.pressure
+  });
+  const isStampAtPoint = (x, y) => [...document.querySelectorAll('.board-free-sticker, .memo-sticker-wrap')].some(element => {
+    const rect = element.getBoundingClientRect();
+    return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+  });
+  const updatePinch = (point, onZoomChange, zoom) => {
+    if (point.type !== 'touch' || !gestureTouchesRef.current.has(point.id)) return;
+    gestureTouchesRef.current.set(point.id, point);
+    const touches = [...gestureTouchesRef.current.values()];
+    const pinch = pinchRef.current;
+    if (!pinch || pinch.blocked || touches.length < 2) return;
+    const [first, second] = touches;
+    const distance = Math.hypot(first.x - second.x, first.y - second.y);
+    if (!pinch.engaged && Math.abs(distance - pinch.distance) > 8) {
+      pinch.engaged = true;
+      inputRef.current.gesture();
+    }
+    if (!pinch.engaged) return;
+    const nextZoom = Math.max(1, Math.min(2.2, pinch.zoom * distance / pinch.distance));
+    onZoomChange?.({ zoom: nextZoom, origin: pinch.origin });
+  };
+  const start = (event, onZoomChange, zoom) => {
+    event.stopPropagation();
+    if (!tool || (event.pointerType === 'mouse' && event.button !== 0)) return;
+    event.preventDefault();
+    setColorOpen(false);
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    const point = pointFromEvent(event);
+    if (point.type === 'touch') {
+      gestureTouchesRef.current.set(point.id, point);
+      const touches = [...gestureTouchesRef.current.values()];
+      if (touches.length === 2) {
+        const [first, second] = touches;
+        const rect = canvasRef.current.getBoundingClientRect();
+        pinchRef.current = {
+          blocked: isStampAtPoint(first.x, first.y) || isStampAtPoint(second.x, second.y),
+          distance: Math.max(1, Math.hypot(first.x - second.x, first.y - second.y)),
+          zoom,
+          engaged: false,
+          origin: {
+            x: Math.max(0, Math.min(100, ((first.x + second.x) / 2 - rect.left) / rect.width * 100)),
+            y: Math.max(0, Math.min(100, ((first.y + second.y) / 2 - rect.top) / rect.height * 100))
+          }
+        };
+      }
+    }
+    inputRef.current.down(point);
+  };
+  const sample = (event, onZoomChange, zoom) => {
+    event.stopPropagation();
+    event.preventDefault();
+    const samples = event.nativeEvent?.getCoalescedEvents?.() || [event];
+    for (const sampleEvent of samples.length ? samples : [event]) {
+      const point = pointFromEvent(sampleEvent);
+      updatePinch(point, onZoomChange, zoom);
+      inputRef.current.move(point);
+    }
+  };
+  const finish = (event, cancelled = false) => {
+    event.stopPropagation();
+    const point = pointFromEvent(event);
+    gestureTouchesRef.current.delete(point.id);
+    if (gestureTouchesRef.current.size < 2) pinchRef.current = null;
+    inputRef.current.up(point, cancelled, cancelled ? 'pointercancel' : 'pointerup');
+  };
+  const close = () => { inputRef.current.cancelAll('drawing-closed'); setOpen(false); setTool(null); setColorOpen(false); };
   return <>
     <canvas ref={canvasRef} className="board-ink" aria-hidden="true" />
     {!readOnly && tool && <div className="board-ink-input" aria-label="ボードに手書き"
-      onPointerDown={start} onPointerMove={sample} onPointerUp={finish}
+      onPointerDown={event => start(event, onZoomChange, zoom)} onPointerMove={event => sample(event, onZoomChange, zoom)} onPointerUp={finish}
       onPointerCancel={event => finish(event, true)} onLostPointerCapture={event => finish(event, true)}
       onClick={stop} onContextMenu={event => event.preventDefault()} onTouchStart={stop} onTouchEnd={stop} />}
     {!readOnly && <div className="board-drawing-tools" onPointerDown={stop} onClick={stop} onTouchStart={stop} onTouchEnd={stop}
       onKeyDown={event => { if (event.key === 'Escape') colorOpen ? setColorOpen(false) : close(); }}>
-      {colorOpen && tool !== 'eraser' && <CircularColorPicker color={color} onChange={setColor} onClose={() => setColorOpen(false)} />}
+      {colorOpen && tool !== 'eraser' && <CircularColorPicker color={color} onChange={setColor} onSelect={() => setColorOpen(false)} />}
       {open && <div className="board-drawing-menu" role="toolbar" aria-label="手書きの文房具">
         {onStickers && <button type="button" title="ステッカー" aria-label="ボードにステッカーを貼る" onClick={() => { close(); onStickers(); }}><Sticker size={27} /></button>}
         {TOOLS.map(([id, label, defaultSize]) => <button key={id} type="button" title={label} aria-label={label} aria-pressed={tool === id}
@@ -244,26 +365,16 @@ export default function BoardDrawing({ value, onChange, onModeChange, onError, o
       </div>}
       {open && <div className="board-drawing-actions">
         <div className="board-drawing-history">
-          <button type="button" aria-label="手書きを取り消す" disabled={!past.length} onClick={() => {
-            const previous = past.at(-1);
-            setPast(current => current.slice(0, -1));
-            setFuture(current => [...current.slice(-(LIMITS.undo - 1)), value]);
-            publish(previous);
-          }}><Undo2 size={18}/></button>
-          <button type="button" aria-label="手書きをやり直す" disabled={!future.length} onClick={() => {
-            const next = future.at(-1);
-            setFuture(current => current.slice(0, -1));
-            setPast(current => [...current.slice(-(LIMITS.undo - 1)), value]);
-            publish(next);
-          }}><Redo2 size={18}/></button>
+          <button type="button" aria-label="手書きを取り消す" disabled={!historyRef.current?.past.length} onClick={undo}><Undo2 size={18}/></button>
+          <button type="button" aria-label="手書きをやり直す" disabled={!historyRef.current?.future.length} onClick={redo}><Redo2 size={18}/></button>
         </div>
         <button type="button" className="board-drawing-clear" aria-label="手書きをまっさらにする"
-          disabled={!value?.strokes.length} onClick={() => commit({ ...value, revision: value.revision + 1, strokes: [] })}>
+          disabled={!historyRef.current?.document.strokes.length} onClick={clear}>
           <Sparkles size={16}/><small>まっさら</small>
         </button>
       </div>}
       <button type="button" className="board-drawing-toggle" aria-label={open ? '手書きを終了' : 'ボードに手書きする'} aria-expanded={open}
-        onClick={() => open ? close() : setOpen(true)}>{open ? <Check size={22}/> : <Pencil size={21}/>}</button>
+        onClick={() => open ? close() : setOpen(true)}>{open ? <ChevronDown size={22}/> : <Pencil size={21}/>}</button>
     </div>}
   </>;
 }
