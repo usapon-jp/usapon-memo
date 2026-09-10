@@ -10,6 +10,7 @@ import {
   PACKAGE_THEME_PACK_ASSETS_BUCKET,
   getAutumnStickerConfig,
   memoAuthRedirectUrl,
+  signInWithGoogle,
   isSupabaseConfigured,
   loadAutumnStickerAccess,
   revokePaidStickerSources
@@ -115,4 +116,15 @@ test('取り消された無料お試し権利では素材を解放しない', as
     assert.equal(memoAuthRedirectUrl(`https://usapon-jp.github.io/usapon-memo${suffix}`), 'https://usapon-jp.github.io/usapon-memo/');
   }
   assert.equal(memoAuthRedirectUrl('http://127.0.0.1:4191/usapon-memo/index.html'), 'http://127.0.0.1:4191/usapon-memo/');
+});
+
+test('ログインし直すとGoogleのアカウント選択を表示しメモへ戻る', async () => {
+  const previous = globalThis.window;
+  globalThis.window = { location: { href: 'https://usapon-jp.github.io/usapon-memo/?materials=received' } };
+  let args;
+  try {
+    await signInWithGoogle({ auth: { signInWithOAuth: async input => { args = input; return { error: null }; } } });
+    assert.equal(args.options.redirectTo, 'https://usapon-jp.github.io/usapon-memo/');
+    assert.equal(args.options.queryParams.prompt, 'select_account');
+  } finally { if (previous === undefined) delete globalThis.window; else globalThis.window = previous; }
 });

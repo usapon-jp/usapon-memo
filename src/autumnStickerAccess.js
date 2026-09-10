@@ -136,7 +136,7 @@ export function memoAuthRedirectUrl(href, baseUrl = '/usapon-memo/') {
 export async function signInWithGoogle(client = memoSupabase) {
   if (!client) throw new Error('共有ログインはまだ設定されていません。');
   const redirectTo = memoAuthRedirectUrl(window.location.href, import.meta.env?.BASE_URL || '/usapon-memo/');
-  const { error } = await client.auth.signInWithOAuth({ provider: 'google', options: { redirectTo } });
+  const { error } = await client.auth.signInWithOAuth({ provider: 'google', options: { redirectTo, queryParams: { prompt: 'select_account' } } });
   if (error) throw error;
 }
 
