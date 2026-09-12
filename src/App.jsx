@@ -94,7 +94,7 @@ import {
   normalizeCustomStickerLibrary
 } from './customStickers.js';
 import { createStickerPackBlob, readStickerPack, sha256DataUrl } from './stickerPack.js';
-import { getBoardItemPinchScale, getGestureRotation, hasBoardItemDragStarted } from './boardItemGesture.js';
+import { getBoardItemPinchScale, getGestureRotation, hasBoardItemDragStarted, isTrashDropTarget } from './boardItemGesture.js';
 import {
   AUTUMN_FREE_STICKER_ID,
   AUTUMN_PAID_STICKER_IDS,
@@ -2523,46 +2523,14 @@ function HomePage({
     return clamp(100 - itemWidthPercent, 4, 96);
   };
 
-  const updateTrashHover = (clientX = null, clientY = null) => {
+  const isDraggedItemOverTrash = (clientX = null, clientY = null) => {
     const trashRect = trashRef.current?.getBoundingClientRect();
     const cardRect = activeCardRef.current?.getBoundingClientRect();
-    if (!trashRect) {
-      setTrashHover(false);
-      return;
-    }
-
-    if (Number.isFinite(clientX) && Number.isFinite(clientY)) {
-      setTrashHover(
-        clientX >= trashRect.left
-        && clientX <= trashRect.right
-        && clientY >= trashRect.top
-        && clientY <= trashRect.bottom
-      );
-      return;
-    }
-
-    if (!cardRect) {
-      setTrashHover(false);
-      return;
-    }
-
-    setTrashHover(
-      cardRect.left < trashRect.right
-      && cardRect.right > trashRect.left
-      && cardRect.top < trashRect.bottom
-      && cardRect.bottom > trashRect.top
-    );
+    return isTrashDropTarget({ clientX, clientY }, cardRect, trashRect);
   };
 
-  const isPointInTrash = (clientX, clientY) => {
-    const trashRect = trashRef.current?.getBoundingClientRect();
-    if (!trashRect || !Number.isFinite(clientX) || !Number.isFinite(clientY)) return false;
-    return (
-      clientX >= trashRect.left
-      && clientX <= trashRect.right
-      && clientY >= trashRect.top
-      && clientY <= trashRect.bottom
-    );
+  const updateTrashHover = (clientX = null, clientY = null) => {
+    setTrashHover(isDraggedItemOverTrash(clientX, clientY));
   };
 
   const createDragGesture = (event, memo) => {
@@ -2710,13 +2678,13 @@ function HomePage({
       }
 
       const cancelled = stopEvent.type === 'pointercancel';
-      const shouldDelete = !cancelled && (trashActiveRef.current || isPointInTrash(stopEvent.clientX, stopEvent.clientY));
       if (cancelled) {
         clearCardPreview();
         applyCardGeometry(activeCardRef.current, memo);
       } else {
         flushCardPreview();
       }
+      const shouldDelete = !cancelled && (trashActiveRef.current || isDraggedItemOverTrash(stopEvent.clientX, stopEvent.clientY));
       const finalPatch = getDraggedCardPatch();
       if (cardDragStartedRef.current && shouldDelete) onDeleteMemo(memo.id);
       else if (cardDragStartedRef.current && !cancelled && finalPatch) onMove(memo.id, finalPatch);
@@ -2857,13 +2825,13 @@ function HomePage({
         ));
       }
       const cancelled = stopEvent.type === 'pointercancel';
-      const shouldDelete = !cancelled && (trashActiveRef.current || isPointInTrash(stopEvent.clientX, stopEvent.clientY));
       if (cancelled) {
         clearCardPreview();
         applyCardGeometry(activeCardRef.current, item);
       } else {
         flushCardPreview();
       }
+      const shouldDelete = !cancelled && (trashActiveRef.current || isDraggedItemOverTrash(stopEvent.clientX, stopEvent.clientY));
       const finalPatch = getDraggedCardPatch();
       if (cardDragStartedRef.current && shouldDelete) {
         onDeleteBoardItem(item.id);

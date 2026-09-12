@@ -4,7 +4,8 @@ import assert from 'node:assert/strict';
 import {
   getBoardItemPinchScale,
   getGestureRotation,
-  hasBoardItemDragStarted
+  hasBoardItemDragStarted,
+  isTrashDropTarget
 } from '../src/boardItemGesture.js';
 
 test('直接配置した素材は小さな指移動をドラッグとして扱う', () => {
@@ -24,4 +25,24 @@ test('二本指の角度が180度境界をまたいでも最短方向に回転�
   assert.equal(getGestureRotation(10, 179, -179), 12);
   assert.equal(getGestureRotation(10, -179, 179), 8);
   assert.equal(getGestureRotation(-20, 30, 45), -5);
+});
+
+test('ゴミ箱は指だけでなく付箋やマステ本体の重なりでも反応する', () => {
+  const trash = { left: 355, right: 413, top: 870, bottom: 928 };
+
+  assert.equal(isTrashDropTarget(
+    { clientX: 384, clientY: 900 },
+    { left: 250, right: 330, top: 820, bottom: 850 },
+    trash
+  ), true);
+  assert.equal(isTrashDropTarget(
+    { clientX: 320, clientY: 850 },
+    { left: 315, right: 370, top: 840, bottom: 878 },
+    trash
+  ), true);
+  assert.equal(isTrashDropTarget(
+    { clientX: 260, clientY: 780 },
+    { left: 220, right: 300, top: 740, bottom: 810 },
+    trash
+  ), false);
 });

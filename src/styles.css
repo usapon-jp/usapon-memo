@@ -3207,7 +3207,7 @@ body {
   height: 58px;
   position: fixed;
   left: 50%;
-  bottom: calc(env(safe-area-inset-bottom) + 24px);
+  bottom: calc(env(safe-area-inset-bottom) + 96px);
   z-index: 1200;
   display: grid;
   place-items: center;
