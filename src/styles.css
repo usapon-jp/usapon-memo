@@ -3767,6 +3767,10 @@ body {
 .instagram-install-notice{position:relative;z-index:35;display:flex;align-items:center;justify-content:space-between;gap:10px;margin:10px 12px 0;padding:10px 11px;border:1px solid #e1b96f;border-radius:14px;background:#fff7e6;color:#6e5132}.instagram-install-notice div{min-width:0}.instagram-install-notice strong,.instagram-install-notice p{display:block}.instagram-install-notice strong{font-size:11px}.instagram-install-notice p{margin:3px 0 0;font-size:9px;line-height:1.5}.instagram-install-notice button{flex:0 0 auto;border:1px solid #d4a657;border-radius:999px;background:white;padding:7px 10px;color:#74532e;font-size:9px;font-weight:800}.install-guide-backdrop{position:fixed;z-index:200;inset:0;display:flex;align-items:flex-end;justify-content:center;background:rgba(49,39,30,.42);backdrop-filter:blur(4px)}.install-guide-sheet{width:min(100%,520px);max-height:92svh;overflow:auto;padding:18px 16px max(24px,env(safe-area-inset-bottom));border-radius:28px 28px 0 0;background:#fffdf8;box-shadow:0 -20px 55px rgba(50,38,28,.22)}.install-guide-sheet>header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:-18px -16px 15px;padding:16px;border-bottom:1px solid #eadfd3;background:rgba(255,253,248,.96)}.install-guide-sheet>header small{color:#b16d59;font-size:8px;font-weight:900;letter-spacing:.14em}.install-guide-sheet>header h2{margin:3px 0 0;font-size:19px}.install-guide-sheet>header button{display:grid;width:34px;height:34px;place-items:center;border:0;border-radius:50%;background:#efe7dd}.install-guide-lead{margin:0 0 12px;color:#74665c;font-size:11px;line-height:1.7}.install-data-warning,.install-data-safe{margin:11px 0;padding:12px;border-radius:14px}.install-data-warning{border:1px solid #e8ca8d;background:#fff7df;color:#71502b}.install-data-safe{border:1px solid #cbdcb9;background:#f2f8eb;color:#4d693e}.install-data-warning strong,.install-data-safe strong{display:block;font-size:11px}.install-data-warning p,.install-data-safe p{margin:5px 0 0;font-size:9px;line-height:1.65}.install-data-warning button{width:100%;min-height:40px;margin-top:10px;border:0;border-radius:999px;background:#8a6540;color:white;font-size:10px;font-weight:800}.install-guide-steps{display:grid;gap:8px;margin:13px 0 0;padding:0;list-style:none}.install-guide-steps li{display:flex;align-items:flex-start;gap:10px;padding:11px;border:1px solid #e8ded2;border-radius:13px;background:#fffaf2}.install-guide-steps li>span{display:grid;width:25px;height:25px;flex:0 0 auto;place-items:center;border-radius:50%;background:#e48573;color:white;font-size:10px;font-weight:900}.install-guide-steps strong,.install-guide-steps small{display:block}.install-guide-steps strong{font-size:11px}.install-guide-steps small{margin-top:3px;color:#817168;font-size:9px;line-height:1.5}.install-direct-button{width:100%;min-height:46px;margin-top:14px;border:0;border-radius:999px;background:#e48573;color:white;font-size:11px;font-weight:900}.install-guide-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:15px}.install-guide-actions button{min-height:42px;border:0;border-radius:999px;background:#efe7dd;font-size:9px;font-weight:800}.install-settings-card p{margin:6px 0 12px;color:#807168;font-size:11px;line-height:1.65}@media(min-width:560px){.install-guide-backdrop{align-items:center;padding:24px}.install-guide-sheet{border-radius:28px}}
 
 .all-sticker-library { min-width:0; }
+.my-sticker-folder-chips,.my-sticker-folder-bar { display:flex; gap:6px; min-width:0; overflow-x:auto; padding:8px 0 2px; scrollbar-width:none; }
+.my-sticker-folder-chips::-webkit-scrollbar,.my-sticker-folder-bar::-webkit-scrollbar { display:none; }
+.my-sticker-folder-chips button,.my-sticker-folder-bar button { flex:0 0 auto; min-height:36px; padding:7px 12px; border:0; border-radius:999px; color:#6f5747; background:#f2e7d8; font:inherit; font-size:12px; font-weight:800; }
+.my-sticker-folder-chips button[aria-pressed="true"],.my-sticker-folder-bar button[aria-pressed="true"] { color:#934f5d; background:#f8dce2; }
 .all-sticker-library .sticker-palette { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); max-height:48dvh; align-content:start; grid-auto-rows:76px; box-sizing:border-box; overflow-y:auto; padding:10px 0; }
 .all-sticker-library .sticker-palette button,.sticker-preview-tile { width:100%; min-width:0; height:76px; display:grid; place-items:center; }
 .sticker-preview-tile img { width:64px; height:64px; object-fit:contain; }
@@ -3786,6 +3790,32 @@ body {
 .sticker-set-row label { display:flex; align-items:center; min-height:44px; font-size:12px; white-space:nowrap; }
 .sticker-set-row input { width:18px; height:18px; accent-color:#ad8570; }
 .sticker-set-row button:disabled { opacity:.35; }
+.my-sticker-manager { margin:0 0 20px; padding:14px; border-radius:20px; background:#fffaf2; box-shadow:0 7px 24px #674b3012; }
+.my-sticker-manager-heading { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.my-sticker-manager-heading>div { display:flex; align-items:baseline; gap:7px; }
+.my-sticker-manager-heading span { color:#9a8679; font-size:11px; }
+.my-sticker-manager-heading button,.my-sticker-transfer-actions button { display:flex; align-items:center; justify-content:center; gap:6px; min-height:40px; padding:8px 13px; border:0; border-radius:999px; color:#6f5747; background:#f2e7d8; font:inherit; font-size:12px; font-weight:800; }
+.my-sticker-edit-toggle[aria-pressed="true"] { color:#fff; background:#ad8570; }
+.my-sticker-folder-bar .my-sticker-add-folder { width:38px; padding:0; }
+.my-sticker-new-folder,.my-sticker-folder-edit { display:flex; align-items:center; gap:6px; margin-top:9px; padding:8px; border-radius:12px; background:#f7eee2; }
+.my-sticker-new-folder input,.my-sticker-folder-edit input,.my-sticker-item-edit input,.my-sticker-item-edit select { min-width:0; height:38px; border:1px solid #e2d4c5; border-radius:9px; padding:0 9px; color:#60482f; background:white; font:inherit; }
+.my-sticker-new-folder input,.my-sticker-folder-edit input { flex:1; }
+.my-sticker-new-folder button,.my-sticker-folder-edit button { display:grid; flex:0 0 38px; width:38px; min-height:38px; place-items:center; padding:0; border:0; border-radius:10px; color:#6f5747; background:#eadfce; font:inherit; }
+.my-sticker-new-folder button[type="submit"] { width:auto; padding:0 11px; }
+.my-sticker-folder-edit button:disabled { opacity:.35; }
+.my-sticker-folder-edit .danger,.my-sticker-item-edit .danger { color:#a5515e; background:#f8e2e5; }
+.my-sticker-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; min-height:86px; margin-top:10px; }
+.my-sticker-grid>button { display:grid; width:100%; aspect-ratio:1; place-items:center; padding:7px; border:0; border-radius:14px; background:#f6ecdf; }
+.my-sticker-grid>button.is-selected { box-shadow:inset 0 0 0 3px #d29aa5; }
+.my-sticker-grid img { display:block; width:100%; height:100%; object-fit:contain; }
+.my-sticker-grid p { grid-column:1/-1; align-self:center; margin:0; color:#9a8679; font-size:12px; text-align:center; }
+.my-sticker-item-edit { display:grid; grid-template-columns:62px 1fr; gap:9px; align-items:center; margin-top:10px; padding:10px; border-radius:14px; background:#f7eee2; }
+.my-sticker-item-edit>img { grid-row:1/3; width:62px; height:62px; object-fit:contain; }
+.my-sticker-item-edit label { display:grid; grid-template-columns:48px 1fr; align-items:center; gap:7px; font-size:11px; font-weight:800; }
+.my-sticker-item-edit>div { grid-column:1/-1; display:flex; justify-content:flex-end; gap:6px; }
+.my-sticker-item-edit>div button { display:flex; align-items:center; gap:5px; min-height:38px; padding:0 11px; border:0; border-radius:10px; color:#6f5747; background:#eadfce; font:inherit; font-size:12px; font-weight:800; }
+.my-sticker-transfer-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:12px; }
+.my-sticker-transfer-actions button:disabled { opacity:.38; }
 
 .sticker-note-editor { position:fixed; inset:0; z-index:1600; background:#fffaf0; overflow-y:auto; padding:20px; }
 .sticker-note-editor header { display:flex; align-items:center; justify-content:space-between; max-width:560px; margin:0 auto 32px; gap:12px; }

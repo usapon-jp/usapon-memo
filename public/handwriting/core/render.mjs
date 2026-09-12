@@ -297,21 +297,109 @@ export async function exportPng(document, maxEdge = 2048) {
   return new Promise((resolve, reject) => canvas.toBlob(b => { canvas.width = canvas.height = 1; b ? resolve(b) : reject(new Error('PNGを書き出せませんでした。')); }, 'image/png'));
 }
 
-function createStampCanvas(document, maxEdge) {
-  const source = globalThis.document.createElement('canvas');
-  source.width = maxEdge;
-  source.height = Math.round(maxEdge * document.canvas.height / document.canvas.width);
-  renderDocument(source, document);
+function alphaBounds(source, threshold = 0) {
   const context = source.getContext('2d', { willReadFrequently: true });
   const pixels = context.getImageData(0, 0, source.width, source.height).data;
   let left = source.width; let top = source.height; let right = -1; let bottom = -1;
   for (let y = 0; y < source.height; y += 1) {
     for (let x = 0; x < source.width; x += 1) {
-      if (pixels[(y * source.width + x) * 4 + 3] === 0) continue;
+      if (pixels[(y * source.width + x) * 4 + 3] <= threshold) continue;
       left = Math.min(left, x); right = Math.max(right, x); top = Math.min(top, y); bottom = Math.max(bottom, y);
     }
   }
-  if (right < left || bottom < top) throw new Error('スタンプにする手書きがありません。');
+  return right < left || bottom < top ? null : { left, top, right, bottom };
+}
+
+function fillWhiteStickerSilhouette(artwork, outlineRadius, padding) {
+  const offset = outlineRadius + padding;
+  const width = artwork.width + offset * 2;
+  const height = artwork.height + offset * 2;
+  const count = width * height;
+  const mask = new Uint8Array(count);
+  const sourcePixels = artwork.getContext('2d', { willReadFrequently: true })
+    .getImageData(0, 0, artwork.width, artwork.height).data;
+  for (let y = 0; y < artwork.height; y += 1) {
+    for (let x = 0; x < artwork.width; x += 1) {
+      if (sourcePixels[(y * artwork.width + x) * 4 + 3] > 8) mask[(y + offset) * width + x + offset] = 1;
+    }
+  }
+
+  const distance = new Float32Array(count);
+  distance.fill(1e6);
+  for (let index = 0; index < count; index += 1) if (mask[index]) distance[index] = 0;
+  const diagonal = Math.SQRT2;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const index = y * width + x;
+      let value = distance[index];
+      if (x > 0) value = Math.min(value, distance[index - 1] + 1);
+      if (y > 0) value = Math.min(value, distance[index - width] + 1);
+      if (x > 0 && y > 0) value = Math.min(value, distance[index - width - 1] + diagonal);
+      if (x + 1 < width && y > 0) value = Math.min(value, distance[index - width + 1] + diagonal);
+      distance[index] = value;
+    }
+  }
+  for (let y = height - 1; y >= 0; y -= 1) {
+    for (let x = width - 1; x >= 0; x -= 1) {
+      const index = y * width + x;
+      let value = distance[index];
+      if (x + 1 < width) value = Math.min(value, distance[index + 1] + 1);
+      if (y + 1 < height) value = Math.min(value, distance[index + width] + 1);
+      if (x + 1 < width && y + 1 < height) value = Math.min(value, distance[index + width + 1] + diagonal);
+      if (x > 0 && y + 1 < height) value = Math.min(value, distance[index + width - 1] + diagonal);
+      distance[index] = value;
+      mask[index] = value <= outlineRadius ? 1 : 0;
+    }
+  }
+
+  // White paper fills closed areas behind line art while the outside stays transparent.
+  const outside = new Uint8Array(count);
+  const queue = new Int32Array(count);
+  let head = 0; let tail = 0;
+  const enqueue = index => { if (!mask[index] && !outside[index]) { outside[index] = 1; queue[tail++] = index; } };
+  for (let x = 0; x < width; x += 1) { enqueue(x); enqueue((height - 1) * width + x); }
+  for (let y = 1; y + 1 < height; y += 1) { enqueue(y * width); enqueue(y * width + width - 1); }
+  while (head < tail) {
+    const index = queue[head++];
+    const x = index % width;
+    if (x > 0) enqueue(index - 1);
+    if (x + 1 < width) enqueue(index + 1);
+    if (index >= width) enqueue(index - width);
+    if (index + width < count) enqueue(index + width);
+  }
+
+  const sticker = artwork.ownerDocument.createElement('canvas');
+  sticker.width = width; sticker.height = height;
+  const context = sticker.getContext('2d');
+  const white = context.createImageData(width, height);
+  for (let index = 0; index < count; index += 1) {
+    if (!mask[index] && outside[index]) continue;
+    const pixel = index * 4;
+    white.data[pixel] = 255; white.data[pixel + 1] = 255; white.data[pixel + 2] = 255; white.data[pixel + 3] = 255;
+  }
+  context.putImageData(white, 0, 0);
+  context.drawImage(artwork, offset, offset);
+  return sticker;
+}
+
+function createStampCanvas(document, maxEdge, options = {}) {
+  const source = globalThis.document.createElement('canvas');
+  source.width = maxEdge;
+  source.height = Math.round(maxEdge * document.canvas.height / document.canvas.width);
+  renderDocument(source, document);
+  const bounds = alphaBounds(source);
+  if (!bounds) throw new Error('スタンプにする手書きがありません。');
+  let { left, top, right, bottom } = bounds;
+  if (options.whiteOutline) {
+    const artwork = globalThis.document.createElement('canvas');
+    artwork.width = right - left + 1; artwork.height = bottom - top + 1;
+    artwork.getContext('2d').drawImage(source, left, top, artwork.width, artwork.height, 0, 0, artwork.width, artwork.height);
+    const radius = Math.max(6, Math.min(64, Math.round(Math.max(artwork.width, artwork.height) * 0.024)));
+    const padding = Math.max(4, Math.round(maxEdge * 0.006));
+    const sticker = fillWhiteStickerSilhouette(artwork, radius, padding);
+    artwork.width = artwork.height = source.width = source.height = 1;
+    return sticker;
+  }
   const padding = Math.max(8, Math.round(maxEdge * 0.012));
   left = Math.max(0, left - padding); top = Math.max(0, top - padding);
   right = Math.min(source.width - 1, right + padding); bottom = Math.min(source.height - 1, bottom + padding);
@@ -322,15 +410,15 @@ function createStampCanvas(document, maxEdge) {
   return stamp;
 }
 
-export function exportStampDataUrl(document, maxEdge = 800) {
-  const stamp = createStampCanvas(document, maxEdge);
+export function exportStampDataUrl(document, maxEdge = 800, options = {}) {
+  const stamp = createStampCanvas(document, maxEdge, options);
   const result = { dataUrl: stamp.toDataURL('image/png'), width: stamp.width, height: stamp.height };
   stamp.width = stamp.height = 1;
   return result;
 }
 
-export async function exportStampPng(document, maxEdge = 2048) {
-  const stamp = createStampCanvas(document, maxEdge);
+export async function exportStampPng(document, maxEdge = 2048, options = {}) {
+  const stamp = createStampCanvas(document, maxEdge, options);
   const width = stamp.width; const height = stamp.height;
   return new Promise((resolve, reject) => stamp.toBlob(blob => {
     stamp.width = stamp.height = 1;

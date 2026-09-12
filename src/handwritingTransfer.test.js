@@ -15,8 +15,29 @@ test('手書き受け渡しはPNGと寸法だけを受け取る', () => {
     dataUrl: 'data:image/png;base64,AAAA',
     width: 320,
     height: 240,
-    backgroundIncluded: true
+    backgroundIncluded: true,
+    finish: 'paper',
+    saveToMyStickers: false,
+    stickerName: '',
+    stickerFolderId: 'unfiled'
   });
+});
+
+test('白ふちのマイステッカー登録情報を受け取る', () => {
+  const transfer = parseHandwritingTransfer(JSON.stringify({
+    version: 2,
+    dataUrl: 'data:image/png;base64,AAAA',
+    width: 320,
+    height: 240,
+    finish: 'white-outline',
+    saveToMyStickers: true,
+    stickerName: ' うさぎ ',
+    stickerFolderId: 'animals'
+  }));
+  assert.equal(transfer.finish, 'white-outline');
+  assert.equal(transfer.saveToMyStickers, true);
+  assert.equal(transfer.stickerName, 'うさぎ');
+  assert.equal(transfer.stickerFolderId, 'animals');
 });
 
 test('不正形式や大きすぎる寸法は受け取らない', () => {

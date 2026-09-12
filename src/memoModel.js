@@ -1,4 +1,5 @@
 import { validateDocument } from '../public/handwriting/core/document.mjs';
+import { normalizeCustomStickerLibrary } from './customStickers.js';
 
 export const MEMO_COLORS = {
   white: { label: 'しろ', className: 'memo-white' },
@@ -202,7 +203,10 @@ export const createChecklistItem = (text = '', completed = false, id = null) => 
 
 export const createSticker = (assetId = 'usa', patch = {}) => ({
   id: patch.id || createId(),
-  assetId: STICKER_ASSETS.has(assetId) ? assetId : 'usa',
+  assetId: STICKER_ASSETS.has(assetId) ? assetId : '',
+  customStickerId: typeof patch.customStickerId === 'string' ? patch.customStickerId : '',
+  imageId: typeof patch.imageId === 'string' ? patch.imageId : '',
+  name: typeof patch.name === 'string' ? patch.name.trim().slice(0, 48) : '',
   x: Number.isFinite(Number(patch.x)) ? clamp(Number(patch.x)) : 50,
   y: Number.isFinite(Number(patch.y)) ? clamp(Number(patch.y)) : 62,
   size: Number.isFinite(Number(patch.size)) ? clamp(Number(patch.size), 44, 150) : 58,
@@ -645,6 +649,7 @@ export const normalizeData = (data = {}) => {
   const diaryPhotoTransformRecoveryVersion = Number.isFinite(Number(data.diaryPhotoTransformRecoveryVersion))
     ? Math.max(0, Number(data.diaryPhotoTransformRecoveryVersion))
     : 0;
+  const customStickerLibrary = normalizeCustomStickerLibrary(data);
 
   return {
     appTitle,
@@ -662,6 +667,7 @@ export const normalizeData = (data = {}) => {
       order: [...new Set([...(Array.isArray(data.stickerSetPreferences?.order) ? data.stickerSetPreferences.order.filter(id => Object.hasOwn(STICKER_PACKS, id)) : []), ...Object.keys(STICKER_PACKS)])],
       hidden: [...new Set((Array.isArray(data.stickerSetPreferences?.hidden) ? data.stickerSetPreferences.hidden : []).filter(id => Object.hasOwn(STICKER_PACKS, id)))]
     },
+    ...customStickerLibrary,
     diaryPhotoTransformRecoveryVersion
   };
 };

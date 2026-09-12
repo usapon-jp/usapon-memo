@@ -6,7 +6,7 @@ export const parseHandwritingTransfer = (raw) => {
   try {
     const value = JSON.parse(raw);
     if (
-      value?.version !== 1
+      ![1, 2].includes(value?.version)
       || typeof value.dataUrl !== 'string'
       || !value.dataUrl.startsWith('data:image/png;base64,')
       || !Number.isInteger(value.width)
@@ -16,11 +16,18 @@ export const parseHandwritingTransfer = (raw) => {
       || value.width > 4096
       || value.height > 4096
     ) return null;
+    const finish = value.version === 2 && ['white-outline', 'transparent', 'paper'].includes(value.finish)
+      ? value.finish
+      : (value.backgroundIncluded ? 'paper' : 'transparent');
     return {
       dataUrl: value.dataUrl,
       width: value.width,
       height: value.height,
-      backgroundIncluded: Boolean(value.backgroundIncluded)
+      backgroundIncluded: finish === 'paper',
+      finish,
+      saveToMyStickers: finish !== 'paper' && Boolean(value.saveToMyStickers),
+      stickerName: typeof value.stickerName === 'string' ? value.stickerName.trim().slice(0, 48) : '',
+      stickerFolderId: typeof value.stickerFolderId === 'string' ? value.stickerFolderId.slice(0, 80) : 'unfiled'
     };
   } catch {
     return null;

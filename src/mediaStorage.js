@@ -5,6 +5,7 @@ const MEDIA_STORE_NAME = 'media';
 export const MEDIA_KINDS = {
   photoCard: 'photo-card',
   boardImage: 'board-image',
+  customSticker: 'custom-sticker',
   diaryPhoto: 'diary-photo',
   boardSnapshot: 'board-snapshot'
 };
@@ -114,6 +115,7 @@ export const getMediaBreakdown = async () => {
     total: 0,
     photoCards: 0,
     boardImages: 0,
+    customStickers: 0,
     diaryPhotos: 0,
     boardSnapshots: 0
   };
@@ -123,6 +125,7 @@ export const getMediaBreakdown = async () => {
     breakdown.total += bytes;
     if (record.kind === MEDIA_KINDS.photoCard) breakdown.photoCards += bytes;
     else if (record.kind === MEDIA_KINDS.boardImage) breakdown.boardImages += bytes;
+    else if (record.kind === MEDIA_KINDS.customSticker) breakdown.customStickers += bytes;
     else if (record.kind === MEDIA_KINDS.diaryPhoto) breakdown.diaryPhotos += bytes;
     else if (record.kind === MEDIA_KINDS.boardSnapshot) breakdown.boardSnapshots += bytes;
   });

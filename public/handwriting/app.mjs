@@ -272,6 +272,7 @@ document.addEventListener('keydown', e => { if ((e.metaKey || e.ctrlKey) && e.ke
 function download(blob, name) {
   const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(url), 30000);
 }
+let selectedPasteFinish = 'white-outline';
 function paintBackground(context, width, height, mode) {
   context.fillStyle = mode === 'dark' ? '#343438' : '#ffffff';
   context.fillRect(0, 0, width, height);
@@ -325,30 +326,73 @@ $('load').addEventListener('click', () => {
 });
 $('png').addEventListener('click', async () => {
   input.cancelAll(); $('png').disabled = true;
-  try { const blob = await exportStampPng(history.document); download(blob, `stamp-${history.document.id}.png`); message('描いた部分をスタンプとして保存しました'); }
+  try {
+    const whiteOutline = selectedPasteFinish === 'white-outline';
+    const blob = await exportStampPng(history.document, 2048, { whiteOutline });
+    download(blob, `stamp-${history.document.id}.png`);
+    message(whiteOutline ? '白ふちスタンプとして保存しました' : '描いた部分をスタンプとして保存しました');
+  }
   catch (error) { message(error.message); } finally { $('png').disabled = false; }
 });
 const pasteOptions = $('pasteOptions');
 const closePasteOptions = () => { pasteOptions.hidden = true; $('paste').setAttribute('aria-expanded', 'false'); };
+const refreshMyStickerFolders = () => {
+  const select = $('myStickerFolder');
+  for (const option of [...select.querySelectorAll('option')].slice(1)) option.remove();
+  try {
+    const data = JSON.parse(localStorage.getItem('usapon_memo_data') || '{}');
+    for (const folder of Array.isArray(data.customStickerFolders) ? data.customStickerFolders : []) {
+      if (!folder?.id || !folder?.name) continue;
+      const option = document.createElement('option');
+      option.value = folder.id; option.textContent = String(folder.name).slice(0, 48);
+      select.append(option);
+    }
+  } catch { /* 未分類だけを表示します。 */ }
+};
+const updatePasteLibraryState = () => {
+  const paper = selectedPasteFinish === 'paper';
+  if (paper) $('saveToMyStickers').checked = false;
+  $('saveToMyStickers').disabled = paper;
+  $('pasteLibraryDetails').hidden = !$('saveToMyStickers').checked || paper;
+};
 $('paste').addEventListener('click', () => {
   const willOpen = pasteOptions.hidden;
   pasteOptions.hidden = !willOpen;
   $('paste').setAttribute('aria-expanded', String(willOpen));
+  if (willOpen) { refreshMyStickerFolders(); updatePasteLibraryState(); }
 });
-for (const option of document.querySelectorAll('[data-paste-background]')) option.addEventListener('click', async () => {
+for (const option of document.querySelectorAll('[data-paste-finish]')) option.addEventListener('click', () => {
+  selectedPasteFinish = option.dataset.pasteFinish;
+  document.querySelectorAll('[data-paste-finish]').forEach(button => button.setAttribute('aria-pressed', String(button === option)));
+  updatePasteLibraryState();
+});
+$('saveToMyStickers').addEventListener('change', updatePasteLibraryState);
+$('pasteConfirm').addEventListener('click', async () => {
   input.cancelAll(); closePasteOptions();
-  document.querySelectorAll('[data-paste-background]').forEach(button => { button.disabled = true; });
-  const backgroundIncluded = option.dataset.pasteBackground === 'true';
+  const controls = pasteOptions.querySelectorAll('button,input,select');
+  controls.forEach(control => { control.disabled = true; });
+  const backgroundIncluded = selectedPasteFinish === 'paper';
+  const saveToMyStickers = $('saveToMyStickers').checked && !backgroundIncluded;
   message('貼り付ける画像を準備しています');
   try {
-    const image = backgroundIncluded ? exportWithBackground() : exportStampDataUrl(history.document);
-    const target = sendToMemo({ ...image, backgroundIncluded });
+    const image = backgroundIncluded
+      ? exportWithBackground()
+      : exportStampDataUrl(history.document, 800, { whiteOutline: selectedPasteFinish === 'white-outline' });
+    const target = sendToMemo({
+      ...image,
+      backgroundIncluded,
+      finish: selectedPasteFinish,
+      saveToMyStickers,
+      stickerName: $('myStickerName').value.trim(),
+      stickerFolderId: $('myStickerFolder').value
+    });
     message('メモを開いています');
     dirty = false;
     window.location.href = target;
   } catch (error) {
     message(error.message || '貼り付ける画像を作れませんでした。');
-    document.querySelectorAll('[data-paste-background]').forEach(button => { button.disabled = false; });
+    controls.forEach(control => { control.disabled = false; });
+    updatePasteLibraryState();
   }
 });
 let oldWidth = 0;

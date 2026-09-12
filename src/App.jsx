@@ -1,6 +1,7 @@
 import StickerTabs from "./StickerTabs";
 import { MaterialNotice } from "./MaterialNotice";
 import BoardDrawing from './BoardDrawing';
+import MyStickerManager from './MyStickerManager.jsx';
 import { forwardRef, useEffect, useMemo, useRef, useState } from 'react';
 import {
   LogIn,
@@ -85,6 +86,14 @@ import {
 } from './mediaStorage.js';
 import { canAutoOfferInstall, detectInstallContext, INSTALL_GUIDE_HIDDEN_KEY } from './installGuide.js';
 import { HANDWRITING_TRANSFER_KEY, parseHandwritingTransfer } from './handwritingTransfer.js';
+import {
+  MY_STICKER_FOLDER_LIMIT,
+  MY_STICKER_LIMIT,
+  MY_STICKER_UNFILED_ID,
+  nextStickerOrder,
+  normalizeCustomStickerLibrary
+} from './customStickers.js';
+import { createStickerPackBlob, readStickerPack, sha256DataUrl } from './stickerPack.js';
 import { getBoardItemPinchScale, getGestureRotation, hasBoardItemDragStarted } from './boardItemGesture.js';
 import {
   AUTUMN_FREE_STICKER_ID,
@@ -855,6 +864,7 @@ export default function App() {
     result.total += bytes;
     if (record.kind === MEDIA_KINDS.photoCard) result.photoCards += bytes;
     else if (record.kind === MEDIA_KINDS.boardImage) result.boardImages += bytes;
+    else if (record.kind === MEDIA_KINDS.customSticker) result.customStickers += bytes;
     else if (record.kind === MEDIA_KINDS.diaryPhoto) result.diaryPhotos += bytes;
     else if (record.kind === MEDIA_KINDS.boardSnapshot) result.boardSnapshots += bytes;
     return result;
@@ -862,6 +872,7 @@ export default function App() {
     total: 0,
     photoCards: 0,
     boardImages: 0,
+    customStickers: 0,
     diaryPhotos: 0,
     boardSnapshots: 0
   }), [mediaRecords]);
@@ -885,6 +896,161 @@ export default function App() {
       indexedDbImageBytes: mediaBreakdown.total + dataUrlByteLength(record.dataUrl) + dataUrlByteLength(record.thumbnailDataUrl)
     });
     return record;
+  };
+
+  const patchCustomStickerLibrary = (change) => {
+    setData(current => {
+      const next = change({
+        customStickerFolders: current.customStickerFolders || [],
+        customStickers: current.customStickers || []
+      });
+      return normalizeData({ ...current, ...normalizeCustomStickerLibrary(next) });
+    });
+  };
+
+  const addCustomStickerFolder = (name) => {
+    const cleanName = String(name || '').trim().slice(0, 48);
+    if (!cleanName) return '';
+    if ((data.customStickerFolders || []).length >= MY_STICKER_FOLDER_LIMIT) {
+      setAppToast('フォルダは24個まで作れます。');
+      return '';
+    }
+    const duplicate = (data.customStickerFolders || []).find(folder => folder.name === cleanName);
+    if (duplicate) return duplicate.id;
+    const id = `sticker-folder-${crypto.randomUUID()}`;
+    patchCustomStickerLibrary(current => ({
+      ...current,
+      customStickerFolders: [...current.customStickerFolders, {
+        id,
+        name: cleanName,
+        order: current.customStickerFolders.length,
+        createdAt: new Date().toISOString()
+      }]
+    }));
+    return id;
+  };
+
+  const renameCustomStickerFolder = (id, name) => patchCustomStickerLibrary(current => ({
+    ...current,
+    customStickerFolders: current.customStickerFolders.map(folder => (
+      folder.id === id ? { ...folder, name: String(name || '').trim().slice(0, 48) || folder.name } : folder
+    ))
+  }));
+
+  const moveCustomStickerFolder = (id, delta) => patchCustomStickerLibrary(current => {
+    const folders = [...current.customStickerFolders];
+    const index = folders.findIndex(folder => folder.id === id);
+    const target = index + delta;
+    if (index < 0 || target < 0 || target >= folders.length) return current;
+    [folders[index], folders[target]] = [folders[target], folders[index]];
+    return { ...current, customStickerFolders: folders.map((folder, order) => ({ ...folder, order })) };
+  });
+
+  const deleteCustomStickerFolder = (id) => patchCustomStickerLibrary(current => ({
+    customStickerFolders: current.customStickerFolders.filter(folder => folder.id !== id),
+    customStickers: current.customStickers.map(sticker => (
+      sticker.folderId === id ? { ...sticker, folderId: MY_STICKER_UNFILED_ID } : sticker
+    ))
+  }));
+
+  const updateCustomSticker = (id, patch) => patchCustomStickerLibrary(current => ({
+    ...current,
+    customStickers: current.customStickers.map(sticker => sticker.id === id ? {
+      ...sticker,
+      ...patch,
+      name: patch.name === undefined ? sticker.name : (String(patch.name).trim().slice(0, 48) || sticker.name),
+      updatedAt: new Date().toISOString()
+    } : sticker)
+  }));
+
+  const moveCustomSticker = (id, delta) => patchCustomStickerLibrary(current => {
+    const targetSticker = current.customStickers.find(sticker => sticker.id === id);
+    if (!targetSticker) return current;
+    const group = current.customStickers.filter(sticker => sticker.folderId === targetSticker.folderId);
+    const index = group.findIndex(sticker => sticker.id === id);
+    const target = index + delta;
+    if (target < 0 || target >= group.length) return current;
+    const orders = [group[index].order, group[target].order];
+    return {
+      ...current,
+      customStickers: current.customStickers.map(sticker => (
+        sticker.id === group[index].id ? { ...sticker, order: orders[1] }
+          : sticker.id === group[target].id ? { ...sticker, order: orders[0] }
+            : sticker
+      ))
+    };
+  });
+
+  const deleteCustomSticker = (id) => patchCustomStickerLibrary(current => ({
+    ...current,
+    customStickers: current.customStickers.filter(sticker => sticker.id !== id)
+  }));
+
+  const exportCustomStickers = () => {
+    try {
+      const blob = createStickerPackBlob({
+        folders: data.customStickerFolders,
+        stickers: data.customStickers,
+        mediaRecords
+      });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `usapon-my-stickers-${toDateKey(new Date())}.usapon-stickers.zip`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      setAppToast(`${data.customStickers.length}点を書き出しました。`);
+    } catch (error) {
+      setAppToast(error.message || 'マイステッカーを書き出せませんでした。');
+    }
+  };
+
+  const importCustomStickers = async (file) => {
+    if (!file) return;
+    try {
+      const pack = await readStickerPack(file);
+      const currentFolders = [...(latestDataRef.current.customStickerFolders || [])];
+      const currentStickers = [...(latestDataRef.current.customStickers || [])];
+      const folderIdMap = new Map([[MY_STICKER_UNFILED_ID, MY_STICKER_UNFILED_ID]]);
+      for (const folder of pack.folders) {
+        const sameName = currentFolders.find(item => item.name === folder.name);
+        if (sameName) { folderIdMap.set(folder.id, sameName.id); continue; }
+        if (currentFolders.length >= MY_STICKER_FOLDER_LIMIT) { folderIdMap.set(folder.id, MY_STICKER_UNFILED_ID); continue; }
+        const id = currentFolders.some(item => item.id === folder.id) ? `sticker-folder-${crypto.randomUUID()}` : folder.id;
+        currentFolders.push({ ...folder, id, order: currentFolders.length });
+        folderIdMap.set(folder.id, id);
+      }
+      const knownHashes = new Set(currentStickers.map(sticker => sticker.contentHash).filter(Boolean));
+      let imported = 0; let skipped = 0;
+      for (const sticker of pack.stickers) {
+        if (currentStickers.length >= MY_STICKER_LIMIT) break;
+        const contentHash = sticker.contentHash || await sha256DataUrl(sticker.dataUrl);
+        if (knownHashes.has(contentHash)) { skipped += 1; continue; }
+        const id = currentStickers.some(item => item.id === sticker.id) ? `my-sticker-${crypto.randomUUID()}` : sticker.id;
+        const mediaRecord = await saveMedia(MEDIA_KINDS.customSticker, {
+          dataUrl: sticker.dataUrl,
+          mimeType: 'image/png',
+          naturalWidth: sticker.width,
+          naturalHeight: sticker.height
+        });
+        currentStickers.push({
+          ...sticker,
+          id,
+          mediaId: mediaRecord.id,
+          folderId: folderIdMap.get(sticker.folderId) || MY_STICKER_UNFILED_ID,
+          contentHash,
+          order: nextStickerOrder(currentStickers),
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        });
+        knownHashes.add(contentHash);
+        imported += 1;
+      }
+      patchCustomStickerLibrary(() => ({ customStickerFolders: currentFolders, customStickers: currentStickers }));
+      setAppToast(`${imported}点を読み込みました${skipped ? `（重複${skipped}点を除外）` : ''}。`);
+    } catch (error) {
+      setAppToast(error.message || 'ステッカーパックを読み込めませんでした。');
+    }
   };
 
   const saveLatestData = (reason = 'autosave', reportResult = true) => {
@@ -939,12 +1105,42 @@ export default function App() {
     window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
     const pasteHandwriting = async () => {
       try {
-        const mediaRecord = await saveMedia(MEDIA_KINDS.boardImage, {
+        const contentHash = transfer.saveToMyStickers ? await sha256DataUrl(transfer.dataUrl) : '';
+        const existingSticker = transfer.saveToMyStickers
+          ? (latestDataRef.current.customStickers || []).find(sticker => sticker.contentHash === contentHash)
+          : null;
+        const canAddToLibrary = Boolean(existingSticker) || (latestDataRef.current.customStickers || []).length < MY_STICKER_LIMIT;
+        const saveNewSticker = transfer.saveToMyStickers && !existingSticker && canAddToLibrary;
+        const mediaRecord = existingSticker ? mediaRecords.find(record => record.id === existingSticker.mediaId) : await saveMedia(
+          saveNewSticker ? MEDIA_KINDS.customSticker : MEDIA_KINDS.boardImage,
+          {
           dataUrl: transfer.dataUrl,
           mimeType: 'image/png',
           naturalWidth: transfer.width,
           naturalHeight: transfer.height
-        });
+          }
+        );
+        if (!mediaRecord) throw new Error('保存したステッカー画像を読み込めませんでした。');
+        if (saveNewSticker) {
+          const folderIds = new Set((latestDataRef.current.customStickerFolders || []).map(folder => folder.id));
+          const now = new Date().toISOString();
+          patchCustomStickerLibrary(current => ({
+            ...current,
+            customStickers: [...current.customStickers, {
+              id: `my-sticker-${crypto.randomUUID()}`,
+              name: transfer.stickerName || `手書きステッカー ${new Intl.DateTimeFormat('ja-JP', { month: 'numeric', day: 'numeric' }).format(new Date())}`,
+              folderId: folderIds.has(transfer.stickerFolderId) ? transfer.stickerFolderId : MY_STICKER_UNFILED_ID,
+              mediaId: mediaRecord.id,
+              contentHash,
+              width: transfer.width,
+              height: transfer.height,
+              finish: transfer.finish,
+              order: nextStickerOrder(current.customStickers),
+              createdAt: now,
+              updatedAt: now
+            }]
+          }));
+        }
         addBoardItem({
           type: 'image',
           boardId: activeBoardId,
@@ -956,7 +1152,15 @@ export default function App() {
           x: 28,
           y: 28
         });
-        setAppToast(transfer.backgroundIncluded ? '背景つきの手書きを貼り付けました。' : '手書きを貼り付けました。');
+        setAppToast(existingSticker
+          ? '登録済みのマイステッカーを貼り付けました。'
+          : transfer.saveToMyStickers && !canAddToLibrary
+            ? 'マイステッカーは100点までです。今回はボードだけに貼り付けました。'
+          : saveNewSticker
+            ? 'マイステッカーに登録して貼り付けました。'
+            : transfer.finish === 'white-outline'
+              ? '白ふちの手書きを貼り付けました。'
+              : transfer.backgroundIncluded ? '背景つきの手書きを貼り付けました。' : '手書きを貼り付けました。');
       } catch (error) {
         console.error('[usapon-memo handwriting transfer save failed]', error);
         setStorageError(STORAGE_FULL_MESSAGE);
@@ -1738,6 +1942,8 @@ export default function App() {
           boardBackground={boardBackground}
           visibleStickerIds={effectiveUnlockedStickerIds}
           stickerSetPreferences={data.stickerSetPreferences}
+          customStickers={data.customStickers}
+          customStickerFolders={data.customStickerFolders}
           activeBoardId={activeBoardId}
           boards={homeBoards}
           allBoards={boards}
@@ -1787,6 +1993,9 @@ export default function App() {
           stickyTextWeight={stickyTextWeight}
           visibleStickerIds={effectiveUnlockedStickerIds}
           stickerSetPreferences={data.stickerSetPreferences}
+          customStickers={data.customStickers}
+          customStickerFolders={data.customStickerFolders}
+          mediaUrlsById={mediaUrlsById}
           setDraft={setDraft}
           onBack={() => setPage('home')}
           onSave={saveMemo}
@@ -1880,9 +2089,21 @@ export default function App() {
           stickerSetPreferences={data.stickerSetPreferences}
           unlockedStickerIds={effectiveUnlockedStickerIds}
           visibleStickerIds={displayVisibleStickerIds}
+          customStickers={data.customStickers}
+          customStickerFolders={data.customStickerFolders}
+          mediaUrlsById={mediaUrlsById}
           onBack={() => setPage('home')}
           onUpdate={updateStickerSettings}
           onShowToast={setAppToast}
+          onAddFolder={addCustomStickerFolder}
+          onRenameFolder={renameCustomStickerFolder}
+          onMoveFolder={moveCustomStickerFolder}
+          onDeleteFolder={deleteCustomStickerFolder}
+          onUpdateSticker={updateCustomSticker}
+          onMoveSticker={moveCustomSticker}
+          onDeleteSticker={deleteCustomSticker}
+          onExportStickers={exportCustomStickers}
+          onImportStickers={importCustomStickers}
           autumnAccess={autumnStickerAccess}
           onRefreshAutumn={() => void refreshAutumnStickerAccess()}
           onSignInAutumn={() => void signInWithGoogle().catch(error => setAppToast(error.message || 'Googleログインを始められませんでした。'))}
@@ -2016,6 +2237,8 @@ function HomePage({
   boardBackground,
   visibleStickerIds = DEFAULT_STICKER_IDS,
   stickerSetPreferences,
+  customStickers = [],
+  customStickerFolders = [],
   activeBoardId,
   boards,
   allBoards,
@@ -2777,6 +3000,26 @@ function HomePage({
       x: stickerPicker.x,
       y: stickerPicker.y,
       scale: getBoardStickerInitialScale(assetId),
+      rotation: 0
+    });
+    setStickerPicker(null);
+    setSelectedBoardItemId('');
+  };
+
+  const addBoardCustomSticker = (sticker) => {
+    if (!stickerPicker || !sticker?.mediaId) return;
+    markCurrentBoardActive();
+    onAddBoardItem({
+      type: 'image',
+      boardId: activeBoardId,
+      imageDataUrl: '',
+      imageId: sticker.mediaId,
+      imageMimeType: 'image/png',
+      naturalWidth: sticker.width,
+      naturalHeight: sticker.height,
+      x: stickerPicker.x,
+      y: stickerPicker.y,
+      scale: 1,
       rotation: 0
     });
     setStickerPicker(null);
@@ -3652,7 +3895,8 @@ function HomePage({
         <div className="board-sticker-backdrop" onClick={() => setStickerPicker(null)}>
           <div className="board-sticker-sheet" role="dialog" aria-modal="true" aria-label="ステッカーを選択" onKeyDown={event => { if (event.key === "Escape") setStickerPicker(null); }} onClick={event => event.stopPropagation()}>
             <div className="board-sticker-heading"><strong>ステッカー</strong><button type="button" aria-label="閉じる" autoFocus onClick={() => setStickerPicker(null)}><X size={20} /></button></div>
-            <StickerTabs stickerIds={visibleStickerIds} preferences={stickerSetPreferences} onSelect={addBoardSticker} />
+            <StickerTabs stickerIds={visibleStickerIds} preferences={stickerSetPreferences} onSelect={addBoardSticker}
+              customStickers={customStickers} customFolders={customStickerFolders} customMediaUrls={mediaUrlsById} onSelectCustom={addBoardCustomSticker} />
           </div>
         </div>
       )}
@@ -3721,6 +3965,7 @@ function BoardEditSheet({ board, onClose, onSave, closeLabel = '' }) {
 
 function StickerLayer({
   stickers = [],
+  mediaUrlsById = {},
   onStickerPointerDown = null,
   selectedStickerId = '',
   movingStickerId = '',
@@ -3732,7 +3977,9 @@ function StickerLayer({
     <div className="sticker-layer" aria-hidden={!onStickerPointerDown}>
       {stickers.map(sticker => {
         const asset = STICKER_MAP[sticker.assetId];
-        if (!asset?.src) return null;
+        const imageSrc = asset?.src || (sticker.imageId ? mediaUrlsById[sticker.imageId] : '');
+        const label = asset?.label || sticker.name || 'マイステッカー';
+        if (!imageSrc) return null;
         const isSelected = selectedStickerId === sticker.id;
         return (
           <span
@@ -3751,8 +3998,8 @@ function StickerLayer({
           >
             <img
               className="memo-sticker"
-              src={asset.src}
-              alt={asset.label}
+              src={imageSrc}
+              alt={label}
               draggable={false}
             />
             {isSelected && onDeleteSticker && (
@@ -3764,7 +4011,7 @@ function StickerLayer({
                   event.stopPropagation();
                   onDeleteSticker(sticker.id);
                 }}
-                aria-label={`${asset.label}を削除`}
+                aria-label={`${label}を削除`}
               >
                 <X size={12} />
               </button>
@@ -3892,7 +4139,7 @@ function BoardMemo({
         event.stopPropagation();
         handleMemoBodyOpen();
       }}
-      stickerLayer={<StickerLayer stickers={memo.stickers} />}
+      stickerLayer={<StickerLayer stickers={memo.stickers} mediaUrlsById={mediaUrlsById} />}
     >
       <div className="board-memo-body content-offset-layer" style={getContentOffsetStyle(memo)} role="button" tabIndex={0} onClick={(event) => {
         event.stopPropagation();
@@ -4117,6 +4364,9 @@ function MemoCreatePage({
   stickyTextWeight,
   visibleStickerIds = DEFAULT_STICKER_IDS,
   stickerSetPreferences,
+  customStickers = [],
+  customStickerFolders = [],
+  mediaUrlsById = {},
   setDraft,
   onBack,
   onSave,
@@ -4523,6 +4773,17 @@ function MemoCreatePage({
     setSelectedStickerId(sticker.id);
   };
 
+  const addCustomSticker = (sticker, position = {}) => {
+    const item = createSticker('', {
+      ...position,
+      customStickerId: sticker.id,
+      imageId: sticker.mediaId,
+      name: sticker.name
+    });
+    setDraft(current => ({ ...current, stickers: [...current.stickers, item] }));
+    setSelectedStickerId(item.id);
+  };
+
   const getStickerPositionFromPoint = (clientX, clientY) => {
     if (!createCardRef.current) return { x: 50, y: 62 };
     const rect = createCardRef.current.getBoundingClientRect();
@@ -4696,6 +4957,14 @@ function MemoCreatePage({
     addSticker(assetId, { x: 82, y: 80 });
   };
 
+  const addCustomStickerToCorner = (sticker, event) => {
+    if (draft.cardType === 'photo' || !sticker?.mediaId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setSelectedStickerId('');
+    addCustomSticker(sticker, { x: 82, y: 80 });
+  };
+
   const deleteSticker = (id) => {
     setDraft(current => ({
       ...current,
@@ -4767,6 +5036,7 @@ function MemoCreatePage({
         stickerLayer={draft.cardType !== 'photo' ? (
           <StickerLayer
             stickers={draft.stickers}
+            mediaUrlsById={mediaUrlsById}
             onStickerPointerDown={startStickerMove}
             selectedStickerId={selectedStickerId}
             movingStickerId={movingStickerId}
@@ -5036,7 +5306,8 @@ function MemoCreatePage({
         </div>
 
         {draft.cardType !== 'photo' && (
-          <StickerTabs stickerIds={visibleStickerIds} preferences={stickerSetPreferences} onSelect={(id,event) => addStickerToCorner(event,id)} />
+          <StickerTabs stickerIds={visibleStickerIds} preferences={stickerSetPreferences} onSelect={(id,event) => addStickerToCorner(event,id)}
+            customStickers={customStickers} customFolders={customStickerFolders} customMediaUrls={mediaUrlsById} onSelectCustom={addCustomStickerToCorner} />
         )}
 
         {ENABLE_CREATE_SETTINGS_PANEL && settingsOpen && (
@@ -5328,6 +5599,7 @@ function SettingsPage({
           <span>写真カード <b>{formatBytes(mediaBreakdown.photoCards + storageBreakdown.photoCards)}</b></span>
           <span>日記写真 <b>{formatBytes(mediaBreakdown.diaryPhotos + storageBreakdown.diaryPhotos)}</b></span>
           <span>ボード画像 <b>{formatBytes(mediaBreakdown.boardImages + storageBreakdown.boardImages)}</b></span>
+          <span>マイステッカー <b>{formatBytes(mediaBreakdown.customStickers)}</b></span>
           <span>ボードスクショ <b>{formatBytes(mediaBreakdown.boardSnapshots + storageBreakdown.boardSnapshots)}</b></span>
           <span>その他 <b>{formatBytes(storageBreakdown.other)}</b></span>
         </div>
@@ -5365,10 +5637,37 @@ function SettingsPage({
   );
 }
 
-function StickerPage({ initialPack, unlockedStickerIds, stickerSetPreferences, onUpdate, onBack, autumnAccess, onRefreshAutumn, onSignInAutumn, onSignOutAutumn }) {
+function StickerPage({
+  initialPack,
+  unlockedStickerIds,
+  stickerSetPreferences,
+  customStickers,
+  customStickerFolders,
+  mediaUrlsById,
+  onUpdate,
+  onBack,
+  onShowToast,
+  onAddFolder,
+  onRenameFolder,
+  onMoveFolder,
+  onDeleteFolder,
+  onUpdateSticker,
+  onMoveSticker,
+  onDeleteSticker,
+  onExportStickers,
+  onImportStickers,
+  autumnAccess,
+  onRefreshAutumn,
+  onSignInAutumn,
+  onSignOutAutumn
+}) {
   const ready = autumnAccess.status === 'ready' || autumnAccess.status === 'trial-ready';
   return <section className="list-page sticker-page">
     <SimplePageHeader title="ステッカー管理" eyebrow="素材" onBack={onBack} />
+    <MyStickerManager stickers={customStickers} folders={customStickerFolders} mediaUrls={mediaUrlsById}
+      onAddFolder={onAddFolder} onRenameFolder={onRenameFolder} onMoveFolder={onMoveFolder} onDeleteFolder={onDeleteFolder}
+      onUpdateSticker={onUpdateSticker} onMoveSticker={onMoveSticker} onDeleteSticker={onDeleteSticker}
+      onExport={onExportStickers} onImport={onImportStickers} onShowToast={onShowToast} />
     <p>表示するセットと、タブの順番を選べます。</p>
     <StickerTabs key={initialPack || 'default'} stickerIds={unlockedStickerIds} initialPack={initialPack || 'default'} preferences={stickerSetPreferences} onPreferencesChange={preferences => onUpdate({ stickerSetPreferences: preferences })} />
     <details className="settings-card sticker-account"><summary>アカウント・素材の受け取り</summary>
