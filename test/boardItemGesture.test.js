@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  getBoardItemMaxXPercent,
   getBoardItemPinchScale,
   getGestureRotation,
   hasBoardItemDragStarted,
@@ -25,6 +26,14 @@ test('二本指の角度が180度境界をまたいでも最短方向に回転�
   assert.equal(getGestureRotation(10, 179, -179), 12);
   assert.equal(getGestureRotation(10, -179, 179), 8);
   assert.equal(getGestureRotation(-20, 30, 45), -5);
+});
+
+test('拡大した横長素材も見た目の右端だけを基準に移動範囲を決める', () => {
+  const board = { left: 104, width: 560 };
+  const item = { left: 358.2, right: 495.8 };
+
+  assert.ok(Math.abs(getBoardItemMaxXPercent(board, item, 50) - 80.0357) < 0.001);
+  assert.equal(getBoardItemMaxXPercent(null, item, 50), 96);
 });
 
 test('ゴミ箱は指だけでなく付箋やマステ本体の重なりでも反応する', () => {

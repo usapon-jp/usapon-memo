@@ -2204,6 +2204,12 @@ body {
   overflow-x: hidden;
 }
 
+@media (min-width: 700px) {
+  .phone-shell.is-board-home {
+    width: 100%;
+  }
+}
+
 .storage-toast {
   width: min(92%, 420px);
   position: fixed;
@@ -3036,6 +3042,13 @@ body {
     position: absolute;
     inset: -12px;
     border-radius: 16px;
+  }
+
+  .board-sticker-note-heading::before,
+  .board-sticker-note-wide::before,
+  .board-sticker-note-tape::before {
+    inset: -26px -18px;
+    border-radius: 18px;
   }
 }
 

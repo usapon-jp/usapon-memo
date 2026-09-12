@@ -21,6 +21,13 @@ export const getGestureRotation = (baseRotation, startAngle, currentAngle) => {
   return baseRotation + shortestDelta;
 };
 
+export const getBoardItemMaxXPercent = (boardRect, itemRect, itemX) => {
+  if (!boardRect || !itemRect || boardRect.width <= 0 || !Number.isFinite(itemX)) return 96;
+  const anchorX = boardRect.left + (itemX / 100) * boardRect.width;
+  const rightExtent = Math.max(0, itemRect.right - anchorX);
+  return Math.min(100, Math.max(4, 100 - (rightExtent / boardRect.width) * 100));
+};
+
 export const isTrashDropTarget = (
   point,
   itemRect,

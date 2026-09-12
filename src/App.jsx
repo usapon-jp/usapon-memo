@@ -94,7 +94,7 @@ import {
   normalizeCustomStickerLibrary
 } from './customStickers.js';
 import { createStickerPackBlob, readStickerPack, sha256DataUrl } from './stickerPack.js';
-import { getBoardItemPinchScale, getGestureRotation, hasBoardItemDragStarted, isTrashDropTarget } from './boardItemGesture.js';
+import { getBoardItemMaxXPercent, getBoardItemPinchScale, getGestureRotation, hasBoardItemDragStarted, isTrashDropTarget } from './boardItemGesture.js';
 import {
   AUTUMN_FREE_STICKER_ID,
   AUTUMN_PAID_STICKER_IDS,
@@ -1927,7 +1927,7 @@ export default function App() {
   };
 
   return (
-    <main className="phone-shell">
+    <main className={`phone-shell ${page === 'home' ? 'is-board-home' : ''}`}>
       {(storageError || appToast) && <p className="storage-toast">{storageError || appToast}</p>}
       {installContext.isInstagramInAppBrowser && !installContext.isStandalone && (
         <InstagramInstallNotice hasData={data.memos.length > 0} onOpen={() => setInstallGuideOpen(true)} />
@@ -2515,12 +2515,11 @@ function HomePage({
     };
   };
 
-  const getBoardItemMaxX = () => {
+  const getBoardItemMaxX = (item) => {
     const boardRect = boardRef.current?.getBoundingClientRect();
     const itemRect = activeCardRef.current?.getBoundingClientRect();
-    if (!boardRect || !itemRect || boardRect.width <= 0) return 96;
-    const itemWidthPercent = (itemRect.width / boardRect.width) * 100;
-    return clamp(100 - itemWidthPercent, 4, 96);
+    const currentItem = dragMemoRef.current || item;
+    return getBoardItemMaxXPercent(boardRect, itemRect, Number(currentItem?.x));
   };
 
   const isDraggedItemOverTrash = (clientX = null, clientY = null) => {
@@ -2768,7 +2767,7 @@ function HomePage({
         const gesture = cardGestureRef.current;
         const points = Array.from(cardPointersRef.current.values()).slice(0, 2);
         const center = getPointerCenter(points[0], points[1]);
-        const maxX = getBoardItemMaxX();
+        const maxX = getBoardItemMaxX(item);
         previewDraggedCard({
           x: clamp(gesture.x + ((center.x - gesture.center.x) / gesture.boardRect.width) * 100, -8, maxX),
           y: clamp(gesture.y + ((center.y - gesture.center.y) / gesture.boardRect.height) * 100, -8, BOARD_ITEM_MAX_Y),
@@ -2792,7 +2791,7 @@ function HomePage({
           moveEvent.clientY,
           cardGestureRef.current,
           BOARD_ITEM_MAX_Y,
-          getBoardItemMaxX()
+          getBoardItemMaxX(item)
         ));
       }
       window.requestAnimationFrame(() => updateTrashHover(moveEvent.clientX, moveEvent.clientY));
@@ -2821,7 +2820,7 @@ function HomePage({
           stopEvent.clientY,
           cardGestureRef.current,
           BOARD_ITEM_MAX_Y,
-          getBoardItemMaxX()
+          getBoardItemMaxX(item)
         ));
       }
       const cancelled = stopEvent.type === 'pointercancel';
