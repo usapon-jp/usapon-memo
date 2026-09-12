@@ -5,6 +5,26 @@ import { InputSession } from '../public/handwriting/core/input.mjs';
 import { StrokeBuilder } from '../public/handwriting/core/stroke.mjs';
 
 const touch = (id, time, x = 20, y = 20) => ({ id, type: 'touch', time, x, y, pressure: 0.5 });
+const pen = (id, time, x = 20, y = 20) => ({ id, type: 'pen', time, x, y, pressure: 0.5 });
+
+test('Apple Pencilは手のひらによる停止状態より優先される', () => {
+  let begins = 0;
+  const input = new InputSession({ begin() { begins += 1; }, append() {}, finish() {}, cancel() {}, undo() {} });
+
+  input.down(touch(1, 0));
+  input.down(touch(2, 30));
+  input.move(touch(1, 80, 42, 20));
+  assert.equal(input.blocked, true);
+
+  input.down(pen(3, 100));
+  assert.equal(input.active?.type, 'pen');
+  assert.equal(input.blocked, false);
+  assert.deepEqual([...input.pointers.keys()], [3]);
+  assert.equal(begins, 2);
+
+  input.down(touch(4, 120));
+  assert.deepEqual([...input.pointers.keys()], [3]);
+});
 
 test('二本指の軽いタップは一度だけ取り消し、動かした二本指操作では取り消さない', () => {
   let undoCount = 0;

@@ -2231,6 +2231,8 @@ body {
 .cork-home {
   height: 100dvh;
   min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   padding: 24px 0 0;
   background:
@@ -2239,6 +2241,7 @@ body {
 }
 
 .cork-header {
+  flex: 0 0 auto;
   display: grid;
   grid-template-columns: 48px minmax(0, 1fr) 142px;
   align-items: center;
@@ -2506,6 +2509,7 @@ body {
 }
 
 .board-tabs {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -2799,7 +2803,8 @@ body {
 }
 
 .cork-board-wrap {
-  height: calc(100dvh - 140px);
+  height: auto;
+  flex: 1 1 auto;
   min-height: 0;
   position: relative;
   padding: 0;
@@ -3475,6 +3480,12 @@ body {
   backdrop-filter: blur(12px);
   -webkit-user-select: none;
   user-select: none;
+}
+
+.cork-footer.is-drawing {
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 18px);
 }
 
 .cork-footer button {

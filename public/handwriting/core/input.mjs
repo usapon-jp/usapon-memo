@@ -12,10 +12,16 @@ export class InputSession {
   }
   down(p) {
     if (this.pointers.has(p.id)) return;
+    // Palm contacts reported after an active stylus must never block the pen.
+    if (p.type === 'touch' && this.active?.type === 'pen') return;
     this.pointers.set(p.id, { ...p, startX: p.x, startY: p.y, moved: 0 });
-    if (p.type === 'pen' && !this.blocked) {
+    if (p.type === 'pen') {
       if (this.active) this.callbacks.cancel();
-      this.candidate = null; this.active = p; this.callbacks.begin(p); return;
+      // A stylus takes priority over stale or accidental touch-only gestures.
+      for (const [id, pointer] of this.pointers) {
+        if (pointer.type === 'touch') this.pointers.delete(id);
+      }
+      this.candidate = null; this.blocked = false; this.active = p; this.callbacks.begin(p); return;
     }
     if (this.active?.type === 'pen' || this.blocked) return;
     const touches = [...this.pointers.values()].filter(e => e.type === 'touch');

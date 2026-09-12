@@ -40,3 +40,19 @@
     bottom: calc(env(safe-area-inset-bottom, 0px) + 18px);
   }
 }
+
+@media (min-width: 700px) and (orientation: landscape) {
+  .board-drawing-menu {
+    display: grid;
+    grid-template-columns: repeat(2, 48px);
+    max-height: calc(100dvh - 110px);
+  }
+  .board-drawing-options {
+    grid-column: 1 / -1;
+    flex-direction: row;
+    padding-block: 2px;
+  }
+  .board-color-panel {
+    right: calc(env(safe-area-inset-right, 0px) + 134px);
+  }
+}

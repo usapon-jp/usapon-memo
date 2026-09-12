@@ -190,6 +190,26 @@ export default function BoardDrawing({ value, onChange, onModeChange, onError, o
     gestureTouchesRef.current.clear();
     onModeChange?.(false);
   }, [onModeChange]);
+  useEffect(() => {
+    const resetInterruptedInput = reason => {
+      gestureTouchesRef.current.clear();
+      pinchRef.current = null;
+      inputRef.current?.cancelAll(reason);
+    };
+    const handleBlur = () => resetInterruptedInput('window-blur');
+    const handleVisibilityChange = () => {
+      if (document.hidden) resetInterruptedInput('document-hidden');
+    };
+    const handlePageHide = () => resetInterruptedInput('page-hidden');
+    window.addEventListener('blur', handleBlur);
+    window.addEventListener('pagehide', handlePageHide);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.removeEventListener('blur', handleBlur);
+      window.removeEventListener('pagehide', handlePageHide);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
 
   const appendPoint = point => {
     const state = live.current;
@@ -304,6 +324,11 @@ export default function BoardDrawing({ value, onChange, onModeChange, onError, o
     setColorOpen(false);
     event.currentTarget.setPointerCapture?.(event.pointerId);
     const point = pointFromEvent(event);
+    if (point.type === 'pen') {
+      gestureTouchesRef.current.clear();
+      pinchRef.current = null;
+    }
+    if (point.type === 'touch' && inputRef.current.active?.type === 'pen') return;
     if (point.type === 'touch') {
       gestureTouchesRef.current.set(point.id, point);
       const touches = [...gestureTouchesRef.current.values()];

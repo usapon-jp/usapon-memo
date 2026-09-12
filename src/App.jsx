@@ -3766,7 +3766,7 @@ function HomePage({
         </div>
       )}
 
-      <footer className="cork-footer" aria-label="主要操作">
+      <footer className={`cork-footer ${drawingMode ? 'is-drawing' : ''}`} aria-label="主要操作">
         <button type="button" onClick={onOpenList}>
           <Folder size={22} />
           ボード一覧
