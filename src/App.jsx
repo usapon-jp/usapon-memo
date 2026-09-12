@@ -61,6 +61,7 @@ import {
   DEFAULT_STICKY_TEXT_SIZE,
   DEFAULT_STICKY_TEXT_WEIGHT,
   DEFAULT_STICKER_IDS,
+  getBoardItemMaxScale,
   getBoardStickerInitialScale,
   MAX_VISIBLE_STICKERS,
   isBoardItemVisible,
@@ -2775,7 +2776,7 @@ function HomePage({
             gesture.scale,
             gesture.distance,
             getPointerDistance(points[0], points[1])
-          ), 0.3, 3.2),
+          ), 0.3, getBoardItemMaxScale(item)),
           rotation: clamp(
             getGestureRotation(gesture.rotation, gesture.angle, getPointerAngle(points[0], points[1])),
             -180,

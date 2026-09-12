@@ -29,3 +29,14 @@
   .board-color-palette { gap: 5px; }
   .board-color-palette button { width: 31px; min-width: 31px; height: 31px; min-height: 31px; }
 }
+
+@media (min-width: 700px) {
+  .board-drawing-tools {
+    right: calc(env(safe-area-inset-right, 0px) + 18px);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 18px);
+  }
+  .board-color-panel {
+    right: calc(env(safe-area-inset-right, 0px) + 76px);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 18px);
+  }
+}

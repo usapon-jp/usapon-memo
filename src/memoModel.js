@@ -45,6 +45,8 @@ export const DEFAULT_PHOTO_CARD_HEIGHT = 300;
 export const PHOTO_OFFSET_LIMIT = 260;
 export const PHOTO_ROTATION_LIMIT = 180;
 export const BOARD_ITEM_MAX_Y = 88;
+export const DEFAULT_BOARD_ITEM_MAX_SCALE = 3.2;
+export const STATIONERY_BOARD_ITEM_MAX_SCALE = 4.8;
 export const MEMO_CARD_MAX_Y = 88;
 export const STICKY_TEXT_SIZES = new Set(['small', 'standard', 'large']);
 export const STICKY_TEXT_WEIGHTS = new Set(['soft', 'standard', 'bold']);
@@ -141,6 +143,14 @@ const STICKER_ASSETS = new Set(STICKER_CATALOG.map(sticker => sticker.id));
 export const getBoardStickerInitialScale = (assetId) => {
   if (assetId === 'autumn-stamp-9800') return 0.58;
   return STICKER_CATALOG.find(sticker => sticker.id === assetId)?.boardInitialScale || 1;
+};
+
+export const getBoardItemMaxScale = (item = {}) => {
+  if (item.type !== 'sticker') return DEFAULT_BOARD_ITEM_MAX_SCALE;
+  const variant = STICKER_CATALOG.find(sticker => sticker.id === item.assetId)?.boardTextVariant;
+  return ['sticky', 'wide', 'heading', 'tape'].includes(variant)
+    ? STATIONERY_BOARD_ITEM_MAX_SCALE
+    : DEFAULT_BOARD_ITEM_MAX_SCALE;
 };
 
 const LEGACY_COLOR_MAP = {
@@ -537,7 +547,9 @@ export const normalizeBoardItem = (item = {}, index = 0) => {
     naturalHeight: Number.isFinite(Number(item.naturalHeight)) ? Number(item.naturalHeight) : 0,
     x: Number.isFinite(Number(item.x)) ? clamp(Number(item.x), -8, 96) : position.x,
     y: Number.isFinite(Number(item.y)) ? clamp(Number(item.y), -8, BOARD_ITEM_MAX_Y) : position.y,
-    scale: Number.isFinite(Number(item.scale)) ? clamp(Number(item.scale), 0.3, 3.2) : 1,
+    scale: Number.isFinite(Number(item.scale))
+      ? clamp(Number(item.scale), 0.3, getBoardItemMaxScale({ type, assetId: item.assetId }))
+      : 1,
     rotation: Number.isFinite(Number(item.rotation)) ? clamp(Number(item.rotation), -180, 180) : 0,
     textColor,
     textSize,

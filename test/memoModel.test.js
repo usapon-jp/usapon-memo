@@ -2,9 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  DEFAULT_BOARD_ITEM_MAX_SCALE,
+  getBoardItemMaxScale,
   getBoardStickerInitialScale,
+  normalizeBoardItem,
   sortBoardItemsForBoard,
   sortMemosForBoard,
+  STATIONERY_BOARD_ITEM_MAX_SCALE,
   STICKER_CATALOG
 } from '../src/memoModel.js';
 
@@ -36,4 +40,16 @@ test('秋の文房具は種類に合わせた初期サイズと書き込み方�
   assert.ok(getBoardStickerInitialScale('autumn-trial-tape') > 1);
   assert.equal(getBoardStickerInitialScale('autumn-stamp-9803'), 1);
   assert.ok(getBoardStickerInitialScale('autumn-stamp-9800') < 1);
+});
+
+test('付箋系だけをiPadで大きく拡大でき、通常スタンプの上限は維持する', () => {
+  const sticky = { type: 'sticker', assetId: 'autumn-trial-sticky' };
+  const heading = { type: 'sticker', assetId: 'autumn-trial-heading' };
+  const stamp = { type: 'sticker', assetId: 'autumn-stamp-9803' };
+
+  assert.equal(getBoardItemMaxScale(sticky), STATIONERY_BOARD_ITEM_MAX_SCALE);
+  assert.equal(getBoardItemMaxScale(heading), STATIONERY_BOARD_ITEM_MAX_SCALE);
+  assert.equal(getBoardItemMaxScale(stamp), DEFAULT_BOARD_ITEM_MAX_SCALE);
+  assert.equal(normalizeBoardItem({ ...sticky, scale: 9 }).scale, STATIONERY_BOARD_ITEM_MAX_SCALE);
+  assert.equal(normalizeBoardItem({ ...stamp, scale: 9 }).scale, DEFAULT_BOARD_ITEM_MAX_SCALE);
 });
