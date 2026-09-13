@@ -2,9 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { Sticker, ChevronDown, Pencil, Undo2, Redo2, Sparkles } from 'lucide-react';
 import { DrawingHistory, newDocument } from '../public/handwriting/core/document.mjs';
 import { InputSession } from '../public/handwriting/core/input.mjs';
+import { BRUSH_SIZES } from '../public/handwriting/core/brush-sizes.mjs';
 import { StrokeBuilder } from '../public/handwriting/core/stroke.mjs';
 import { renderDocument, paintStroke } from '../public/handwriting/core/render.mjs';
 import { hexToHsv, hsvToHex } from '../public/handwriting/core/color-picker.mjs';
+import { isShortTap } from './boardDrawingInteraction.js';
 import './boardDrawing.css';
 
 const TOOLS = [
@@ -22,6 +24,31 @@ const PALETTE = [
 const sameDocumentRevision = (left, right) => (
   left === right || Boolean(left && right && left.id === right.id && left.revision === right.revision)
 );
+
+function BrushSettings({ tool, size, opacity, onSizeChange, onOpacityChange }) {
+  const config = BRUSH_SIZES[tool];
+  return <section className="board-brush-settings" role="dialog" aria-label={`${TOOLS.find(([id]) => id === tool)?.[1] || 'ペン'}の設定`}>
+    <div className="board-stroke-presets" aria-label="基本の太さ">
+      {config.presets.map(preset => <button key={preset} type="button" className={size === preset ? 'is-selected' : ''}
+        aria-label={`${preset}の太さ`} onClick={() => onSizeChange(preset)}>
+        <svg viewBox="0 0 48 28" aria-hidden="true"><path d="M4 18c8-13 13 8 21-3s11-5 19 2" /></svg>
+      </button>)}
+    </div>
+    <div className="board-size-adjust">
+      <span aria-hidden="true">●</span>
+      <input type="range" aria-label="太さを微調整" min={config.min} max={config.max} value={size}
+        onChange={event => onSizeChange(Number(event.target.value))} />
+      <input className="board-size-number" type="number" inputMode="numeric" aria-label="太さを数値で入力"
+        min={config.min} max={config.max} value={size} onChange={event => onSizeChange(Math.max(config.min, Math.min(config.max, Number(event.target.value) || config.min)))} />
+    </div>
+    {tool !== 'eraser' && <label className="board-opacity-adjust">
+      <span>不透明度</span>
+      <input type="range" min="1" max="100" value={Math.round(opacity * 100)} aria-label="不透明度"
+        onChange={event => onOpacityChange(Number(event.target.value) / 100)} />
+      <output>{Math.round(opacity * 100)}%</output>
+    </label>}
+  </section>;
+}
 
 function CircularColorPicker({ color, onChange, onSelect }) {
   const wheelRef = useRef(null);
@@ -111,15 +138,20 @@ export default function BoardDrawing({ value, onChange, onModeChange, onError, o
   const inputRef = useRef(null);
   const gestureTouchesRef = useRef(new globalThis.Map());
   const pinchRef = useRef(null);
-  const configRef = useRef({ tool: null, color: '#594536', size: 4 });
+  const configRef = useRef({ tool: null, color: '#594536', size: 4, opacity: 1 });
+  const toolSizesRef = useRef(Object.fromEntries(TOOLS.map(([id, , defaultSize]) => [id, defaultSize])));
+  const pendingStickerTapRef = useRef(null);
   const [, setHistoryVersion] = useState(0);
   const [open, setOpen] = useState(false);
   const [tool, setTool] = useState(null);
   const [color, setColor] = useState('#594536');
   const [colorOpen, setColorOpen] = useState(false);
   const [size, setSize] = useState(4);
+  const [opacity, setOpacity] = useState(1);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [confirmStickerEdit, setConfirmStickerEdit] = useState(false);
   const expectedValue = useRef(value);
-  configRef.current = { tool, color, size };
+  configRef.current = { tool, color, size, opacity };
   live.current.value = historyRef.current?.document || value;
   const publish = next => {
     expectedValue.current = next;
@@ -224,7 +256,7 @@ export default function BoardDrawing({ value, onChange, onModeChange, onError, o
     if (!state.frame) state.frame = requestAnimationFrame(() => { state.frame = null; state.redraw(); });
   };
   const beginStroke = point => {
-    const { tool: nextTool, color: nextColor, size: nextSize } = configRef.current;
+    const { tool: nextTool, color: nextColor, size: nextSize, opacity: nextOpacity } = configRef.current;
     if (!nextTool || live.current.stroke) return;
     const rect = canvasRef.current.getBoundingClientRect();
     if (!historyRef.current) {
@@ -234,7 +266,7 @@ export default function BoardDrawing({ value, onChange, onModeChange, onError, o
       }));
     }
     const doc = historyRef.current.document;
-    live.current.stroke = { document: doc, builder: new StrokeBuilder({ tool: nextTool, color: nextColor, size: nextSize, input: point.type, time: point.time }) };
+    live.current.stroke = { document: doc, builder: new StrokeBuilder({ tool: nextTool, color: nextColor, size: nextSize, opacity: nextTool === 'eraser' ? 1 : nextOpacity, input: point.type, time: point.time }) };
     appendPoint(point);
   };
   const cancelStroke = () => {
@@ -297,10 +329,11 @@ export default function BoardDrawing({ value, onChange, onModeChange, onError, o
     time: event.timeStamp,
     pressure: event.pressure
   });
-  const isStampAtPoint = (x, y) => [...document.querySelectorAll('.board-free-sticker, .memo-sticker-wrap')].some(element => {
+  const stampAtPoint = (x, y) => [...document.querySelectorAll('.board-free-sticker, .memo-sticker-wrap')].find(element => {
     const rect = element.getBoundingClientRect();
     return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
   });
+  const isStampAtPoint = (x, y) => Boolean(stampAtPoint(x, y));
   const updatePinch = (point, onZoomChange, zoom) => {
     if (point.type !== 'touch' || !gestureTouchesRef.current.has(point.id)) return;
     gestureTouchesRef.current.set(point.id, point);
@@ -322,6 +355,7 @@ export default function BoardDrawing({ value, onChange, onModeChange, onError, o
     if (!tool || (event.pointerType === 'mouse' && event.button !== 0)) return;
     event.preventDefault();
     setColorOpen(false);
+    setSettingsOpen(false);
     event.currentTarget.setPointerCapture?.(event.pointerId);
     const point = pointFromEvent(event);
     if (point.type === 'pen') {
@@ -329,6 +363,10 @@ export default function BoardDrawing({ value, onChange, onModeChange, onError, o
       pinchRef.current = null;
     }
     if (point.type === 'touch' && inputRef.current.active?.type === 'pen') return;
+    if (point.type !== 'pen' && gestureTouchesRef.current.size === 0 && stampAtPoint(point.x, point.y)) {
+      pendingStickerTapRef.current = { id: point.id, start: point };
+      return;
+    }
     if (point.type === 'touch') {
       gestureTouchesRef.current.set(point.id, point);
       const touches = [...gestureTouchesRef.current.values()];
@@ -352,6 +390,13 @@ export default function BoardDrawing({ value, onChange, onModeChange, onError, o
   const sample = (event, onZoomChange, zoom) => {
     event.stopPropagation();
     event.preventDefault();
+    const pendingTap = pendingStickerTapRef.current;
+    if (pendingTap?.id === event.pointerId) {
+      const current = pointFromEvent(event);
+      if (isShortTap(pendingTap.start, current)) return;
+      pendingStickerTapRef.current = null;
+      inputRef.current.down(pendingTap.start);
+    }
     const samples = event.nativeEvent?.getCoalescedEvents?.() || [event];
     for (const sampleEvent of samples.length ? samples : [event]) {
       const point = pointFromEvent(sampleEvent);
@@ -362,11 +407,36 @@ export default function BoardDrawing({ value, onChange, onModeChange, onError, o
   const finish = (event, cancelled = false) => {
     event.stopPropagation();
     const point = pointFromEvent(event);
+    if (pendingStickerTapRef.current?.id === point.id) {
+      pendingStickerTapRef.current = null;
+      gestureTouchesRef.current.delete(point.id);
+      if (!cancelled) setConfirmStickerEdit(true);
+      return;
+    }
     gestureTouchesRef.current.delete(point.id);
     if (gestureTouchesRef.current.size < 2) pinchRef.current = null;
     inputRef.current.up(point, cancelled, cancelled ? 'pointercancel' : 'pointerup');
   };
-  const close = () => { inputRef.current.cancelAll('drawing-closed'); setOpen(false); setTool(null); setColorOpen(false); };
+  const close = () => {
+    pendingStickerTapRef.current = null;
+    inputRef.current.cancelAll('drawing-closed');
+    setOpen(false); setTool(null); setColorOpen(false); setSettingsOpen(false); setConfirmStickerEdit(false);
+  };
+  const changeSize = nextSize => {
+    toolSizesRef.current[tool] = nextSize;
+    setSize(nextSize);
+  };
+  const selectTool = (id, defaultSize) => {
+    if (tool === id) {
+      setColorOpen(false);
+      setSettingsOpen(current => !current);
+      return;
+    }
+    setTool(id);
+    setSize(toolSizesRef.current[id] || defaultSize);
+    setColorOpen(false);
+    setSettingsOpen(false);
+  };
   return <>
     <canvas ref={canvasRef} className="board-ink" aria-hidden="true" />
     {!readOnly && tool && <div className="board-ink-input" aria-label="ボードに手書き"
@@ -374,18 +444,18 @@ export default function BoardDrawing({ value, onChange, onModeChange, onError, o
       onPointerCancel={event => finish(event, true)} onLostPointerCapture={event => finish(event, true)}
       onClick={stop} onContextMenu={event => event.preventDefault()} onTouchStart={stop} onTouchEnd={stop} />}
     {!readOnly && <div className="board-drawing-tools" onPointerDown={stop} onClick={stop} onTouchStart={stop} onTouchEnd={stop}
-      onKeyDown={event => { if (event.key === 'Escape') colorOpen ? setColorOpen(false) : close(); }}>
+      onKeyDown={event => { if (event.key === 'Escape') settingsOpen ? setSettingsOpen(false) : colorOpen ? setColorOpen(false) : close(); }}>
       {colorOpen && tool !== 'eraser' && <CircularColorPicker color={color} onChange={setColor} onSelect={() => setColorOpen(false)} />}
+      {settingsOpen && tool && <BrushSettings tool={tool} size={size} opacity={opacity} onSizeChange={changeSize} onOpacityChange={setOpacity} />}
       {open && <div className="board-drawing-menu" role="toolbar" aria-label="手書きの文房具">
         {onStickers && <button type="button" title="ステッカー" aria-label="ボードにステッカーを貼る" onClick={() => { close(); onStickers(); }}><Sticker size={27} /></button>}
         {TOOLS.map(([id, label, defaultSize]) => <button key={id} type="button" title={label} aria-label={label} aria-pressed={tool === id}
-          onClick={() => { setTool(id); setSize(defaultSize); }}>
+          onClick={() => selectTool(id, defaultSize)}>
           <img alt="" draggable="false" src={`${import.meta.env.BASE_URL}handwriting/assets/tools/${id === 'eraser' ? 'eraser-block' : id}-icon.png`} />
         </button>)}
         {tool && <div className="board-drawing-options">
           <button type="button" className="board-color-toggle" aria-label="線の色" aria-expanded={colorOpen} disabled={tool === 'eraser'}
-            style={{ '--current-color': color }} onClick={() => setColorOpen(current => !current)} />
-          <input type="range" aria-label="線の太さ" min="1" max="32" value={size} onChange={event => setSize(Number(event.target.value))} />
+            style={{ '--current-color': color }} onClick={() => { setSettingsOpen(false); setColorOpen(current => !current); }} />
         </div>}
       </div>}
       {open && <div className="board-drawing-actions">
@@ -400,6 +470,15 @@ export default function BoardDrawing({ value, onChange, onModeChange, onError, o
       </div>}
       <button type="button" className="board-drawing-toggle" aria-label={open ? '手書きを終了' : 'ボードに手書きする'} aria-expanded={open}
         onClick={() => open ? close() : setOpen(true)}>{open ? <ChevronDown size={22}/> : <Pencil size={21}/>}</button>
+    </div>}
+    {confirmStickerEdit && <div className="board-drawing-confirm-backdrop" role="presentation" onPointerDown={stop} onClick={stop}>
+      <section className="board-drawing-confirm" role="dialog" aria-modal="true" aria-label="手書きモードを終了">
+        <p>手書きを終了してステッカーを編集しますか？</p>
+        <div>
+          <button type="button" className="confirm" onClick={close}>はい</button>
+          <button type="button" onClick={() => setConfirmStickerEdit(false)}>このまま描く</button>
+        </div>
+      </section>
     </div>}
   </>;
 }

@@ -3,7 +3,7 @@ import { InputSession } from './core/input.mjs';
 import { BRUSH_SIZES } from './core/brush-sizes.mjs';
 import { setupSizeFavorites } from './core/size-favorites.mjs';
 import { setupHelp } from './core/help.mjs';
-import { contentPointAtAnchor, anchoredScroll } from './core/zoom.mjs';
+import { contentPointAtAnchor, anchoredScroll, zoomedStageLayout } from './core/zoom.mjs';
 import { StrokeBuilder } from './core/stroke.mjs';
 import { paintSegment, renderDocument, exportPng, exportStampPng, exportStampDataUrl, BrushStrokeRenderer } from './core/render.mjs';
 import { sendToMemo } from './host-bridge.mjs';
@@ -12,14 +12,17 @@ import { setupColorPalettes } from './core/palette.mjs';
 import { renderLayerBuffers, compositeLayers } from './core/render.mjs';
 const $ = id => document.getElementById(id);
 const canvas = $('drawing'); const ctx = canvas.getContext('2d');
-const NARROW_CANVAS_QUERY = '(max-width: 600px)';
-const MOBILE_CANVAS_HEIGHT = 1650;
-const mobileCanvas = matchMedia(NARROW_CANVAS_QUERY).matches;
+const SQUARE_CANVAS_SIZE = 1400;
 const DRAFT_STORAGE_KEY = 'usapon_handwriting_draft_v1';
-let initialDocument = mobileCanvas ? newDocument({ width: 1000, height: MOBILE_CANVAS_HEIGHT }) : newDocument();
+let initialDocument = newDocument({ width: SQUARE_CANVAS_SIZE, height: SQUARE_CANVAS_SIZE });
 try {
   const saved = localStorage.getItem(DRAFT_STORAGE_KEY);
-  if (saved) initialDocument = validateDocument(JSON.parse(saved));
+  if (saved) {
+    const restored = validateDocument(JSON.parse(saved));
+    initialDocument = restored.strokes.length
+      ? restored
+      : newDocument({ width: SQUARE_CANVAS_SIZE, height: SQUARE_CANVAS_SIZE });
+  }
 } catch (error) {
   console.warn('Saved handwriting could not be restored.', error);
 }
@@ -118,6 +121,8 @@ const canvasViewport = $('canvasViewport');
 const canvasStage = $('canvasStage');
 const surface = $('surface');
 const gestureTouches = new Map();
+const MIN_CANVAS_ZOOM = 0.5;
+const MAX_CANVAS_ZOOM = 3;
 let canvasZoom = 1;
 let pinch = null;
 let fittedCanvas = { width: 0, height: 0 };
@@ -126,7 +131,7 @@ const touchCenter = touches => ({ x: (touches[0].x + touches[1].x) / 2, y: (touc
 function applyCanvasZoom(nextZoom, center, origin = null) {
   if (!fittedCanvas.width) return;
   const oldZoom = canvasZoom;
-  const zoom = Math.min(3, Math.max(1, nextZoom));
+  const zoom = Math.min(MAX_CANVAS_ZOOM, Math.max(MIN_CANVAS_ZOOM, nextZoom));
   const bounds = canvasViewport.getBoundingClientRect();
   const anchor = center || { x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2 };
   const before = surface.getBoundingClientRect();
@@ -137,9 +142,16 @@ function applyCanvasZoom(nextZoom, center, origin = null) {
   // allowing width:100% to follow the enlarged stage would apply zoom twice.
   surface.style.width = `${fittedCanvas.width}px`;
   surface.style.height = `${fittedCanvas.height}px`;
-  surface.style.transform = `scale(${zoom})`;
-  canvasStage.style.width = `${fittedCanvas.width * zoom}px`;
-  canvasStage.style.height = `${fittedCanvas.height * zoom}px`;
+  const layout = zoomedStageLayout(
+    fittedCanvas.width,
+    fittedCanvas.height,
+    zoom,
+    canvasViewport.clientWidth,
+    canvasViewport.clientHeight
+  );
+  surface.style.transform = `translate(${layout.offsetX}px, ${layout.offsetY}px) scale(${zoom})`;
+  canvasStage.style.width = `${layout.width}px`;
+  canvasStage.style.height = `${layout.height}px`;
   const after = surface.getBoundingClientRect();
   canvasViewport.scrollLeft = anchoredScroll(canvasViewport.scrollLeft, after.left, anchor.x, contentX, zoom);
   canvasViewport.scrollTop = anchoredScroll(canvasViewport.scrollTop, after.top, anchor.y, contentY, zoom);
@@ -397,27 +409,25 @@ $('pasteConfirm').addEventListener('click', async () => {
 });
 let oldWidth = 0;
 new ResizeObserver(() => {
-  const targetHeight = matchMedia(NARROW_CANVAS_QUERY).matches ? MOBILE_CANVAS_HEIGHT : 750;
-  if (!dirty && !history.document.strokes.length && history.document.canvas.height !== targetHeight) {
-    history = new DrawingHistory(newDocument({ width: 1000, height: targetHeight }));
-    $('surface').style.aspectRatio = `${history.document.canvas.width} / ${history.document.canvas.height}`;
-  }
   const cssWidth = canvas.getBoundingClientRect().width;
   const edge = Math.max(1, Math.min(1536, Math.round(cssWidth * Math.min(2, devicePixelRatio || 1))));
   const height = Math.round(edge * history.document.canvas.height / history.document.canvas.width);
   if (edge === oldWidth && canvas.height === height) return;
   input.cancelAll('canvas-resize'); oldWidth = edge; canvas.width = edge; canvas.height = height; redraw();
 }).observe($('surface'));
-let observedViewportWidth = 0;
+let observedViewportSize = { width: 0, height: 0 };
 new ResizeObserver(() => {
-  if (canvasZoom !== 1) return;
   const viewportWidth = canvasViewport.clientWidth;
-  if (viewportWidth === observedViewportWidth) return;
-  observedViewportWidth = viewportWidth;
+  const viewportHeight = canvasViewport.clientHeight;
+  if (viewportWidth === observedViewportSize.width && viewportHeight === observedViewportSize.height) return;
+  observedViewportSize = { width: viewportWidth, height: viewportHeight };
+  canvasZoom = 1;
+  pinch = null;
   canvasStage.style.width = '';
   canvasStage.style.height = '';
   surface.style.width = '';
   surface.style.height = '';
+  surface.style.transform = '';
   requestAnimationFrame(() => {
     const bounds = surface.getBoundingClientRect();
     fittedCanvas = { width: bounds.width, height: bounds.height };
@@ -426,7 +436,7 @@ new ResizeObserver(() => {
   });
 }).observe(canvasViewport);
 // Explicit local test surface; no network, application storage or external APIs.
-window.lab = { get document() { return structuredClone(history.document); }, get stats() { return { undo: history.past.length, redo: history.future.length, lastFrameMs, peakFrameMs, frameSamples: [...frameSamples] }; }, exportPng: () => exportPng(history.document) };
+window.lab = { get document() { return structuredClone(history.document); }, get stats() { return { undo: history.past.length, redo: history.future.length, zoom: canvasZoom, lastFrameMs, peakFrameMs, frameSamples: [...frameSamples] }; }, exportPng: () => exportPng(history.document) };
 const layerButton=document.createElement('button');
 layerButton.className='layer-toggle';layerButton.type='button';layerButton.setAttribute('aria-label','レイヤー');
 layerButton.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5 9-5Zm-9 9 9 5 9-5M3 16l9 5 9-5"/></svg>';

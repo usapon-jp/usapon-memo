@@ -10,7 +10,6 @@
 .board-drawing-menu img { transform: rotate(-90deg); }
 .board-drawing-options { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 6px 0; }
 .board-drawing-options .board-color-toggle { width: 34px; min-width: 34px; height: 34px; min-height: 34px; border: 3px solid #fff; background: var(--current-color); box-shadow: 0 0 0 1px #725e5838; }
-.board-drawing-options input[type="range"] { width: 48px; accent-color: #c58999; }
 .board-drawing-actions { position: absolute; right: 52px; bottom: 2px; display: flex; align-items: center; gap: 1px; padding: 3px; border-radius: 24px; background: #fffaf0f5; box-shadow: 0 3px 12px #674b3020; }
 .board-drawing-actions button { width: 44px; height: 44px; min-height: 44px; }
 .board-drawing-history { display: flex; }
@@ -24,6 +23,29 @@
 .board-color-palette { display: grid; grid-template-columns: repeat(6, 1fr); gap: 7px; justify-items: center; padding: 5px 2px 8px; }
 .board-color-palette button { width: 34px; min-width: 34px; height: 34px; min-height: 34px; border: 3px solid #fff; background: var(--palette-color); box-shadow: 0 0 0 1px #725e5830; }
 .board-color-palette button[aria-pressed="true"] { outline: 2px solid #806d64; outline-offset: 2px; }
+.board-brush-settings { position: fixed; z-index: 3; right: max(76px, calc((100vw - 560px) / 2 + 76px)); bottom: calc(env(safe-area-inset-bottom) + 100px); display: grid; gap: 8px; width: min(330px, calc(100vw - 92px)); padding: 10px; border: 1px solid #e6dfd2; border-radius: 16px; color: #655650; background: #fffdf8f5; box-shadow: 0 14px 30px #61594820; backdrop-filter: blur(12px); }
+.board-stroke-presets { display: flex; align-items: center; justify-content: space-between; gap: 5px; }
+.board-stroke-presets button { display: grid; width: 54px; min-width: 44px; height: 42px; min-height: 42px; place-items: center; padding: 2px; border-radius: 10px; color: #655650; background: #faf6ef; }
+.board-stroke-presets button.is-selected { color: #654c46; background: #ffe1e8; box-shadow: inset 0 -3px #d894a0; }
+.board-stroke-presets svg { display: block; width: 46px; height: 28px; overflow: visible; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; }
+.board-stroke-presets button:nth-child(1) svg { stroke-width: 1; }
+.board-stroke-presets button:nth-child(2) svg { stroke-width: 2; }
+.board-stroke-presets button:nth-child(3) svg { stroke-width: 3; }
+.board-stroke-presets button:nth-child(4) svg { stroke-width: 5; }
+.board-stroke-presets button:nth-child(5) svg { stroke-width: 8; }
+.board-size-adjust, .board-opacity-adjust { display: flex; width: 100%; align-items: center; gap: 8px; }
+.board-size-adjust > span { flex: 0 0 auto; font-size: 9px; color: #9a888e; }
+.board-size-adjust input[type="range"], .board-opacity-adjust input { flex: 1; min-width: 0; height: 40px; accent-color: #9fba93; }
+.board-size-number { flex: 0 0 38px; width: 38px; min-width: 38px; height: 32px; padding: 2px 3px; border: 1px solid #e6dfd2; border-radius: 8px; color: #756a64; background: #fff; text-align: center; font: 700 11px/1 inherit; }
+.board-opacity-adjust { padding-top: 3px; border-top: 1px solid #eee6da; font-size: 11px; }
+.board-opacity-adjust > span { flex: none; white-space: nowrap; }
+.board-opacity-adjust output { flex: 0 0 38px; text-align: right; }
+.board-drawing-confirm-backdrop { position: fixed; inset: 0; z-index: 1300; display: grid; place-items: center; padding: 20px; background: #30261d42; }
+.board-drawing-confirm { width: min(340px, 100%); padding: 18px; border-radius: 20px; color: #60482f; background: #fffaf0; box-shadow: 0 18px 48px #59463b35; }
+.board-drawing-confirm p { margin: 0 0 16px; font-weight: 800; line-height: 1.6; text-align: center; }
+.board-drawing-confirm > div { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.board-drawing-confirm button { min-height: 44px; border-radius: 12px; background: #f2e7d8; font-weight: 800; }
+.board-drawing-confirm button.confirm { color: white; background: #9fba93; }
 @media (max-width: 390px) {
   .board-color-panel { padding: 10px; }
   .board-color-palette { gap: 5px; }
@@ -36,6 +58,10 @@
     bottom: calc(env(safe-area-inset-bottom, 0px) + 18px);
   }
   .board-color-panel {
+    right: calc(env(safe-area-inset-right, 0px) + 76px);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 18px);
+  }
+  .board-brush-settings {
     right: calc(env(safe-area-inset-right, 0px) + 76px);
     bottom: calc(env(safe-area-inset-bottom, 0px) + 18px);
   }
@@ -53,6 +79,9 @@
     padding-block: 2px;
   }
   .board-color-panel {
+    right: calc(env(safe-area-inset-right, 0px) + 134px);
+  }
+  .board-brush-settings {
     right: calc(env(safe-area-inset-right, 0px) + 134px);
   }
 }
