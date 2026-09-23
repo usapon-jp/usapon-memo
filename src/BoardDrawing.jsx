@@ -151,6 +151,8 @@ export default function BoardDrawing({ value, onChange, onModeChange, onError, o
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [confirmStickerEdit, setConfirmStickerEdit] = useState(false);
   const expectedValue = useRef(value);
+  const onModeChangeRef = useRef(onModeChange);
+  onModeChangeRef.current = onModeChange;
   configRef.current = { tool, color, size, opacity };
   live.current.value = historyRef.current?.document || value;
   const publish = next => {
@@ -216,12 +218,12 @@ export default function BoardDrawing({ value, onChange, onModeChange, onError, o
     live.current.value = historyRef.current?.document || value;
     live.current.refresh?.();
   }, [value]);
-  useEffect(() => { onModeChange?.(Boolean(tool)); }, [tool, onModeChange]);
+  useEffect(() => { onModeChangeRef.current?.(Boolean(tool)); }, [tool]);
   useEffect(() => () => {
     inputRef.current?.cancelAll('drawing-unmounted');
     gestureTouchesRef.current.clear();
-    onModeChange?.(false);
-  }, [onModeChange]);
+    onModeChangeRef.current?.(false);
+  }, []);
   useEffect(() => {
     const resetInterruptedInput = reason => {
       gestureTouchesRef.current.clear();

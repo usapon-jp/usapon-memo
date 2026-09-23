@@ -3,23 +3,29 @@ export class InputSession {
   constructor(callbacks) { this.callbacks = callbacks; this.pointers = new Map(); this.active = null; this.candidate = null; this.blocked = false; this.penOnly = false; }
   interrupt(reason) {
     if (!this.active) return;
-    // Trackpad/mouse cancellation is not a touch gesture. Keep the points already
-    // received, without appending a potentially invalid cancellation coordinate.
-    const preserve = this.active.type === 'mouse';
+    // A cancelled pen stream may still contain a real stroke. Keep the points
+    // already received, without appending the cancellation coordinate.
+    const preserve = this.active.type === 'mouse' || this.active.type === 'pen';
     this.callbacks.trace?.({ reason, input: this.active.type, action: preserve ? 'preserved' : 'discarded' });
     if (preserve) this.callbacks.finish(); else this.callbacks.cancel();
     this.active = null;
   }
   down(p) {
-    if (this.pointers.has(p.id)) return;
+    if (this.pointers.has(p.id)) {
+      if (p.type !== 'pen') return;
+      // Browsers may reuse a stylus pointer ID after its end event was missed.
+      // A new pointerdown starts a new contact; the old entry must not eat it.
+      this.pointers.delete(p.id);
+      if (this.active?.id === p.id) this.interrupt('next-pen-down');
+    }
     // Palm contacts reported after an active stylus must never block the pen.
     if (p.type === 'touch' && this.active?.type === 'pen') return;
     this.pointers.set(p.id, { ...p, startX: p.x, startY: p.y, moved: 0 });
     if (p.type === 'pen') {
-      if (this.active) this.callbacks.cancel();
-      // A stylus takes priority over stale or accidental touch-only gestures.
-      for (const [id, pointer] of this.pointers) {
-        if (pointer.type === 'touch') this.pointers.delete(id);
+      if (this.active) this.interrupt('pen-takes-priority');
+      // A stylus takes priority over stale contacts and accidental palm input.
+      for (const id of this.pointers.keys()) {
+        if (id !== p.id) this.pointers.delete(id);
       }
       this.candidate = null; this.blocked = false; this.active = p; this.callbacks.begin(p); return;
     }

@@ -26,6 +26,39 @@ test('Apple Pencilは手のひらによる停止状態より優先される', ()
   assert.deepEqual([...input.pointers.keys()], [3]);
 });
 
+test('Apple Pencilの終了通知が欠けても同じIDの次の一画を開始できる', () => {
+  const actions = [];
+  const input = new InputSession({
+    begin(p) { actions.push(['begin', p.x]); },
+    append() {},
+    finish() { actions.push(['finish']); },
+    cancel() { actions.push(['cancel']); },
+    undo() {}
+  });
+
+  input.down(pen(3, 100, 20));
+  input.down(pen(3, 200, 60));
+  assert.deepEqual(actions, [['begin', 20], ['finish'], ['begin', 60]]);
+  assert.equal(input.active?.x, 60);
+  input.up(pen(3, 230, 70));
+  assert.deepEqual(actions.at(-1), ['finish']);
+  assert.equal(input.pointers.size, 0);
+});
+
+test('Apple Pencilが中断されても受け取った線を残し、次の一画を受け付ける', () => {
+  const actions = [];
+  const input = new InputSession({
+    begin() { actions.push('begin'); }, append() {},
+    finish() { actions.push('finish'); }, cancel() { actions.push('cancel'); }, undo() {}
+  });
+
+  input.down(pen(7, 100));
+  input.up(pen(7, 130), true, 'pointercancel');
+  input.down(pen(7, 200));
+  input.up(pen(7, 230));
+  assert.deepEqual(actions, ['begin', 'finish', 'begin', 'finish']);
+});
+
 test('二本指の軽いタップは一度だけ取り消し、動かした二本指操作では取り消さない', () => {
   let undoCount = 0;
   const input = new InputSession({ begin() {}, append() {}, finish() {}, cancel() {}, undo() { undoCount += 1; } });

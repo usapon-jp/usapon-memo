@@ -49,6 +49,16 @@ button {
   color: inherit;
 }
 
+button,
+summary,
+[role="button"],
+[role="tab"],
+[role="menuitem"] {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 .phone-shell {
   width: min(100%, 520px);
   min-height: 100vh;
