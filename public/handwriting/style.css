@@ -93,6 +93,7 @@
 .back-link svg{width:23px;height:23px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
 .back-link:focus-visible{outline:3px solid #9fba9355;outline-offset:3px}
 .header-actions .save-button{order:0}
+.header-actions .drafts-button{order:-1;min-width:0;padding:8px 11px;border-radius:999px;background:#f2ede4;color:#765c50;font-weight:800}
 .header-actions .paste-button{order:1}
 .header-actions .more{order:2}
 .paste-button{min-width:auto;color:#765c50;background:#f5eadb;border-radius:999px;padding:8px 14px;font-weight:800}
@@ -110,6 +111,26 @@
 .paste-library-details input,.paste-library-details select{min-width:0;height:38px;border:1px solid #e3d8ca;border-radius:9px;background:white;padding:0 9px;font:inherit;color:inherit}
 .paste-options .paste-confirm{min-height:44px;color:white;background:#9fba93;border-radius:999px}
 @media(max-width:480px){.header-actions{gap:4px}.paste-button{padding-inline:10px}.save-button{padding-inline:14px}.brand{gap:3px}}
+@media(max-width:380px){.brand span{display:none}.header-actions .drafts-button{padding-inline:9px}.header-actions .save-button{padding-inline:11px}.header-actions .paste-button{padding-inline:9px}}
+
+.draft-gallery{width:min(550px,calc(100vw - 20px));max-height:86dvh;padding:0;border:0;border-radius:22px;background:#fffdf8;color:#655950;box-shadow:0 18px 60px #473b3926}
+.draft-gallery::backdrop{background:#443d3555}
+.draft-gallery-heading{display:flex;align-items:center;justify-content:space-between;padding:16px 18px 4px}
+.draft-gallery-heading h2{margin:0;font-size:18px}
+.draft-gallery-heading button{font-size:25px;line-height:1}
+.draft-gallery>p{margin:0 18px 12px;color:#887b72;font-size:12px}
+.draft-new{display:block;width:calc(100% - 36px);min-height:46px;margin:0 18px 12px;border-radius:13px;background:#e7f1e4;color:#4f6b49;font-weight:800}
+.draft-list{display:grid;gap:10px;max-height:calc(86dvh - 155px);overflow:auto;padding:0 18px 18px}
+.draft-empty{margin:18px 0;color:#8a887f;text-align:center}
+.draft-card{display:grid;grid-template-columns:92px minmax(0,1fr);gap:10px;padding:9px;border:1px solid #e9e0d3;border-radius:15px;background:#fff}
+.draft-card.is-current{border-color:#9fba93}
+.draft-preview{display:grid;width:92px;height:92px;place-items:center;overflow:hidden;border-radius:9px;background:#fffaf0;color:#b1a79b;font-size:11px}
+.draft-preview img{width:100%;height:100%;object-fit:contain}
+.draft-card-info{display:grid;align-content:center;gap:5px;min-width:0}
+.draft-card-info input{width:100%;min-width:0;height:32px;padding:3px 7px;border:1px solid transparent;border-radius:7px;background:#faf6ef;color:#655950;font-family:inherit;font-size:14px;font-weight:800}
+.draft-card-info input:focus{border-color:#9fba93;outline:none}
+.draft-card-meta{color:#91877e;font-size:11px}
+.draft-card-open{justify-self:start;min-width:76px;min-height:34px;padding:5px 14px;border-radius:999px;background:#f2e7d8;font-weight:800}
 
 /* The fitted canvas fills narrow screens; only this stage grows when pinched. */
 .canvas-viewport{width:100%;max-height:calc(100dvh - 190px);overflow:auto;overscroll-behavior:contain;scrollbar-width:none;-webkit-overflow-scrolling:touch}

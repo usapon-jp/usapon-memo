@@ -2,7 +2,7 @@ import { DrawingHistory, LIMITS, newDocument, validateDocument } from './core/do
 import { InputSession } from './core/input.mjs?v=20260923-pencil4';
 import { BRUSH_SIZES } from './core/brush-sizes.mjs';
 import { setupSizeFavorites } from './core/size-favorites.mjs';
-import { setupHelp } from './core/help.mjs';
+import { setupHelp } from './core/help.mjs?v=20260923-draft-gallery1';
 import { contentPointAtAnchor, anchoredScroll, zoomedStageLayout } from './core/zoom.mjs';
 import { StrokeBuilder } from './core/stroke.mjs';
 import { paintSegment, renderDocument, exportPng, exportStampPng, exportStampDataUrl, BrushStrokeRenderer } from './core/render.mjs?v=20260923-pencil3';
@@ -10,19 +10,26 @@ import { sendToMemo } from './host-bridge.mjs';
 import { setupCircularColorPicker } from './core/color-picker.mjs';
 import { setupColorPalettes } from './core/palette.mjs';
 import { renderLayerBuffers, compositeLayers } from './core/render.mjs?v=20260923-pencil3';
-import { StickerEditor, loadEditorDraft, saveEditorDraft } from './core/sticker-editor.mjs?v=20260923-photo-tools1';
+import { StickerEditor, loadEditorDraft, saveEditorDraft, listEditorDrafts, renameEditorDraft } from './core/sticker-editor.mjs?v=20260923-draft-gallery2';
 import { removeBackgroundOnDevice } from './core/background-removal.mjs';
 const $ = id => document.getElementById(id);
 const canvas = $('drawing'); const ctx = canvas.getContext('2d');
 const SQUARE_CANVAS_SIZE = 1400;
 const DRAFT_STORAGE_KEY = 'usapon_handwriting_draft_v1';
 const STICKER_DRAFT_ID = 'current';
+const ACTIVE_DRAFT_KEY = 'usapon_handwriting_active_draft_v1';
+let activeDraftId = STICKER_DRAFT_ID;
+try { activeDraftId = localStorage.getItem(ACTIVE_DRAFT_KEY) || STICKER_DRAFT_ID; } catch { /* IndexedDB remains usable. */ }
+let activeDraftTitle = '';
+let activeDraftCreatedAt = null;
 let initialDocument = newDocument({ width: SQUARE_CANVAS_SIZE, height: SQUARE_CANVAS_SIZE });
 let initialEditor = [];
+let legacySaved = null;
 try {
   const saved = localStorage.getItem(DRAFT_STORAGE_KEY);
   if (saved) {
     const decoded = JSON.parse(saved);
+    legacySaved = decoded;
     const restored = validateDocument(decoded.document || decoded);
     initialDocument = restored.strokes.length
       ? restored
@@ -33,10 +40,18 @@ try {
   console.warn('Saved handwriting could not be restored.', error);
 }
 try {
-  const savedEditor = await loadEditorDraft(STICKER_DRAFT_ID);
+  const savedEditor = await loadEditorDraft(activeDraftId) || (activeDraftId !== STICKER_DRAFT_ID ? await loadEditorDraft(STICKER_DRAFT_ID) : null);
   if (savedEditor) {
+    activeDraftId = savedEditor.id;
+    activeDraftTitle = savedEditor.title || '以前の保存';
+    activeDraftCreatedAt = savedEditor.createdAt || null;
     initialDocument = validateDocument(savedEditor.document);
     initialEditor = savedEditor.elements;
+  } else if (legacySaved) {
+    // Keep the old single saved work visible in the new gallery.
+    await saveEditorDraft({ id: STICKER_DRAFT_ID, document: initialDocument, elements: initialEditor, title: '以前の保存' });
+    activeDraftId = STICKER_DRAFT_ID;
+    activeDraftTitle = '以前の保存';
   }
 } catch (error) {
   console.warn('Saved sticker editor could not be restored.', error);
@@ -546,33 +561,109 @@ setToolbarMode('elements');
 for (const id of ['elementScale', 'elementRotation']) $(id).addEventListener('pointerdown', () => editor.commit(), { once: false });
 $('elementScale').addEventListener('input', () => editor.livePatchSelected({ scale: Number($('elementScale').value) / 100 }));
 $('elementRotation').addEventListener('input', () => editor.livePatchSelected({ rotation: Number($('elementRotation').value) }));
+const draftGallery = $('draftGallery');
+let draftPreviewUrls = [];
+const releaseDraftPreviews = () => { draftPreviewUrls.forEach(URL.revokeObjectURL); draftPreviewUrls = []; };
+const saveActiveDraftId = () => { try { localStorage.setItem(ACTIVE_DRAFT_KEY, activeDraftId); } catch { /* The draft itself is in IndexedDB. */ } };
+const defaultDraftTitle = () => `手書き ${new Intl.DateTimeFormat('ja-JP', { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date())}`;
+const draftDate = value => value && !Number.isNaN(Date.parse(value)) ? new Intl.DateTimeFormat('ja-JP', { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(value)) : '';
+async function openSavedDraft(id) {
+  if (dirty && !window.confirm('今の未保存の内容を閉じて、保存した作品を開きますか？')) return;
+  try {
+    const saved = await loadEditorDraft(id);
+    if (!saved) throw new Error('missing draft');
+    const document = validateDocument(saved.document);
+    input.cancelAll();
+    history = new DrawingHistory(document);
+    editor.setElements(saved.elements || []);
+    activeLayerId = document.layers[0].id;
+    activeDraftId = saved.id;
+    activeDraftTitle = saved.title || '以前の保存';
+    activeDraftCreatedAt = saved.createdAt || null;
+    saveActiveDraftId();
+    disposeLayers();
+    actionPast = []; actionFuture = []; dirty = false;
+    redraw();
+    if (editor.elements.some(item => item.type === 'image')) requestAnimationFrame(centerPhotoViewport);
+    draftGallery.close();
+    message(`${activeDraftTitle}を開きました`);
+  } catch (error) {
+    console.error('[sticker-editor open draft]', error);
+    message('保存した作品を開けませんでした。今の絵は残っています。');
+  }
+}
+async function renderDraftGallery() {
+  releaseDraftPreviews();
+  const list = $('draftList');
+  list.replaceChildren();
+  const drafts = await listEditorDrafts();
+  if (!drafts.length) { const empty = document.createElement('p'); empty.className = 'draft-empty'; empty.textContent = '保存した作品はまだありません'; list.append(empty); return; }
+  for (const draft of drafts) {
+    const card = document.createElement('article'); card.className = `draft-card${draft.id === activeDraftId ? ' is-current' : ''}`;
+    const preview = document.createElement('div'); preview.className = 'draft-preview';
+    let blob = draft.preview;
+    if (!blob && draft.id === activeDraftId && !dirty) {
+      try { blob = await exportCompositePng(320); } catch { /* Older saves can still be opened. */ }
+    }
+    if (blob) {
+      const img = document.createElement('img');
+      const url = URL.createObjectURL(blob); draftPreviewUrls.push(url);
+      img.src = url; img.alt = `${draft.title}のプレビュー`; preview.append(img);
+    } else preview.textContent = 'プレビューなし';
+    const info = document.createElement('div'); info.className = 'draft-card-info';
+    const name = document.createElement('input'); name.type = 'text'; name.maxLength = 48; name.value = draft.title;
+    name.setAttribute('aria-label', '作品の名前');
+    let renamePending = Promise.resolve();
+    name.addEventListener('change', () => {
+      const previous = draft.title;
+      renamePending = renameEditorDraft(draft.id, name.value).then(title => {
+        name.value = title; draft.title = title;
+        const image = preview.querySelector('img'); if (image) image.alt = `${title}のプレビュー`;
+        if (draft.id === activeDraftId) activeDraftTitle = title;
+      }).catch(() => { name.value = previous; message('名前を変更できませんでした'); });
+    });
+    const meta = document.createElement('span'); meta.className = 'draft-card-meta';
+    meta.textContent = `${draftDate(draft.updatedAt)} 更新${draft.id === activeDraftId ? ' · 開いている作品' : ''}`;
+    const open = document.createElement('button'); open.type = 'button'; open.className = 'draft-card-open'; open.textContent = '開く';
+    open.addEventListener('click', async () => { await renamePending; openSavedDraft(draft.id); });
+    info.append(name, meta, open); card.append(preview, info); list.append(card);
+  }
+}
+async function showDraftGallery() {
+  document.querySelector('.header-actions .more').open = false;
+  input.cancelAll();
+  draftGallery.showModal();
+  try { await renderDraftGallery(); }
+  catch (error) { console.error('[sticker-editor list drafts]', error); $('draftList').textContent = '保存履歴を読み込めませんでした'; }
+}
+$('draftsOpen').addEventListener('click', showDraftGallery);
+$('draftsClose').addEventListener('click', () => draftGallery.close());
+draftGallery.addEventListener('close', releaseDraftPreviews);
+$('newDraft').addEventListener('click', () => {
+  if (dirty && !window.confirm('今の未保存の内容を閉じて、新しい作品を始めますか？')) return;
+  input.cancelAll();
+  history = new DrawingHistory(newDocument({ width: SQUARE_CANVAS_SIZE, height: SQUARE_CANVAS_SIZE }));
+  editor.setElements([]);
+  activeLayerId = history.document.layers[0].id;
+  activeDraftId = crypto.randomUUID(); activeDraftTitle = ''; activeDraftCreatedAt = null;
+  disposeLayers(); actionPast = []; actionFuture = []; dirty = false;
+  redraw(); draftGallery.close(); message('新しい作品を始めました');
+});
 $('save').addEventListener('click', async () => {
   input.cancelAll();
   $('save').disabled = true;
   try {
-    await saveEditorDraft({ id: STICKER_DRAFT_ID, document: history.document, elements: editor.elements });
+    let preview = null;
+    try { preview = await exportCompositePng(320); } catch (error) { console.warn('Draft preview could not be made.', error); }
+    const saved = await saveEditorDraft({ id: activeDraftId, title: activeDraftTitle || defaultDraftTitle(), createdAt: activeDraftCreatedAt,
+      preview, document: history.document, elements: editor.elements });
+    activeDraftTitle = saved.title; activeDraftCreatedAt = saved.createdAt; saveActiveDraftId();
     dirty = false;
     message('この端末に保存しました');
   } catch (error) {
     console.error('[sticker-editor save]', error);
     message('保存できませんでした。端末の空き容量を確認してください。');
   } finally { $('save').disabled = false; }
-});
-$('load').addEventListener('click', async () => {
-  input.cancelAll();
-  try {
-    const saved = await loadEditorDraft(STICKER_DRAFT_ID)
-      || (() => { const raw = localStorage.getItem(DRAFT_STORAGE_KEY); return raw ? JSON.parse(raw) : null; })();
-    if (!saved) { message('保存した手書きはまだありません'); return; }
-    if (dirty && !window.confirm('今の未保存の手書きを、保存した内容に戻しますか？')) return;
-    history = new DrawingHistory(validateDocument(saved.document || saved));
-    editor.setElements(saved.elements || []);
-    if (editor.elements.some(item => item.type === 'image')) requestAnimationFrame(centerPhotoViewport);
-    actionPast = []; actionFuture = [];
-    dirty = false;
-    redraw();
-    message('保存した続きを開きました');
-  } catch (error) { message('保存した手書きを開けませんでした。今の絵は残っています。'); }
 });
 $('png').addEventListener('click', async () => {
   input.cancelAll(); $('png').disabled = true;

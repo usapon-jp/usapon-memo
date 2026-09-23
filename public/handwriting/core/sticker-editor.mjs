@@ -239,11 +239,40 @@ const dataUrlToBlob = async dataUrl => (await fetch(dataUrl)).blob();
 const blobToDataUrl = blob => new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = () => reject(reader.error); reader.readAsDataURL(blob); });
 export const putOriginal = (id, blob) => withStores([ORIGINALS], 'readwrite', stores => stores[ORIGINALS].put(blob, id));
 export const getOriginal = id => withStores([ORIGINALS], 'readonly', stores => requestValue(stores[ORIGINALS].get(id)));
-export async function saveEditorDraft({ id, document, elements, createdAt }) {
-  const imageEntries = await Promise.all(elements.filter(item => item.type === 'image' && item.source).map(async item => [`edited-${item.id}`, await dataUrlToBlob(item.source)]));
-  const savedAt = new Date().toISOString(), draft = { id, version: 2, document, elements: elements.map(item => item.type === 'image' ? { ...item, source: '', sourceId: `edited-${item.id}` } : { ...item }), createdAt: createdAt || savedAt, updatedAt: savedAt };
+export async function saveEditorDraft({ id, document, elements, createdAt, title, preview }) {
+  const imageEntries = await Promise.all(elements.filter(item => item.type === 'image' && item.source).map(async item => [`${id}:edited-${item.id}`, await dataUrlToBlob(item.source)]));
+  const savedAt = new Date().toISOString(), draft = { id, version: 2, title: String(title || '').trim().slice(0, 48) || '無題の作品', preview: preview || null, document, elements: elements.map(item => item.type === 'image' ? { ...item, source: '', sourceId: `${id}:edited-${item.id}` } : { ...item }), createdAt: createdAt || savedAt, updatedAt: savedAt };
   await withStores([DRAFTS, IMAGES], 'readwrite', stores => { for (const [key, blob] of imageEntries) stores[IMAGES].put(blob, key); stores[DRAFTS].put(draft, id); });
   return draft;
+}
+export async function listEditorDrafts() {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const drafts = [], tx = db.transaction([DRAFTS], 'readonly');
+    const request = tx.objectStore(DRAFTS).openCursor();
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (!cursor) return;
+      const { id, title, preview, createdAt, updatedAt } = cursor.value;
+      drafts.push({ id, title: title || '以前の保存', preview: preview || null, createdAt, updatedAt });
+      cursor.continue();
+    };
+    tx.oncomplete = () => { db.close(); resolve(drafts.sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''))); };
+    tx.onerror = () => { db.close(); reject(tx.error); };
+    tx.onabort = () => { db.close(); reject(tx.error); };
+  });
+}
+export async function renameEditorDraft(id, title) {
+  const name = String(title || '').trim().slice(0, 48) || '無題の作品';
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction([DRAFTS], 'readwrite'), store = tx.objectStore(DRAFTS);
+    const request = store.get(id);
+    request.onsuccess = () => { if (request.result) store.put({ ...request.result, title: name }, id); };
+    tx.oncomplete = () => { db.close(); resolve(name); };
+    tx.onerror = () => { db.close(); reject(tx.error); };
+    tx.onabort = () => { db.close(); reject(tx.error); };
+  });
 }
 export async function loadEditorDraft(id) {
   if (!id) return null;
