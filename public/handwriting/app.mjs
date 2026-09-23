@@ -1,5 +1,5 @@
 import { DrawingHistory, LIMITS, newDocument, validateDocument } from './core/document.mjs';
-import { InputSession } from './core/input.mjs';
+import { InputSession } from './core/input.mjs?v=20260923-pencil1';
 import { BRUSH_SIZES } from './core/brush-sizes.mjs';
 import { setupSizeFavorites } from './core/size-favorites.mjs';
 import { setupHelp } from './core/help.mjs';
