@@ -651,7 +651,9 @@ new ResizeObserver(() => {
     fittedCanvas = { width: bounds.width, height: bounds.height };
     canvasStage.style.width = `${bounds.width}px`;
     canvasStage.style.height = `${bounds.height}px`;
-    if (centerRestoredPhoto) {
+    // Opening the photo controls can resize the viewport after the initial
+    // centering pass. Recenter a selected photo once its new stage has settled.
+    if (centerRestoredPhoto || editor.selected()?.type === 'image') {
       centerPhotoViewport();
       centerRestoredPhoto = false;
     }
