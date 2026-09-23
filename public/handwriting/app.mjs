@@ -46,6 +46,7 @@ let handoffBoardId = '';
 let actionPast = [], actionFuture = [];
 let backgroundAbort = null;
 let centeredPhotoId = '';
+let centerRestoredPhoto = initialEditor.some(item => item?.type === 'image');
 const recordAction = kind => { actionPast.push(kind); if (actionPast.length > 50) actionPast.shift(); actionFuture = []; };
 const elementLayer = $('elementLayer');
 const editor = new StickerEditor({ layer: elementLayer, getCanvas: () => history.document.canvas, onCommit: () => recordAction('editor'), onChange: () => { dirty = true; syncElementPanel(); } });
@@ -166,6 +167,9 @@ function point(e) { return { id: e.pointerId, type: ['pen', 'touch'].includes(e.
 const canvasViewport = $('canvasViewport');
 const canvasStage = $('canvasStage');
 const surface = $('surface');
+const centerPhotoViewport = () => {
+  canvasViewport.scrollLeft = Math.max(0, (canvasViewport.scrollWidth - canvasViewport.clientWidth) / 2);
+};
 const gestureTouches = new Map();
 const MIN_CANVAS_ZOOM = 0.5;
 const MAX_CANVAS_ZOOM = 3;
@@ -468,6 +472,7 @@ $('load').addEventListener('click', async () => {
     if (dirty && !window.confirm('今の未保存の手書きを、保存した内容に戻しますか？')) return;
     history = new DrawingHistory(validateDocument(saved.document || saved));
     editor.setElements(saved.elements || []);
+    if (editor.elements.some(item => item.type === 'image')) requestAnimationFrame(centerPhotoViewport);
     actionPast = []; actionFuture = [];
     dirty = false;
     redraw();
@@ -572,6 +577,10 @@ new ResizeObserver(() => {
     fittedCanvas = { width: bounds.width, height: bounds.height };
     canvasStage.style.width = `${bounds.width}px`;
     canvasStage.style.height = `${bounds.height}px`;
+    if (centerRestoredPhoto) {
+      centerPhotoViewport();
+      centerRestoredPhoto = false;
+    }
   });
 }).observe(canvasViewport);
 // Explicit local test surface; no network, application storage or external APIs.
