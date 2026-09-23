@@ -10,7 +10,7 @@ import { sendToMemo } from './host-bridge.mjs';
 import { setupCircularColorPicker } from './core/color-picker.mjs';
 import { setupColorPalettes } from './core/palette.mjs';
 import { renderLayerBuffers, compositeLayers } from './core/render.mjs';
-import { StickerEditor, loadEditorDraft, saveEditorDraft } from './core/sticker-editor.mjs';
+import { StickerEditor, loadEditorDraft, saveEditorDraft } from './core/sticker-editor.mjs?v=20260923-photo-tools1';
 import { removeBackgroundOnDevice } from './core/background-removal.mjs';
 const $ = id => document.getElementById(id);
 const canvas = $('drawing'); const ctx = canvas.getContext('2d');
@@ -49,11 +49,7 @@ let centeredPhotoId = '';
 let centerRestoredPhoto = initialEditor.some(item => item?.type === 'image');
 const recordAction = kind => { actionPast.push(kind); if (actionPast.length > 50) actionPast.shift(); actionFuture = []; };
 const elementLayer = $('elementLayer');
-const editor = new StickerEditor({ layer: elementLayer, getCanvas: () => history.document.canvas, onCommit: () => recordAction('editor'), onChange: () => { dirty = true; syncElementPanel(); } });
-const photoEraserSizeLabel = document.createElement('label');
-photoEraserSizeLabel.className = 'photo-eraser-size'; photoEraserSizeLabel.setAttribute('aria-label', '写真用消しゴムの太さ');
-photoEraserSizeLabel.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/></svg><input id="photoEraserSize" type="range" min="8" max="80" value="34" aria-label="写真用消しゴムの太さ">';
-document.querySelector('.element-transform').append(photoEraserSizeLabel);
+const editor = new StickerEditor({ layer: elementLayer, getCanvas: () => history.document.canvas, onCommit: () => recordAction('editor'), onChange: () => { dirty = true; syncElementPanel(); }, onNotice: text => { $('status').textContent = text; } });
 $('photoEraserSize').addEventListener('input', () => { editor.eraseRadius = Number($('photoEraserSize').value); });
 editor.setElements(initialEditor);
 dirty = false;
@@ -383,8 +379,8 @@ function syncElementPanel() {
   const item = editor.selected(), panel = $('elementPanel'); panel.hidden = !item;
   document.body.classList.toggle('is-text-editing', item?.type === 'text');
   document.body.classList.toggle('is-photo-editing', item?.type === 'image');
-  elementLayer.classList.toggle('is-selecting', ['select', 'erase', 'text'].includes(editor.mode));
-  if (!item) { centeredPhotoId = ''; return; }
+  elementLayer.classList.toggle('is-selecting', ['select', 'erase', 'tap-erase', 'restore', 'text'].includes(editor.mode));
+  if (!item) { centeredPhotoId = ''; $('photoBrushSizes').hidden = true; return; }
   const photo = item.type === 'image';
   if (photo && item.id !== centeredPhotoId) {
     centeredPhotoId = item.id;
@@ -395,10 +391,18 @@ function syncElementPanel() {
   panel.classList.toggle('is-text', !photo); panel.classList.toggle('is-photo', photo);
   $('elementTitle').textContent = photo ? '写真' : '文字';
   $('photoEditControls').hidden = !photo; $('textEditControls').hidden = photo;
-  $('photoKeep').setAttribute('aria-pressed', String(photo && !item.removedBackground));
+  $('photoKeep').setAttribute('aria-pressed', String(photo && editor.mode === 'select'));
   $('photoRemove').setAttribute('aria-pressed', 'false');
+  $('photoTap').setAttribute('aria-pressed', String(photo && editor.mode === 'tap-erase'));
   $('photoEraser').setAttribute('aria-pressed', String(photo && editor.mode === 'erase'));
-  if (!backgroundAbort) $('photoEditHint').textContent = editor.mode === 'erase' ? '消したい部分を指でなぞって補正できます。' : 'そのまま使うか、端末内で背景を消せます。';
+  $('photoRestore').setAttribute('aria-pressed', String(photo && editor.mode === 'restore'));
+  $('photoRestore').disabled = !photo || !item.removedBackground || Boolean(backgroundAbort);
+  if (!photo || !['erase', 'restore'].includes(editor.mode)) {
+    $('photoBrushSizes').hidden = true;
+    $('photoEraser').setAttribute('aria-expanded', 'false');
+    $('photoRestore').setAttribute('aria-expanded', 'false');
+  }
+  if (!backgroundAbort) $('photoEditHint').textContent = editor.mode === 'erase' ? 'なぞったところだけ消せます。' : editor.mode === 'restore' ? '消しすぎたところをなぞると元の写真に戻せます。' : editor.mode === 'tap-erase' ? 'タップした付近の似た色を消せます。' : 'そのまま使うか、端末内で背景を消せます。';
   if (photo) { $('elementScale').value = Math.round((item.scale || 1) * 100); $('elementRotation').value = item.rotation || 0; }
   if (item.type === 'text') { $('textValue').value = item.text; $('textColor').value = item.color; $('textSize').value = item.size; $('textSizeValue').value = item.size; $('textWeight').value = String(item.weight || 700); $('textStroke').value = item.stroke || 0; document.querySelectorAll('[data-text-font]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.textFont === item.font))); document.querySelectorAll('[data-text-color]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.textColor === item.color.toLowerCase()))); }
 }
@@ -426,22 +430,92 @@ $('photoInput').addEventListener('change', async event => { try { await editor.a
 $('textAdd').addEventListener('click', () => { const item = editor.addText(); requestAnimationFrame(() => { const node = elementLayer.querySelector(`[data-element-id="${item.id}"]`); node?.focus({ preventScroll: true }); }); message('カーソル位置から文字を入力できます'); });
 $('elementClose').addEventListener('click', () => { if (editor.selected()?.type === 'text') editor.finishTextEdit(); editor.select(''); setToolbarMode('elements'); });
 $('elementDuplicate').addEventListener('click', () => editor.duplicate()); $('elementDelete').addEventListener('click', () => editor.remove()); $('elementBack').addEventListener('click', () => editor.moveLayer(-1)); $('elementFront').addEventListener('click', () => editor.moveLayer(1));
-$('elementOriginal').addEventListener('click', async () => { if (await editor.restoreOriginal()) message('元写真に戻しました'); else message('元写真を開けませんでした'); });
+const photoBrushSizes = $('photoBrushSizes');
+function setPhotoBrushMenu(open) {
+  photoBrushSizes.hidden = !open;
+  $('photoBrushTitle').textContent = editor.mode === 'restore' ? '復元ブラシの太さ' : '消しゴムの太さ';
+  $('photoEraser').setAttribute('aria-expanded', String(open && editor.mode === 'erase'));
+  $('photoRestore').setAttribute('aria-expanded', String(open && editor.mode === 'restore'));
+}
+function syncPhotoBrushPresets() {
+  for (const button of document.querySelectorAll('[data-photo-brush]')) {
+    button.setAttribute('aria-pressed', String(Number(button.dataset.photoBrush) === editor.eraseRadius));
+  }
+}
+syncPhotoBrushPresets();
+document.querySelectorAll('[data-photo-brush]').forEach(button => button.addEventListener('click', () => {
+  editor.eraseRadius = Number(button.dataset.photoBrush);
+  $('photoEraserSize').value = editor.eraseRadius;
+  syncPhotoBrushPresets();
+  setPhotoBrushMenu(false);
+}));
+$('photoEraserSize').addEventListener('input', syncPhotoBrushPresets);
+$('photoEraserSize').addEventListener('change', () => setPhotoBrushMenu(false));
+document.addEventListener('pointerdown', event => {
+  if (!photoBrushSizes.hidden && !event.target.closest('#photoBrushSizes, #photoEraser, #photoRestore')) setPhotoBrushMenu(false);
+});
+$('elementOriginal').addEventListener('click', async () => {
+  if (await editor.restoreOriginal()) {
+    editor.mode = 'select';
+    setPhotoBrushMenu(false);
+    syncElementPanel();
+    message('元写真に戻しました');
+  } else message('元写真を開けませんでした');
+});
 $('photoKeep').addEventListener('click', () => { editor.mode = 'select'; syncElementPanel(); message('写真はそのままで貼ります'); });
-const startPhotoErase = () => { editor.mode = 'erase'; syncElementPanel(); message('消したい背景をなぞってください'); };
-$('photoEraser').addEventListener('click', startPhotoErase);
+$('photoTap').addEventListener('click', () => { editor.mode = 'tap-erase'; syncElementPanel(); message('消す場所をタップしてください。その付近の似た色だけを消します'); });
+$('photoEraser').addEventListener('click', () => {
+  const wasOpen = editor.mode === 'erase' && !photoBrushSizes.hidden;
+  editor.mode = 'erase';
+  syncElementPanel();
+  setPhotoBrushMenu(!wasOpen);
+  message('消したいところを指でなぞってください');
+});
+$('photoRestore').addEventListener('click', async () => {
+  const wasOpen = editor.mode === 'restore' && !photoBrushSizes.hidden;
+  try {
+    if (!await editor.prepareRestore()) { message('元写真を開けませんでした'); return; }
+    setPhotoBrushMenu(!wasOpen);
+    message('戻したいところを指でなぞってください');
+  } catch (error) {
+    console.error('[photo restore]', error);
+    message('元写真を開けませんでした');
+  }
+});
 $('photoRemove').addEventListener('click', async () => {
   const item = editor.selected(); if (item?.type !== 'image' || backgroundAbort) return;
-  backgroundAbort = new AbortController(); const progress = $('photoProgress'), cancel = $('photoCancel'); progress.hidden = false; cancel.hidden = false; $('photoRemove').disabled = true;
-  $('photoEditHint').textContent = '切り抜きモデルを準備しています…'; message('写真は外部送信せず、この端末で処理します');
+  backgroundAbort = new AbortController();
+  const progress = $('photoProgress'), cancel = $('photoCancel'), busy = $('photoBusy');
+  progress.value = 0; progress.hidden = false; cancel.hidden = false; busy.hidden = false;
+  $('photoBusyText').textContent = '背景を削除しています… 準備中';
+  $('surface').setAttribute('aria-busy', 'true');
+  elementLayer.style.pointerEvents = 'none';
+  document.querySelectorAll('#elementPanel button:not(#photoCancel), #elementPanel input').forEach(control => { control.disabled = true; });
+  $('photoEditHint').textContent = '背景を削除しています…';
+  message('背景を削除しています。写真は端末内で処理します');
   try {
-    const source = await removeBackgroundOnDevice(item.source, { signal: backgroundAbort.signal, onProgress(event) { const value = Number(event.progress); progress.value = Number.isFinite(value) ? Math.min(1, value > 1 ? value / 100 : value) : 0; $('photoEditHint').textContent = event.status === 'running' ? '背景を消しています…' : `モデルを準備しています… ${Math.round(progress.value * 100)}%`; } });
-    if (editor.replaceSelectedImage(source)) { editor.mode = 'select'; message('背景を消しました。必要なら手動で補正できます'); }
+    const source = await removeBackgroundOnDevice(item.source, { signal: backgroundAbort.signal, onProgress(event) {
+      const value = Number(event.progress);
+      progress.value = Number.isFinite(value) ? Math.min(1, value > 1 ? value / 100 : value) : 0;
+      $('photoBusyText').textContent = event.status === 'running' ? '背景を削除しています… 写真を解析中'
+        : event.status === 'done' ? '背景を削除しています… 仕上げ中'
+          : `背景を削除しています… 準備中 ${Math.round(progress.value * 100)}%`;
+    } });
+    if (editor.selected()?.id === item.id && editor.replaceSelectedImage(source)) {
+      editor.mode = 'select';
+      message('背景を消しました。消しすぎた場所は「復元」でなぞれます');
+    }
   } catch (error) {
     if (error?.name !== 'AbortError') console.error('[background-removal]', error);
-    message(error?.name === 'AbortError' ? '背景削除を中止しました。元写真は残っています' : '自動で消せませんでした。手動で補正できます');
+    message(error?.name === 'AbortError' ? '背景削除を中止しました。元写真は残っています' : '自動で消せませんでした。タップか、なぞって消せます');
   }
-  finally { backgroundAbort = null; progress.hidden = true; cancel.hidden = true; $('photoRemove').disabled = false; syncElementPanel(); }
+  finally {
+    backgroundAbort = null; progress.hidden = true; cancel.hidden = true; busy.hidden = true;
+    $('surface').removeAttribute('aria-busy');
+    elementLayer.style.pointerEvents = '';
+    document.querySelectorAll('#elementPanel button, #elementPanel input').forEach(control => { control.disabled = false; });
+    syncElementPanel();
+  }
 });
 $('photoCancel').addEventListener('click', () => backgroundAbort?.abort());
 for (const id of ['textColor', 'textSize', 'textWeight', 'textStroke']) $(id).addEventListener('input', previewSelectedText);

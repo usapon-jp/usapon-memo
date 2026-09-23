@@ -1,3 +1,5 @@
+import { connectedColorRegion, photoPointFromClient } from './photo-edit.mjs';
+
 const EDIT_EDGE = 2048;
 export const EDITOR_STORAGE_KEY = 'usapon_handwriting_editor_v1';
 
@@ -37,7 +39,7 @@ function insertLineBreak(node) {
 }
 
 export class StickerEditor {
-  constructor({ layer, onChange, onCommit, getCanvas = () => ({ width: 1400, height: 1400 }) }) { this.layer = layer; this.onChange = onChange; this.onCommit = onCommit; this.getCanvas = getCanvas; this.elements = []; this.selectedId = ''; this.editingTextId = ''; this.past = []; this.future = []; this.mode = 'draw'; this.eraseRadius = 34; }
+  constructor({ layer, onChange, onCommit, onNotice, getCanvas = () => ({ width: 1400, height: 1400 }) }) { this.layer = layer; this.onChange = onChange; this.onCommit = onCommit; this.onNotice = onNotice; this.getCanvas = getCanvas; this.elements = []; this.selectedId = ''; this.editingTextId = ''; this.past = []; this.future = []; this.mode = 'draw'; this.eraseRadius = 34; this.restoreImage = null; this.restoreOriginalId = ''; this.photoGestureActive = false; }
   snapshot() { return this.elements.map(item => ({ ...item })); }
   commit() { this.past.push(this.snapshot()); if (this.past.length > 50) this.past.shift(); this.future = []; this.onCommit?.(); }
   changed() { this.render(); this.onChange?.(); }
@@ -59,6 +61,63 @@ export class StickerEditor {
   undo() { if (!this.past.length) return false; this.future.push(this.snapshot()); this.elements = this.past.pop(); this.selectedId = ''; this.changed(); return true; }
   redo() { if (!this.future.length) return false; this.past.push(this.snapshot()); this.elements = this.future.pop(); this.selectedId = ''; this.changed(); return true; }
   async restoreOriginal() { const item = this.selected(); if (!item?.originalId) return false; const blob = await getOriginal(item.originalId); if (!blob) return false; const source = await resizeFile(blob); this.patch(item.id, { source, removedBackground: false }); return true; }
+  async prepareRestore() {
+    const item = this.selected();
+    if (item?.type !== 'image' || !item.originalId) return false;
+    const blob = await getOriginal(item.originalId);
+    if (!blob) return false;
+    const url = URL.createObjectURL(blob);
+    try { this.restoreImage = await imageFromUrl(url); }
+    finally { URL.revokeObjectURL(url); }
+    this.restoreOriginalId = item.originalId;
+    this.mode = 'restore';
+    this.changed();
+    return true;
+  }
+  photoGeometry(node, item) {
+    const bounds = node.getBoundingClientRect();
+    const layerScale = this.layer.getBoundingClientRect().width / Math.max(1, this.layer.clientWidth);
+    return {
+      centerX: bounds.left + bounds.width / 2,
+      centerY: bounds.top + bounds.height / 2,
+      displayWidth: node.offsetWidth * (item.scale || 1) * layerScale,
+      displayHeight: node.offsetHeight * (item.scale || 1) * layerScale,
+      rotation: item.rotation || 0,
+      imageWidth: node.naturalWidth,
+      imageHeight: node.naturalHeight
+    };
+  }
+  async eraseConnectedRegion(item, clientX, clientY, node) {
+    const geometry = this.photoGeometry(node, item);
+    const point = photoPointFromClient(clientX, clientY, geometry);
+    if (!point) return;
+    const image = await imageFromUrl(item.source);
+    if (this.elements.find(element => element.id === item.id)?.source !== item.source) return;
+    const work = document.createElement('canvas');
+    work.width = image.width; work.height = image.height;
+    const context = work.getContext('2d', { willReadFrequently: true });
+    context.drawImage(image, 0, 0);
+    const radius = 24 * work.width / Math.max(1, geometry.displayWidth);
+    const left = Math.max(0, Math.floor(point.x - radius));
+    const top = Math.max(0, Math.floor(point.y - radius));
+    const right = Math.min(work.width, Math.ceil(point.x + radius + 1));
+    const bottom = Math.min(work.height, Math.ceil(point.y + radius + 1));
+    const cropWidth = right - left;
+    const cropHeight = bottom - top;
+    const imageData = context.getImageData(left, top, cropWidth, cropHeight);
+    const region = connectedColorRegion(imageData.data, cropWidth, cropHeight, point.x - left, point.y - top, { radius, maxFraction: 0.9 });
+    if (region.tooLarge) { this.onNotice?.('範囲が広すぎます。自動切り抜きか、なぞって削除を使ってください'); return; }
+    if (!region.count) { this.onNotice?.('ここはすでに透明か、消せる範囲がありません'); return; }
+    for (let i = 0; i < region.mask.length; i++) if (region.mask[i]) imageData.data[i * 4 + 3] = 0;
+    context.putImageData(imageData, left, top);
+    this.commit();
+    const index = this.elements.findIndex(element => element.id === item.id);
+    if (index < 0) return;
+    this.elements[index] = { ...this.elements[index], source: work.toDataURL('image/png'), removedBackground: true };
+    this.selectedId = item.id;
+    this.changed();
+    this.onNotice?.('タップした付近の似た色を消しました');
+  }
   async eraseAt(item, clientX, clientY, radius = 34) {
     const node = this.layer.querySelector(`[data-element-id="${item.id}"]`);
     if (!node) return;
@@ -81,13 +140,85 @@ export class StickerEditor {
     }
   }
   beginGesture(event, item) {
-    if (this.mode === 'erase' && item.type === 'image') {
-      event.preventDefault(); event.stopPropagation(); this.selectedId = item.id; this.commit();
-      const node = event.currentTarget, work = document.createElement('canvas'); work.width = node.naturalWidth; work.height = node.naturalHeight;
-      const context = work.getContext('2d'); context.drawImage(node, 0, 0); context.globalCompositeOperation = 'destination-out'; let frame = 0;
-      const erase = e => { if (e.pointerId !== event.pointerId) return; const bounds = node.getBoundingClientRect(), x = (e.clientX - bounds.left) / Math.max(1, bounds.width), y = (e.clientY - bounds.top) / Math.max(1, bounds.height); if (x < 0 || x > 1 || y < 0 || y > 1) return; context.beginPath(); context.arc(x * work.width, y * work.height, this.eraseRadius * work.width / Math.max(1, bounds.width), 0, Math.PI * 2); context.fill(); if (!frame) frame = requestAnimationFrame(() => { frame = 0; node.src = work.toDataURL('image/png'); }); };
-      const end = e => { if (e.pointerId !== event.pointerId) return; if (frame) cancelAnimationFrame(frame); const index = this.elements.findIndex(element => element.id === item.id); if (index >= 0) this.elements[index] = { ...this.elements[index], source: work.toDataURL('image/png'), removedBackground: true }; this.changed(); window.removeEventListener('pointermove', erase); window.removeEventListener('pointerup', end); window.removeEventListener('pointercancel', end); };
-      erase(event); window.addEventListener('pointermove', erase); window.addEventListener('pointerup', end); window.addEventListener('pointercancel', end); return;
+    if (item.type === 'image' && this.mode === 'tap-erase') {
+      event.preventDefault(); event.stopPropagation();
+      const node = event.currentTarget;
+      const origin = { x: event.clientX, y: event.clientY };
+      const end = e => {
+        if (e.pointerId !== event.pointerId) return;
+        window.removeEventListener('pointerup', end);
+        window.removeEventListener('pointercancel', end);
+        if (e.type === 'pointercancel' || Math.hypot(e.clientX - origin.x, e.clientY - origin.y) > 8) return;
+        void this.eraseConnectedRegion(item, e.clientX, e.clientY, node).catch(() => this.onNotice?.('タップした範囲を消せませんでした'));
+      };
+      window.addEventListener('pointerup', end);
+      window.addEventListener('pointercancel', end);
+      return;
+    }
+    if (item.type === 'image' && ['erase', 'restore'].includes(this.mode)) {
+      event.preventDefault(); event.stopPropagation();
+      if (this.photoGestureActive) return;
+      const restoring = this.mode === 'restore';
+      if (restoring && (item.id !== this.selectedId || item.originalId !== this.restoreOriginalId || !this.restoreImage)) return;
+      const node = event.currentTarget;
+      if (!node.naturalWidth || !node.naturalHeight) return;
+      this.photoGestureActive = true;
+      this.selectedId = item.id;
+      const work = document.createElement('canvas');
+      work.width = node.naturalWidth; work.height = node.naturalHeight;
+      const context = work.getContext('2d');
+      context.drawImage(node, 0, 0);
+      let frame = 0;
+      let lastPoint = null;
+      let changed = false;
+      const paintCircle = (x, y, radius) => {
+        context.save();
+        context.beginPath();
+        context.arc(x, y, radius, 0, Math.PI * 2);
+        if (restoring) {
+          context.clip();
+          context.drawImage(this.restoreImage, 0, 0, work.width, work.height);
+        } else {
+          context.globalCompositeOperation = 'destination-out';
+          context.fill();
+        }
+        context.restore();
+      };
+      const paint = e => {
+        if (e.pointerId !== event.pointerId) return;
+        const geometry = this.photoGeometry(node, item);
+        const point = photoPointFromClient(e.clientX, e.clientY, geometry);
+        if (!point) { lastPoint = null; return; }
+        if (!changed) { this.commit(); changed = true; }
+        const radius = this.eraseRadius * work.width / Math.max(1, geometry.displayWidth);
+        const distance = lastPoint ? Math.hypot(point.x - lastPoint.x, point.y - lastPoint.y) : 0;
+        const steps = Math.max(1, Math.ceil(distance / Math.max(1, radius * 0.5)));
+        for (let step = 1; step <= steps; step++) {
+          const part = step / steps;
+          paintCircle(lastPoint ? lastPoint.x + (point.x - lastPoint.x) * part : point.x,
+            lastPoint ? lastPoint.y + (point.y - lastPoint.y) * part : point.y, radius);
+        }
+        lastPoint = point;
+        if (!frame) frame = requestAnimationFrame(() => { frame = 0; node.src = work.toDataURL('image/png'); });
+      };
+      const end = e => {
+        if (e.pointerId !== event.pointerId) return;
+        if (frame) cancelAnimationFrame(frame);
+        if (changed) {
+          const index = this.elements.findIndex(element => element.id === item.id);
+          if (index >= 0) this.elements[index] = { ...this.elements[index], source: work.toDataURL('image/png'), removedBackground: true };
+          this.changed();
+        }
+        this.photoGestureActive = false;
+        window.removeEventListener('pointermove', paint);
+        window.removeEventListener('pointerup', end);
+        window.removeEventListener('pointercancel', end);
+      };
+      paint(event);
+      window.addEventListener('pointermove', paint);
+      window.addEventListener('pointerup', end);
+      window.addEventListener('pointercancel', end);
+      return;
     }
     if (this.mode !== 'select') return;
     event.preventDefault(); event.stopPropagation(); this.selectedId = item.id; event.currentTarget.classList.add('is-selected'); this.onChange?.(); const origin = { x: event.clientX, y: event.clientY, item: clone(item), moved: false }; event.currentTarget.setPointerCapture?.(event.pointerId);
