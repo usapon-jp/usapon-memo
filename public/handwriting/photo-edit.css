@@ -1,6 +1,6 @@
-.photo-actions {
+.element-panel.is-photo .photo-actions {
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  padding-right: 80px;
+  padding-right: 96px;
 }
 
 .photo-actions button {
@@ -12,29 +12,41 @@
   font-size: 9px;
 }
 
-.element-panel.is-photo .photo-history {
-  position: absolute;
-  z-index: 3;
-  top: 54px;
-  right: 8px;
-  display: flex;
-  gap: 8px;
+.element-panel.is-photo .element-panel-head,
+.element-panel.is-photo .element-actions {
+  display: none;
 }
 
-.photo-history button {
+.element-panel.is-photo .photo-corner-controls {
+  position: absolute;
+  z-index: 3;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  grid-template-columns: repeat(2, 44px);
+  grid-template-rows: repeat(2, 46px);
+  gap: 4px;
+}
+
+.photo-corner-controls button {
   display: grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  align-self: center;
   padding: 6px;
   border-radius: 50%;
   background: #f2ede4;
   color: #655650;
 }
 
-.photo-history button:disabled { opacity: 0.35; }
+.photo-corner-controls #photoDelete { color: #af5968; background: #fff0f2; }
+.photo-corner-controls #photoDone { color: white; background: #9fba93; }
+.photo-corner-controls button:disabled { opacity: 0.35; }
 
-.photo-history svg {
+.photo-corner-controls svg {
   width: 21px;
   height: 21px;
   fill: none;
@@ -43,6 +55,35 @@
   stroke-linecap: round;
   stroke-linejoin: round;
 }
+
+.photo-region-preview {
+  max-width: none;
+  max-height: none;
+  pointer-events: none;
+}
+
+.element-panel.is-photo .photo-region-actions {
+  position: absolute;
+  z-index: 4;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: max-content;
+  max-width: calc(100vw - 16px);
+  padding: 5px;
+  border: 1px solid #d7d9ee;
+  border-radius: 999px;
+  background: #fffdf8;
+  box-shadow: 0 8px 24px #4b52712c;
+  transform: translateX(-50%);
+}
+
+.photo-region-actions[hidden] { display: none !important; }
+.photo-region-actions button { min-height: 36px; border-radius: 999px; font-size: 12px; font-weight: 800; }
+.photo-region-actions #photoRegionDelete { padding: 5px 13px; color: white; background: #424e9b; }
+.photo-region-actions #photoRegionCancel { width: 36px; min-width: 36px; padding: 0; color: #655650; background: #f2ede4; font-size: 18px; }
 
 .element-panel.is-photo .element-transform {
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -84,6 +125,10 @@
 
 .is-photo-editing #status {
   bottom: 194px;
+}
+
+.is-photo-region-previewing #status {
+  visibility: hidden;
 }
 
 .photo-brush-sizes {

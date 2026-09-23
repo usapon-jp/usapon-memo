@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { connectedColorRegion, photoPointFromClient } from '../public/handwriting/core/photo-edit.mjs';
+import { connectedColorRegion, photoPointFromClient, regionPreviewPixels } from '../public/handwriting/core/photo-edit.mjs';
 
 test('tap erases only the connected background colour', () => {
   const pixels = new Uint8ClampedArray([
@@ -29,6 +29,24 @@ test('a tap cannot spread into a distant area of the same colour', () => {
   assert.equal(result.mask[4 * 9 + 4], 1);
   assert.equal(result.mask[4 * 9 + 8], 0);
   assert.equal(result.mask[0], 0);
+});
+
+test('tap selection reaches the connected area beyond the old circular limit', () => {
+  const pixels = new Uint8ClampedArray(9 * 9 * 4).fill(200);
+  for (let i = 3; i < pixels.length; i += 4) pixels[i] = 255;
+  const region = connectedColorRegion(pixels, 9, 9, 4, 4, { maxFraction: 1 });
+  assert.equal(region.count, 81);
+  assert.equal(region.mask[0], 1);
+  assert.equal(region.mask[80], 1);
+});
+
+test('selected area gets a dark outline while unselected pixels stay clear', () => {
+  const mask = new Uint8Array(25);
+  for (let y = 1; y <= 3; y++) for (let x = 1; x <= 3; x++) mask[y * 5 + x] = 1;
+  const preview = regionPreviewPixels(mask, 5, 5);
+  assert.equal(preview[3], 0);
+  assert.equal(preview[(1 * 5 + 1) * 4 + 3], 235);
+  assert.equal(preview[(2 * 5 + 2) * 4 + 3], 65);
 });
 
 test('brush coordinates follow a rotated photo', () => {

@@ -1,4 +1,4 @@
-import { connectedColorRegion, photoPointFromClient } from './photo-edit.mjs';
+import { connectedColorRegion, photoPointFromClient, regionPreviewPixels } from './photo-edit.mjs?v=20260924-region-preview2';
 
 const EDIT_EDGE = 2048;
 export const EDITOR_STORAGE_KEY = 'usapon_handwriting_editor_v1';
@@ -39,13 +39,13 @@ function insertLineBreak(node) {
 }
 
 export class StickerEditor {
-  constructor({ layer, onChange, onCommit, onNotice, getCanvas = () => ({ width: 1400, height: 1400 }) }) { this.layer = layer; this.onChange = onChange; this.onCommit = onCommit; this.onNotice = onNotice; this.getCanvas = getCanvas; this.elements = []; this.selectedId = ''; this.editingTextId = ''; this.past = []; this.future = []; this.mode = 'draw'; this.eraseRadius = 34; this.restoreImage = null; this.restoreOriginalId = ''; this.photoGestureActive = false; }
+  constructor({ layer, onChange, onCommit, onNotice, onPreviewChange, getCanvas = () => ({ width: 1400, height: 1400 }) }) { this.layer = layer; this.onChange = onChange; this.onCommit = onCommit; this.onNotice = onNotice; this.onPreviewChange = onPreviewChange; this.getCanvas = getCanvas; this.elements = []; this.selectedId = ''; this.editingTextId = ''; this.past = []; this.future = []; this.mode = 'draw'; this.eraseRadius = 34; this.restoreImage = null; this.restoreOriginalId = ''; this.photoGestureActive = false; this.pendingRegion = null; this.regionRequest = 0; }
   snapshot() { return this.elements.map(item => ({ ...item })); }
-  commit() { this.past.push(this.snapshot()); if (this.past.length > 50) this.past.shift(); this.future = []; this.onCommit?.(); }
+  commit() { this.clearPendingRegion(); this.past.push(this.snapshot()); if (this.past.length > 50) this.past.shift(); this.future = []; this.onCommit?.(); }
   changed() { this.render(); this.onChange?.(); }
-  setElements(elements = []) { this.elements = Array.isArray(elements) ? elements.filter(e => e?.id && ['image', 'text'].includes(e.type)) : []; this.selectedId = ''; this.changed(); }
+  setElements(elements = []) { this.clearPendingRegion(); this.elements = Array.isArray(elements) ? elements.filter(e => e?.id && ['image', 'text'].includes(e.type)) : []; this.selectedId = ''; this.changed(); }
   serialize() { return { version: 1, elements: this.elements }; }
-  select(id) { this.selectedId = id; this.render(); this.onChange?.(); }
+  select(id) { if (id !== this.selectedId) this.clearPendingRegion(); this.selectedId = id; this.render(); this.onChange?.(); }
   selected() { return this.elements.find(item => item.id === this.selectedId) || null; }
   addText() { this.commit(); const canvas = this.getCanvas(); const element = { id: crypto.randomUUID(), type: 'text', text: '', x: canvas.width / 2, y: canvas.height / 2, width: canvas.width * .72, scale: 1, rotation: 0, color: '#654c46', size: 54, weight: 700, font: DEFAULT_TEXT_FONT, stroke: 0, z: this.elements.length }; this.elements.push(element); this.selectedId = element.id; this.editingTextId = element.id; this.mode = 'text'; this.changed(); return element; }
   async addFiles(files) { for (const file of files) { const originalId = crypto.randomUUID(); await putOriginal(originalId, file); const source = await resizeFile(file); this.commit(); const canvas = this.getCanvas(); const element = { id: crypto.randomUUID(), type: 'image', source, originalId, x: canvas.width / 2, y: canvas.height / 2, width: Math.min(canvas.width * .62, 720), scale: 1, rotation: 0, z: this.elements.length, removedBackground: false }; this.elements.push(element); this.select(element.id); } }
@@ -58,8 +58,8 @@ export class StickerEditor {
   duplicate() { const item = this.selected(); if (!item) return; this.commit(); const next = { ...clone(item), id: crypto.randomUUID(), x: item.x + 45, y: item.y + 45, z: this.elements.length }; this.elements.push(next); this.select(next.id); }
   remove() { const item = this.selected(); if (!item) return; this.commit(); this.elements = this.elements.filter(e => e.id !== item.id); this.selectedId = ''; this.changed(); }
   moveLayer(offset) { const item = this.selected(); if (!item) return; this.commit(); const ordered = [...this.elements].sort((a,b) => a.z - b.z); const index = ordered.findIndex(e => e.id === item.id), target = index + offset; if (target >= 0 && target < ordered.length) [ordered[index].z, ordered[target].z] = [ordered[target].z, ordered[index].z]; this.changed(); }
-  undo(preserveSelection = false) { if (!this.past.length) return false; const selectedId = this.selectedId; this.future.push(this.snapshot()); this.elements = this.past.pop(); this.selectedId = preserveSelection && this.elements.some(item => item.id === selectedId) ? selectedId : ''; this.changed(); return true; }
-  redo(preserveSelection = false) { if (!this.future.length) return false; const selectedId = this.selectedId; this.past.push(this.snapshot()); this.elements = this.future.pop(); this.selectedId = preserveSelection && this.elements.some(item => item.id === selectedId) ? selectedId : ''; this.changed(); return true; }
+  undo(preserveSelection = false) { if (!this.past.length) return false; this.clearPendingRegion(); const selectedId = this.selectedId; this.future.push(this.snapshot()); this.elements = this.past.pop(); this.selectedId = preserveSelection && this.elements.some(item => item.id === selectedId) ? selectedId : ''; this.changed(); return true; }
+  redo(preserveSelection = false) { if (!this.future.length) return false; this.clearPendingRegion(); const selectedId = this.selectedId; this.past.push(this.snapshot()); this.elements = this.future.pop(); this.selectedId = preserveSelection && this.elements.some(item => item.id === selectedId) ? selectedId : ''; this.changed(); return true; }
   async restoreOriginal() { const item = this.selected(); if (!item?.originalId) return false; const blob = await getOriginal(item.originalId); if (!blob) return false; const source = await resizeFile(blob); this.patch(item.id, { source, removedBackground: false }); return true; }
   async prepareRestore() {
     const item = this.selected();
@@ -77,46 +77,79 @@ export class StickerEditor {
   photoGeometry(node, item) {
     const bounds = node.getBoundingClientRect();
     const layerScale = this.layer.getBoundingClientRect().width / Math.max(1, this.layer.clientWidth);
+    const imageRatio = node.naturalWidth / Math.max(1, node.naturalHeight);
+    const contentWidth = Math.min(node.offsetWidth, node.offsetHeight * imageRatio);
+    const contentHeight = Math.min(node.offsetHeight, node.offsetWidth / imageRatio);
     return {
       centerX: bounds.left + bounds.width / 2,
       centerY: bounds.top + bounds.height / 2,
-      displayWidth: node.offsetWidth * (item.scale || 1) * layerScale,
-      displayHeight: node.offsetHeight * (item.scale || 1) * layerScale,
+      displayWidth: contentWidth * (item.scale || 1) * layerScale,
+      displayHeight: contentHeight * (item.scale || 1) * layerScale,
       rotation: item.rotation || 0,
       imageWidth: node.naturalWidth,
       imageHeight: node.naturalHeight
     };
   }
-  async eraseConnectedRegion(item, clientX, clientY, node) {
+  clearPendingRegion() {
+    this.regionRequest += 1;
+    if (!this.pendingRegion) return;
+    this.pendingRegion.overlay.remove();
+    this.pendingRegion = null;
+    this.onPreviewChange?.();
+  }
+  renderPendingRegion() {
+    const pending = this.pendingRegion;
+    if (!pending || this.mode !== 'tap-erase' || this.selectedId !== pending.itemId) return;
+    const node = this.layer.querySelector(`[data-element-id="${pending.itemId}"]`);
+    if (!node?.naturalWidth || !node?.naturalHeight) return;
+    const ratio = node.naturalWidth / node.naturalHeight;
+    pending.overlay.style.left = node.style.left;
+    pending.overlay.style.top = node.style.top;
+    pending.overlay.style.width = `${Math.min(node.offsetWidth, node.offsetHeight * ratio)}px`;
+    pending.overlay.style.height = `${Math.min(node.offsetHeight, node.offsetWidth / ratio)}px`;
+    pending.overlay.style.transform = node.style.transform;
+    pending.overlay.style.zIndex = 1000;
+    this.layer.append(pending.overlay);
+  }
+  async previewConnectedRegion(item, clientX, clientY, node) {
+    this.clearPendingRegion();
+    const request = this.regionRequest;
     const geometry = this.photoGeometry(node, item);
     const point = photoPointFromClient(clientX, clientY, geometry);
     if (!point) return;
     const image = await imageFromUrl(item.source);
-    if (this.elements.find(element => element.id === item.id)?.source !== item.source) return;
+    if (request !== this.regionRequest || this.mode !== 'tap-erase' || this.selectedId !== item.id || this.elements.find(element => element.id === item.id)?.source !== item.source) return;
     const work = document.createElement('canvas');
     work.width = image.width; work.height = image.height;
     const context = work.getContext('2d', { willReadFrequently: true });
     context.drawImage(image, 0, 0);
-    const radius = 24 * work.width / Math.max(1, geometry.displayWidth);
-    const left = Math.max(0, Math.floor(point.x - radius));
-    const top = Math.max(0, Math.floor(point.y - radius));
-    const right = Math.min(work.width, Math.ceil(point.x + radius + 1));
-    const bottom = Math.min(work.height, Math.ceil(point.y + radius + 1));
-    const cropWidth = right - left;
-    const cropHeight = bottom - top;
-    const imageData = context.getImageData(left, top, cropWidth, cropHeight);
-    const region = connectedColorRegion(imageData.data, cropWidth, cropHeight, point.x - left, point.y - top, { radius, maxFraction: 0.9 });
-    if (region.tooLarge) { this.onNotice?.('範囲が広すぎます。自動切り抜きか、なぞって削除を使ってください'); return; }
+    const imageData = context.getImageData(0, 0, work.width, work.height);
+    const region = connectedColorRegion(imageData.data, work.width, work.height, point.x, point.y, { tolerance: 50, maxFraction: 1 });
     if (!region.count) { this.onNotice?.('ここはすでに透明か、消せる範囲がありません'); return; }
-    for (let i = 0; i < region.mask.length; i++) if (region.mask[i]) imageData.data[i * 4 + 3] = 0;
-    context.putImageData(imageData, left, top);
+    const overlay = document.createElement('canvas');
+    overlay.className = 'sticker-element photo-region-preview';
+    overlay.width = work.width; overlay.height = work.height;
+    const previewContext = overlay.getContext('2d');
+    const previewData = previewContext.createImageData(work.width, work.height);
+    regionPreviewPixels(region.mask, work.width, work.height, Math.ceil(2 * work.width / Math.max(1, geometry.displayWidth)), previewData.data);
+    previewContext.putImageData(previewData, 0, 0);
+    this.pendingRegion = { itemId: item.id, source: item.source, mask: region.mask, imageData, work, overlay };
+    this.renderPendingRegion();
+    this.onPreviewChange?.();
+  }
+  confirmConnectedRegion() {
+    const pending = this.pendingRegion;
+    if (!pending || this.mode !== 'tap-erase' || this.selectedId !== pending.itemId || this.selected()?.source !== pending.source) return false;
+    this.clearPendingRegion();
+    for (let i = 0; i < pending.mask.length; i++) if (pending.mask[i]) pending.imageData.data[i * 4 + 3] = 0;
+    pending.work.getContext('2d').putImageData(pending.imageData, 0, 0);
     this.commit();
-    const index = this.elements.findIndex(element => element.id === item.id);
-    if (index < 0) return;
-    this.elements[index] = { ...this.elements[index], source: work.toDataURL('image/png'), removedBackground: true };
-    this.selectedId = item.id;
+    const index = this.elements.findIndex(element => element.id === pending.itemId);
+    if (index < 0) return false;
+    this.elements[index] = { ...this.elements[index], source: pending.work.toDataURL('image/png'), removedBackground: true };
     this.changed();
-    this.onNotice?.('タップした付近の似た色を消しました');
+    this.onNotice?.('選んだ範囲を消しました');
+    return true;
   }
   async eraseAt(item, clientX, clientY, radius = 34) {
     const node = this.layer.querySelector(`[data-element-id="${item.id}"]`);
@@ -138,6 +171,7 @@ export class StickerEditor {
       if (item.type === 'image') { node.style.width = `${(item.width || 560) / canvas.width * 100}%`; node.src = item.source; node.alt = ''; node.draggable = false; } else { node.style.width = `${(item.width || canvas.width * .72) / canvas.width * 100}%`; node.textContent = item.text; node.style.color = item.color; node.style.fontSize = `${item.size * displayScale}px`; node.style.fontFamily = item.font || DEFAULT_TEXT_FONT; node.style.fontWeight = item.weight || 700; node.style.webkitTextStroke = `${(item.stroke || 0) * displayScale}px white`; node.style.paintOrder = 'stroke fill'; if (item.id === this.editingTextId) { node.setAttribute('contenteditable', 'true'); node.spellcheck = false; node.dataset.placeholder = '文字を入力'; node.setAttribute('role', 'textbox'); node.setAttribute('aria-label', '文字を入力'); node.addEventListener('keydown', event => { if (event.key === 'Enter' && !event.isComposing) { event.preventDefault(); insertLineBreak(node); } }); node.addEventListener('input', () => { const current = this.elements.find(element => element.id === item.id); if (current) current.text = node.innerText.replace(/[\r\u200b]/g, '').slice(0, 500); this.onChange?.(); }); } }
       node.addEventListener('pointerdown', event => this.beginGesture(event, item)); this.layer.append(node);
     }
+    this.renderPendingRegion();
   }
   beginGesture(event, item) {
     if (item.type === 'image' && this.mode === 'tap-erase') {
@@ -149,7 +183,7 @@ export class StickerEditor {
         window.removeEventListener('pointerup', end);
         window.removeEventListener('pointercancel', end);
         if (e.type === 'pointercancel' || Math.hypot(e.clientX - origin.x, e.clientY - origin.y) > 8) return;
-        void this.eraseConnectedRegion(item, e.clientX, e.clientY, node).catch(() => this.onNotice?.('タップした範囲を消せませんでした'));
+        void this.previewConnectedRegion(item, e.clientX, e.clientY, node).catch(() => this.onNotice?.('タップした範囲を選べませんでした'));
       };
       window.addEventListener('pointerup', end);
       window.addEventListener('pointercancel', end);

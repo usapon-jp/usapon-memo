@@ -12,8 +12,8 @@ export function photoPointFromClient(clientX, clientY, {
   return x >= 0 && x < imageWidth && y >= 0 && y < imageHeight ? { x, y } : null;
 }
 
-// A tap removes one connected patch of a similar colour. Keep the result bounded
-// so an accidental tap on the subject cannot remove nearly the whole photo.
+// Find one connected patch of a similar colour. Callers can bound its size or
+// radius when they need a smaller selection.
 export function connectedColorRegion(pixels, width, height, seedX, seedY, {
   tolerance = 42, maxFraction = 0.45, radius = Infinity
 } = {}) {
@@ -61,4 +61,23 @@ export function connectedColorRegion(pixels, width, height, seedX, seedY, {
     if (index + width < total) visit(index + width);
   }
   return { mask, count: tail, tooLarge: false };
+}
+
+export function regionPreviewPixels(mask, width, height, edgeRadius = 1, preview = new Uint8ClampedArray(width * height * 4)) {
+  if (mask.length !== width * height) return preview;
+  const edge = Math.max(1, Math.floor(edgeRadius));
+  for (let index = 0; index < mask.length; index++) {
+    if (!mask[index]) continue;
+    const x = index % width;
+    const y = Math.floor(index / width);
+    const isEdge = x < edge || x + edge >= width || y < edge || y + edge >= height
+      || !mask[index - edge] || !mask[index + edge]
+      || !mask[index - edge * width] || !mask[index + edge * width];
+    const offset = index * 4;
+    preview[offset] = isEdge ? 44 : 71;
+    preview[offset + 1] = isEdge ? 56 : 82;
+    preview[offset + 2] = isEdge ? 143 : 171;
+    preview[offset + 3] = isEdge ? 235 : 65;
+  }
+  return preview;
 }
