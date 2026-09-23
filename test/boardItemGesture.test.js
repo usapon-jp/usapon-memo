@@ -36,6 +36,16 @@ test('拡大した横長素材も見た目の右端だけを基準に移動範�
   assert.equal(getBoardItemMaxXPercent(null, item, 50), 96);
 });
 
+test('写真ステッカーは右半分へ動かせ、端でもつかめる部分が残る', () => {
+  const board = { left: 0, width: 390 };
+  const image = { left: 195, right: 375 };
+  const maxX = getBoardItemMaxXPercent(board, image, 50, true);
+
+  assert.ok(maxX > 80 && maxX < 90);
+  assert.ok((board.left + board.width) - (maxX / 100 * board.width) >= 64 - 0.001);
+  assert.ok(getBoardItemMaxXPercent(board, image, 50) < 55);
+});
+
 test('ゴミ箱は指だけでなく付箋やマステ本体の重なりでも反応する', () => {
   const trash = { left: 355, right: 413, top: 870, bottom: 928 };
 

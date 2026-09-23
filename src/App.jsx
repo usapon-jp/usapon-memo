@@ -2525,7 +2525,8 @@ function HomePage({
     const boardRect = boardRef.current?.getBoundingClientRect();
     const itemRect = activeCardRef.current?.getBoundingClientRect();
     const currentItem = dragMemoRef.current || item;
-    return getBoardItemMaxXPercent(boardRect, itemRect, Number(currentItem?.x));
+    return getBoardItemMaxXPercent(boardRect, itemRect, Number(currentItem?.x),
+      currentItem?.type === 'image' || currentItem?.type === 'sticker');
   };
 
   const isDraggedItemOverTrash = (clientX = null, clientY = null) => {

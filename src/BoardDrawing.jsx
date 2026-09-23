@@ -219,6 +219,22 @@ export default function BoardDrawing({ value, onChange, onModeChange, onError, o
     live.current.refresh?.();
   }, [value]);
   useEffect(() => { onModeChangeRef.current?.(Boolean(tool)); }, [tool]);
+  useEffect(() => {
+    if (!open) return;
+    document.body.classList.add('is-board-drawing');
+    const preventNativeSelection = event => {
+      if (!event.target.closest?.('.cork-board-wrap')) return;
+      if (event.target.closest?.('input, textarea, [contenteditable="true"]')) return;
+      event.preventDefault();
+    };
+    document.addEventListener('selectstart', preventNativeSelection, true);
+    document.addEventListener('contextmenu', preventNativeSelection, true);
+    return () => {
+      document.body.classList.remove('is-board-drawing');
+      document.removeEventListener('selectstart', preventNativeSelection, true);
+      document.removeEventListener('contextmenu', preventNativeSelection, true);
+    };
+  }, [open]);
   useEffect(() => () => {
     inputRef.current?.cancelAll('drawing-unmounted');
     gestureTouchesRef.current.clear();
@@ -445,7 +461,11 @@ export default function BoardDrawing({ value, onChange, onModeChange, onError, o
       onPointerDown={event => start(event, onZoomChange, zoom)} onPointerMove={event => sample(event, onZoomChange, zoom)} onPointerUp={finish}
       onPointerCancel={event => finish(event, true)} onLostPointerCapture={event => finish(event, true)}
       onClick={stop} onContextMenu={event => event.preventDefault()} onTouchStart={stop} onTouchEnd={stop} />}
-    {!readOnly && <div className="board-drawing-tools" onPointerDown={stop} onClick={stop} onTouchStart={stop} onTouchEnd={stop}
+    {!readOnly && <div className="board-drawing-tools" onPointerDownCapture={event => {
+      if (event.pointerType === 'touch' && inputRef.current?.active?.type === 'pen') {
+        event.preventDefault(); event.stopPropagation();
+      }
+    }} onPointerDown={stop} onClick={stop} onTouchStart={stop} onTouchEnd={stop}
       onKeyDown={event => { if (event.key === 'Escape') settingsOpen ? setSettingsOpen(false) : colorOpen ? setColorOpen(false) : close(); }}>
       {colorOpen && tool !== 'eraser' && <CircularColorPicker color={color} onChange={setColor} onSelect={() => setColorOpen(false)} />}
       {settingsOpen && tool && <BrushSettings tool={tool} size={size} opacity={opacity} onSizeChange={changeSize} onOpacityChange={setOpacity} />}

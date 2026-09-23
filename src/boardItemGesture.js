@@ -21,9 +21,17 @@ export const getGestureRotation = (baseRotation, startAngle, currentAngle) => {
   return baseRotation + shortestDelta;
 };
 
-export const getBoardItemMaxXPercent = (boardRect, itemRect, itemX) => {
+export const getBoardItemMaxXPercent = (boardRect, itemRect, itemX, allowPartial = false) => {
   if (!boardRect || !itemRect || boardRect.width <= 0 || !Number.isFinite(itemX)) return 96;
   const anchorX = boardRect.left + (itemX / 100) * boardRect.width;
+  if (allowPartial) {
+    // Large stickers may cross the board edge while leaving enough visible to
+    // grab again. Their CSS left position is an edge, so full containment can
+    // otherwise stop a 180px image around the middle of a phone-width board.
+    const visibleWidth = Math.min(64, (itemRect.right - itemRect.left) / 2);
+    const leftOffset = itemRect.left - anchorX;
+    return Math.min(96, Math.max(4, 100 - (leftOffset + visibleWidth) / boardRect.width * 100));
+  }
   const rightExtent = Math.max(0, itemRect.right - anchorX);
   return Math.min(100, Math.max(4, 100 - (rightExtent / boardRect.width) * 100));
 };
