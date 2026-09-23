@@ -222,8 +222,9 @@ export default function BoardDrawing({ value, onChange, onModeChange, onError, o
   useEffect(() => {
     if (!open) return;
     document.body.classList.add('is-board-drawing');
+    window.getSelection()?.removeAllRanges();
     const preventNativeSelection = event => {
-      if (!event.target.closest?.('.cork-board-wrap')) return;
+      if (!event.target.closest?.('.cork-home')) return;
       if (event.target.closest?.('input, textarea, [contenteditable="true"]')) return;
       event.preventDefault();
     };
