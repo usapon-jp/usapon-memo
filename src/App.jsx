@@ -23,6 +23,7 @@ import {
   Pencil,
   Plus,
   RotateCcw,
+  RotateCw,
   Search,
   StickyNote,
   Trash2,
@@ -78,6 +79,7 @@ import {
   sortMemosForBoard
 } from './memoModel.js';
 import { LOCAL_STORAGE_QUOTA_BYTES, loadMemoData, saveMemoData } from './storage.js';
+import { captureBoardUndo, emptyBoardUndoHistory, redoBoardAction, undoBoardAction } from './boardUndoHistory.js';
 import {
   MEDIA_KINDS,
   createMediaId,
@@ -810,7 +812,7 @@ export default function App() {
   const [activeBoardId, setActiveBoardId] = useState('home');
   const [storageError, setStorageError] = useState('');
   const [appToast, setAppToast] = useState('');
-  const [undoAction, setUndoAction] = useState(null);
+  const [boardUndoHistory, setBoardUndoHistory] = useState(emptyBoardUndoHistory);
   const [notifications, setNotifications] = useState([]);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [hasUnreadNotifications, setHasUnreadNotifications] = useState(false);
@@ -834,6 +836,8 @@ export default function App() {
   const latestDataRef = useRef(data);
   const autosaveTimerRef = useRef(null);
   latestDataRef.current = data;
+  const undoAction = boardUndoHistory.past.at(-1) || null;
+  const redoAction = boardUndoHistory.future.at(-1) || null;
   const appTitle = data.appTitle || DEFAULT_APP_TITLE;
   const stickyTextSize = STICKY_TEXT_SIZES.has(data.stickyTextSize) ? data.stickyTextSize : DEFAULT_STICKY_TEXT_SIZE;
   const stickyTextWeight = STICKY_TEXT_WEIGHTS.has(data.stickyTextWeight) ? data.stickyTextWeight : DEFAULT_STICKY_TEXT_WEIGHT;
@@ -1242,7 +1246,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [storageBreakdown.total]);
+  }, [storageBreakdown.total, mediaBreakdown.total]);
 
   const clearPaidAutumnStickerSources = (updateState = true) => {
     revokePaidStickerSources(autumnStickerSourcesRef.current);
@@ -1488,14 +1492,22 @@ export default function App() {
   }, [boards, data.notifiedTimeCapsuleBoardIds, now]);
 
   const captureUndo = (label) => {
-    setUndoAction({ label, data });
+    const snapshot = latestDataRef.current;
+    setBoardUndoHistory(current => captureBoardUndo(current, label, snapshot));
   };
 
   const undoLastAction = () => {
-    if (!undoAction) return;
-    setData(undoAction.data);
-    setAppToast('元に戻しました。');
-    setUndoAction(null);
+    const step = undoBoardAction(boardUndoHistory, data);
+    if (!step) return;
+    setBoardUndoHistory(step.history);
+    setData(step.data);
+  };
+
+  const redoLastAction = () => {
+    const step = redoBoardAction(boardUndoHistory, data);
+    if (!step) return;
+    setBoardUndoHistory(step.history);
+    setData(step.data);
   };
 
   const saveMemo = (memo) => {
@@ -1702,6 +1714,7 @@ export default function App() {
       const records = await getAllMediaRecords();
       setStorageError('');
       setData(nextData);
+      setBoardUndoHistory(emptyBoardUndoHistory());
       setMediaRecords(records);
       setActiveBoardId(nextData.boards[0]?.id || 'home');
       console.log('[usapon-memo backup import]', {
@@ -1764,6 +1777,7 @@ export default function App() {
 
   const addBoard = (label = '') => {
     const nextBoard = createBoard(label.trim() || getNextBoardName(boards));
+    captureUndo('ボードの追加');
     setData(current => ({
       ...current,
       boards: [...current.boards, nextBoard]
@@ -1888,7 +1902,6 @@ export default function App() {
   };
 
   const restoreBoard = (boardId) => {
-    captureUndo('ボードの復元');
     updateBoard(boardId, { archived: false });
     setActiveBoardId(boardId);
     setPage('home');
@@ -1961,6 +1974,7 @@ export default function App() {
           hasUnreadNotification={hasUnreadNotifications}
           notificationsOpen={notificationsOpen}
           undoAction={undoAction}
+          redoAction={redoAction}
           onAdd={openNewCard}
           onAddBoardItem={addBoardItem}
           onSaveMedia={saveMedia}
@@ -1984,6 +1998,7 @@ export default function App() {
           onMoveBoard={moveBoard}
           onUpdateAppTitle={updateAppTitle}
           onUndo={undoLastAction}
+          onRedo={redoLastAction}
           onShowToast={setAppToast}
           onToggleNotifications={toggleNotifications}
           onCloseNotifications={closeNotifications}
@@ -2256,6 +2271,7 @@ function HomePage({
   hasUnreadNotification,
   notificationsOpen,
   undoAction,
+  redoAction,
   onAdd,
   onAddBoardItem,
   onSaveMedia,
@@ -2279,6 +2295,7 @@ function HomePage({
   onMoveBoard,
   onUpdateAppTitle,
   onUndo,
+  onRedo,
   onShowToast,
   onToggleNotifications,
   onCloseNotifications
@@ -3369,11 +3386,12 @@ function HomePage({
           </button>
         )}
         <div className="header-tools">
-          {undoAction && (
-            <button type="button" className="plain-icon" onClick={onUndo} aria-label="戻る">
-              <RotateCcw size={24} />
-            </button>
-          )}
+          <button type="button" className="plain-icon" onClick={onUndo} disabled={!undoAction} aria-label="元に戻す">
+            <RotateCcw size={22} />
+          </button>
+          <button type="button" className="plain-icon" onClick={onRedo} disabled={!redoAction} aria-label="やり直す">
+            <RotateCw size={22} />
+          </button>
           <button type="button" className="plain-icon" onClick={() => setSearchOpen(true)} aria-label="検索">
             <Search size={27} />
           </button>
@@ -5484,9 +5502,12 @@ function SettingsPage({
 }) {
   const [title, setTitle] = useState(appTitle);
   const backupInputRef = useRef(null);
-  const quota = LOCAL_STORAGE_QUOTA_BYTES;
-  const remaining = Math.max(0, quota - storageBreakdown.total);
-  const browserQuota = storageEstimate?.quota || 0;
+  const memoUsageRate = storageBreakdown.total / LOCAL_STORAGE_QUOTA_BYTES * 100;
+  const browserUsageRate = storageEstimate?.quota > 0
+    ? (storageEstimate.usage || 0) / storageEstimate.quota * 100
+    : null;
+  const usageRate = Math.min(100, Math.max(memoUsageRate, browserUsageRate || 0));
+  const percentLabel = rate => rate > 0 && rate < 1 ? '1%未満' : `${Math.min(100, Math.round(rate))}%`;
   const totalAppBytes = storageBreakdown.total + mediaBreakdown.total;
   const imagePercent = totalAppBytes
     ? Math.round(((mediaBreakdown.total + storageBreakdown.imageTotal) / totalAppBytes) * 100)
@@ -5573,26 +5594,19 @@ function SettingsPage({
 
       <div className="settings-card storage-info-card">
         <strong>保存容量</strong>
-        <div className="storage-meter" aria-label="保存容量">
-          <span style={{ width: `${Math.min(100, (storageBreakdown.total / quota) * 100)}%` }} />
+        <p className="storage-usage-label">保存枠の使用率 <strong>{percentLabel(usageRate)}</strong></p>
+        <div className="storage-meter" role="progressbar" aria-label="保存枠の使用率の目安" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(usageRate)}>
+          <span style={{ width: `${usageRate > 0 ? Math.max(1, usageRate) : 0}%` }} />
         </div>
-        <dl className="storage-stats">
-          <div><dt>localStorage使用量</dt><dd>{formatBytes(storageBreakdown.total)}</dd></div>
-          <div><dt>IndexedDB画像容量</dt><dd>{formatBytes(mediaBreakdown.total)}</dd></div>
-          <div><dt>localStorage残り目安</dt><dd>{formatBytes(remaining)}</dd></div>
-          <div><dt>写真・画像の割合</dt><dd>{imagePercent}%</dd></div>
-          {browserQuota > quota && (
-            <div><dt>ブラウザ全体の保存枠</dt><dd>{formatBytes(browserQuota)}</dd></div>
-          )}
-        </dl>
-        <div className="storage-breakdown">
-          <span>写真カード <b>{formatBytes(mediaBreakdown.photoCards + storageBreakdown.photoCards)}</b></span>
-          <span>日記写真 <b>{formatBytes(mediaBreakdown.diaryPhotos + storageBreakdown.diaryPhotos)}</b></span>
-          <span>ボード画像 <b>{formatBytes(mediaBreakdown.boardImages + storageBreakdown.boardImages)}</b></span>
-          <span>マイステッカー <b>{formatBytes(mediaBreakdown.customStickers)}</b></span>
-          <span>ボードスクショ <b>{formatBytes(mediaBreakdown.boardSnapshots + storageBreakdown.boardSnapshots)}</b></span>
-          <span>その他 <b>{formatBytes(storageBreakdown.other)}</b></span>
-        </div>
+        <details className="storage-details">
+          <summary>詳細を見る</summary>
+          <dl className="storage-stats">
+            <div><dt>メモ・設定の保存枠</dt><dd>{percentLabel(memoUsageRate)}使用</dd></div>
+            {browserUsageRate !== null && <div><dt>端末側の保存枠</dt><dd>{percentLabel(browserUsageRate)}使用</dd></div>}
+            <div><dt>保存データのうち写真・画像</dt><dd>{imagePercent}%</dd></div>
+          </dl>
+          <p>端末が示す保存枠をもとにした目安です。</p>
+        </details>
       </div>
 
       <div className="settings-card backup-card">

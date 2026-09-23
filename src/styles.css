@@ -674,6 +674,29 @@ summary,
   background: linear-gradient(90deg, #c8d7ba, #ead791);
 }
 
+.storage-usage-label {
+  margin: -4px 0 0;
+  color: rgba(91, 68, 46, 0.7);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.storage-usage-label strong {
+  color: #5b442e;
+  font-size: 21px;
+}
+
+.storage-details summary {
+  width: fit-content;
+  color: #76583a;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.storage-details .storage-stats { margin-top: 12px; }
+.storage-details p { margin: 10px 0 0; color: rgba(91, 68, 46, 0.62); font-size: 11px; }
+
 .storage-stats {
   display: grid;
   gap: 8px;
@@ -2253,7 +2276,7 @@ body {
 .cork-header {
   flex: 0 0 auto;
   display: grid;
-  grid-template-columns: 48px minmax(0, 1fr) 142px;
+  grid-template-columns: 48px minmax(0, 1fr) 188px;
   align-items: center;
   gap: 8px;
   padding: 0 18px 14px;
@@ -2304,6 +2327,8 @@ body {
   color: #76583a;
   cursor: pointer;
 }
+
+.plain-icon:disabled { opacity: 0.32; cursor: default; }
 
 .header-tools {
   display: flex;
@@ -3767,21 +3792,31 @@ body {
 
 @media (max-width: 430px) {
   .cork-header {
-    grid-template-columns: 42px minmax(0, 1fr) 126px;
+    grid-template-columns: 42px minmax(0, 1fr) 148px;
     padding-inline: 12px;
   }
 
   .cork-header h1,
   .app-title-button,
   .app-title-input {
-    font-size: 30px;
+    font-size: 24px;
     letter-spacing: 0.03em;
+  }
+
+  .app-title-button,
+  .app-title-input {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .plain-icon {
     width: 38px;
     height: 38px;
   }
+
+  .header-tools { gap: 2px; }
+  .header-tools .plain-icon { width: 35px; }
 
   .board-tabs {
     padding-inline: 12px;
