@@ -59,6 +59,26 @@ test('Apple Pencilが中断されても受け取った線を残し、次の一�
   assert.deepEqual(actions, ['begin', 'finish', 'begin', 'finish']);
 });
 
+test('Apple Pencilの接触移動が先に届いたら線を開始し、ホバーと指は開始しない', () => {
+  const actions = [];
+  const input = new InputSession({
+    begin(p) { actions.push(['begin', p.x]); },
+    append(p) { actions.push(['append', p.x]); },
+    finish() { actions.push(['finish']); },
+    cancel() {}, undo() {}
+  });
+
+  input.move({ ...pen(1, 10, 10), buttons: 0 });
+  input.move({ ...touch(2, 20, 15), buttons: 1 });
+  assert.deepEqual(actions, []);
+
+  input.move({ ...pen(1, 30, 20), buttons: 1 });
+  input.move({ ...pen(1, 40, 30), buttons: 1 });
+  input.up({ ...pen(1, 50, 40), buttons: 0 });
+  assert.deepEqual(actions, [['begin', 20], ['append', 20], ['append', 30], ['append', 40], ['finish']]);
+  assert.equal(input.pointers.size, 0);
+});
+
 test('二本指の軽いタップは一度だけ取り消し、動かした二本指操作では取り消さない', () => {
   let undoCount = 0;
   const input = new InputSession({ begin() {}, append() {}, finish() {}, cancel() {}, undo() { undoCount += 1; } });

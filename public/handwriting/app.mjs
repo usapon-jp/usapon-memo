@@ -1,5 +1,5 @@
 import { DrawingHistory, LIMITS, newDocument, validateDocument } from './core/document.mjs';
-import { InputSession } from './core/input.mjs?v=20260923-pencil1';
+import { InputSession } from './core/input.mjs?v=20260923-pencil2';
 import { BRUSH_SIZES } from './core/brush-sizes.mjs';
 import { setupSizeFavorites } from './core/size-favorites.mjs';
 import { setupHelp } from './core/help.mjs';
@@ -159,7 +159,7 @@ const input = new InputSession({
   },
   cancel: cancelStroke, undo, trace
 });
-function point(e) { return { id: e.pointerId, type: ['pen', 'touch'].includes(e.pointerType) ? e.pointerType : 'mouse', x: e.clientX, y: e.clientY, time: e.timeStamp, pressure: e.pressure }; }
+function point(e) { return { id: e.pointerId, type: ['pen', 'touch'].includes(e.pointerType) ? e.pointerType : 'mouse', x: e.clientX, y: e.clientY, time: e.timeStamp, pressure: e.pressure, buttons: e.buttons }; }
 const canvasViewport = $('canvasViewport');
 const canvasStage = $('canvasStage');
 const surface = $('surface');
@@ -213,7 +213,9 @@ function beginPinch() {
 }
 canvas.addEventListener('pointerdown', e => {
   if (e.pointerType === 'mouse' && e.button !== 0) return;
-  e.preventDefault(); canvas.setPointerCapture(e.pointerId);
+  e.preventDefault();
+  try { canvas.setPointerCapture?.(e.pointerId); }
+  catch (error) { trace({ reason: 'pointer-capture-failed', input: e.pointerType, action: 'continued' }); console.warn('Drawing pointer capture was unavailable.', error); }
   if (e.pointerType === 'touch') gestureTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
   input.down(point(e));
   if (gestureTouches.size === 2) beginPinch();
@@ -234,7 +236,11 @@ canvas.addEventListener('pointermove', e => {
     return;
   }
   const samples = e.getCoalescedEvents?.() || [];
-  (samples.length ? samples : [e]).forEach(sample => input.move(point(sample)));
+  (samples.length ? samples : [e]).forEach(sample => {
+    const p = point(sample);
+    if (e.pointerType === 'pen') p.buttons = e.buttons;
+    input.move(p);
+  });
 });
 function endTouchGesture(e, cancelled = false) {
   if (e.pointerType === 'touch') gestureTouches.delete(e.pointerId);

@@ -44,7 +44,15 @@ export class InputSession {
     }
   }
   move(p) {
-    const old = this.pointers.get(p.id); if (!old) return;
+    let old = this.pointers.get(p.id);
+    if (!old && p.type === 'pen' && (p.buttons & 1)) {
+      // A contact move still means the Pencil is down even if its down event
+      // was swallowed before it reached this surface.
+      this.callbacks.trace?.({ reason: 'pen-move-without-down', input: 'pen', action: 'recovered' });
+      this.down(p);
+      old = this.pointers.get(p.id);
+    }
+    if (!old) return;
     old.moved = Math.max(old.moved, Math.hypot(p.x - old.startX, p.y - old.startY));
     if (this.candidate && (old.moved > 12 || p.time - this.candidate.time > 250)) { this.candidate = null; this.blocked = true; }
     if (this.active?.id === p.id) this.callbacks.append(p);

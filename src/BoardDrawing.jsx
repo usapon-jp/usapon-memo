@@ -346,7 +346,8 @@ export default function BoardDrawing({ value, onChange, onModeChange, onError, o
     x: event.clientX,
     y: event.clientY,
     time: event.timeStamp,
-    pressure: event.pressure
+    pressure: event.pressure,
+    buttons: event.buttons
   });
   const stampAtPoint = (x, y) => [...document.querySelectorAll('.board-free-sticker, .memo-sticker-wrap')].find(element => {
     const rect = element.getBoundingClientRect();
@@ -375,7 +376,12 @@ export default function BoardDrawing({ value, onChange, onModeChange, onError, o
     event.preventDefault();
     setColorOpen(false);
     setSettingsOpen(false);
-    event.currentTarget.setPointerCapture?.(event.pointerId);
+    try {
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+    } catch (error) {
+      // Capture can fail even though the down event is usable. Keep the stroke.
+      console.warn('Drawing pointer capture was unavailable.', error);
+    }
     const point = pointFromEvent(event);
     if (point.type === 'pen') {
       gestureTouchesRef.current.clear();
@@ -419,6 +425,7 @@ export default function BoardDrawing({ value, onChange, onModeChange, onError, o
     const samples = event.nativeEvent?.getCoalescedEvents?.() || [event];
     for (const sampleEvent of samples.length ? samples : [event]) {
       const point = pointFromEvent(sampleEvent);
+      if (event.pointerType === 'pen') point.buttons = event.buttons;
       updatePinch(point, onZoomChange, zoom);
       inputRef.current.move(point);
     }
