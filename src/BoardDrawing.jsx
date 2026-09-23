@@ -486,7 +486,7 @@ export default function BoardDrawing({ value, onChange, onModeChange, onError, o
       inputRef.current.move(point);
     }
   };
-  const finish = (event, cancelled = false) => {
+  const finish = (event, cancelled = false, captureLost = false) => {
     event.stopPropagation();
     const point = pointFromEvent(event);
     if (pendingStickerTapRef.current?.id === point.id) {
@@ -497,7 +497,8 @@ export default function BoardDrawing({ value, onChange, onModeChange, onError, o
     }
     gestureTouchesRef.current.delete(point.id);
     if (gestureTouchesRef.current.size < 2) pinchRef.current = null;
-    inputRef.current.up(point, cancelled, cancelled ? 'pointercancel' : 'pointerup');
+    if (captureLost) inputRef.current.lostCapture(point);
+    else inputRef.current.up(point, cancelled, cancelled ? 'pointercancel' : 'pointerup');
   };
   const close = () => {
     pendingStickerTapRef.current = null;
@@ -523,7 +524,7 @@ export default function BoardDrawing({ value, onChange, onModeChange, onError, o
     <canvas ref={canvasRef} className="board-ink" aria-hidden="true" />
     {!readOnly && tool && <div className="board-ink-input" aria-label="ボードに手書き"
       onPointerDown={event => start(event, onZoomChange, zoom)} onPointerMove={event => sample(event, onZoomChange, zoom)} onPointerUp={finish}
-      onPointerCancel={event => finish(event, true)} onLostPointerCapture={event => finish(event, true)}
+      onPointerCancel={event => finish(event, true)} onLostPointerCapture={event => finish(event, true, true)}
       onClick={stop} onContextMenu={event => event.preventDefault()} onTouchStart={stop} onTouchEnd={stop} />}
     {!readOnly && <div className="board-drawing-tools" onPointerDownCapture={event => {
       if (event.pointerType === 'touch' && inputRef.current?.active?.type === 'pen') {

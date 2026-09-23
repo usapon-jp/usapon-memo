@@ -1,5 +1,5 @@
 import { DrawingHistory, LIMITS, newDocument, validateDocument } from './core/document.mjs';
-import { InputSession } from './core/input.mjs?v=20260923-pencil3';
+import { InputSession } from './core/input.mjs?v=20260923-pencil4';
 import { BRUSH_SIZES } from './core/brush-sizes.mjs';
 import { setupSizeFavorites } from './core/size-favorites.mjs';
 import { setupHelp } from './core/help.mjs';
@@ -94,8 +94,8 @@ function trace(entry) {
 function metrics() {
   const points = history.document.strokes.reduce((n, s) => n + s.points.length, 0);
   $('metrics').textContent = `${history.document.strokes.length}操作 / ${points}点 / Undo ${history.past.length} / 最終描画 ${lastFrameMs.toFixed(1)}ms / 最大 ${peakFrameMs.toFixed(1)}ms / Canvas ${canvas.width}×${canvas.height} / 原本版 ${history.document.revision}`;
-  $('undo').disabled = !actionPast.length || Boolean(stroke); $('redo').disabled = !actionFuture.length || Boolean(stroke);
-  $('clear').disabled = !history.document.strokes.length || Boolean(stroke);
+  $('undo').disabled = !actionPast.length; $('redo').disabled = !actionFuture.length;
+  $('clear').disabled = !history.document.strokes.length;
 }
 function redraw() {
   if(!history.document.layers.some(l=>l.id===activeLayerId))activeLayerId=history.document.layers[0].id;
@@ -266,7 +266,7 @@ canvas.addEventListener('pointerup', e => { e.preventDefault(); endTouchGesture(
 canvas.addEventListener('pointercancel', e => endTouchGesture(e, true));
 canvas.addEventListener('lostpointercapture', e => {
   gestureTouches.delete(e.pointerId); pinch = null;
-  if (input.pointers.has(e.pointerId)) input.up(point(e), true, 'lostpointercapture');
+  if (input.pointers.has(e.pointerId)) input.lostCapture(point(e));
 });
 window.addEventListener('blur', () => { gestureTouches.clear(); pinch = null; input.cancelAll('window-blur'); });
 document.addEventListener('visibilitychange', () => { if (document.hidden) { gestureTouches.clear(); pinch = null; input.cancelAll('document-hidden'); } });

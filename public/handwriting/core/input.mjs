@@ -77,6 +77,14 @@ export class InputSession {
     }
     if (!this.pointers.size) { this.blocked = false; this.candidate = null; }
   }
+  lostCapture(p) {
+    // WebKit can deliver this notification after the next Pencil contact has
+    // started with the same pointer ID. It does not identify which contact lost
+    // capture, so it must not end a live pen stroke. The full-screen drawing
+    // surfaces still receive pointerup; a missing end is repaired on next down.
+    if (p.type === 'pen') return;
+    this.up(p, true, 'lostpointercapture');
+  }
   cancelAll(reason = 'control-change') { this.interrupt(reason); this.candidate = null; this.pointers.clear(); this.blocked = false; }
   gesture() { this.candidate = null; this.blocked = true; }
 }

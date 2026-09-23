@@ -59,6 +59,39 @@ test('Apple Pencilが中断されても受け取った線を残し、次の一�
   assert.deepEqual(actions, ['begin', 'finish', 'begin', 'finish']);
 });
 
+test('前のApple Pencilのcapture終了通知が遅れても次の線を止めない', () => {
+  const actions = [];
+  const input = new InputSession({
+    begin(p) { actions.push(['begin', p.x]); },
+    append(p) { actions.push(['append', p.x]); },
+    finish() { actions.push(['finish']); },
+    cancel() { actions.push(['cancel']); },
+    undo() {}
+  });
+  input.down(pen(7, 100, 20));
+  input.up(pen(7, 130, 30));
+  input.down(pen(7, 200, 60));
+  input.lostCapture(pen(7, 210, 30));
+  input.move(pen(7, 220, 70));
+  input.up(pen(7, 230, 80));
+  assert.deepEqual(actions, [
+    ['begin', 20], ['append', 30], ['finish'],
+    ['begin', 60], ['append', 70], ['append', 80], ['finish']
+  ]);
+});
+
+test('指のcapture終了通知では進行中の入力を片付ける', () => {
+  const actions = [];
+  const input = new InputSession({
+    begin() { actions.push('begin'); }, append() {}, finish() {},
+    cancel() { actions.push('cancel'); }, undo() {}
+  });
+  input.down(touch(4, 100));
+  input.lostCapture(touch(4, 120));
+  assert.deepEqual(actions, ['begin', 'cancel']);
+  assert.equal(input.pointers.size, 0);
+});
+
 test('Apple Pencilの接触移動が先に届いたら線を開始し、ホバーと指は開始しない', () => {
   const actions = [];
   const input = new InputSession({
