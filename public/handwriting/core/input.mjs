@@ -45,7 +45,7 @@ export class InputSession {
   }
   move(p) {
     let old = this.pointers.get(p.id);
-    if (!old && p.type === 'pen' && (p.buttons & 1)) {
+    if (!old && p.type === 'pen' && ((p.buttons & 1) || p.pressure > 0)) {
       // A contact move still means the Pencil is down even if its down event
       // was swallowed before it reached this surface.
       this.callbacks.trace?.({ reason: 'pen-move-without-down', input: 'pen', action: 'recovered' });

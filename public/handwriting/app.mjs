@@ -1,15 +1,15 @@
 import { DrawingHistory, LIMITS, newDocument, validateDocument } from './core/document.mjs';
-import { InputSession } from './core/input.mjs?v=20260923-pencil2';
+import { InputSession } from './core/input.mjs?v=20260923-pencil3';
 import { BRUSH_SIZES } from './core/brush-sizes.mjs';
 import { setupSizeFavorites } from './core/size-favorites.mjs';
 import { setupHelp } from './core/help.mjs';
 import { contentPointAtAnchor, anchoredScroll, zoomedStageLayout } from './core/zoom.mjs';
 import { StrokeBuilder } from './core/stroke.mjs';
-import { paintSegment, renderDocument, exportPng, exportStampPng, exportStampDataUrl, BrushStrokeRenderer } from './core/render.mjs';
+import { paintSegment, renderDocument, exportPng, exportStampPng, exportStampDataUrl, BrushStrokeRenderer } from './core/render.mjs?v=20260923-pencil3';
 import { sendToMemo } from './host-bridge.mjs';
 import { setupCircularColorPicker } from './core/color-picker.mjs';
 import { setupColorPalettes } from './core/palette.mjs';
-import { renderLayerBuffers, compositeLayers } from './core/render.mjs';
+import { renderLayerBuffers, compositeLayers } from './core/render.mjs?v=20260923-pencil3';
 import { StickerEditor, loadEditorDraft, saveEditorDraft } from './core/sticker-editor.mjs?v=20260923-photo-tools1';
 import { removeBackgroundOnDevice } from './core/background-removal.mjs';
 const $ = id => document.getElementById(id);
@@ -72,7 +72,15 @@ try {
 let activeBrush = null;
 let activeLayerId=history.document.layers[0].id, layerBuffers=null, activeLayerIndex=0;
 const layerWork=document.createElement('canvas');
-function disposeLayers(){layerBuffers?.forEach(b=>{b.width=b.height=1;});layerBuffers=null;}
+let layerBufferRevision=-1, layerBufferWidth=0, layerBufferHeight=0;
+function disposeLayers(){layerBuffers?.forEach(b=>{b.width=b.height=1;});layerBuffers=null;layerBufferRevision=-1;}
+function ensureLayerBuffers(){
+  if(layerBuffers && layerBufferRevision===history.document.revision && layerBufferWidth===canvas.width && layerBufferHeight===canvas.height)return;
+  disposeLayers();
+  layerBuffers=renderLayerBuffers(canvas,history.document);
+  layerBufferRevision=history.document.revision;
+  layerBufferWidth=canvas.width;layerBufferHeight=canvas.height;
+}
 const strokeBase = document.createElement('canvas');
 let painted = 0; let frame = 0; let builder = null; let started = 0;
 let lastFrameMs = 0; let peakFrameMs = 0; let frameSamples = []; let failure = false;
@@ -92,7 +100,7 @@ function metrics() {
 function redraw() {
   if(!history.document.layers.some(l=>l.id===activeLayerId))activeLayerId=history.document.layers[0].id;
   $('surface').style.aspectRatio = `${history.document.canvas.width} / ${history.document.canvas.height}`;
-  renderDocument(canvas, history.document); metrics(); renderLayerUi();
+  ensureLayerBuffers();compositeLayers(canvas,history.document,layerBuffers); metrics(); renderLayerUi();
   editor.render();
 }
 function schedule() { if (!frame) frame = requestAnimationFrame(paintPending); }
@@ -124,7 +132,6 @@ function addPoint(p) {
   if (builder.sample({ x, y, time: p.time, pressure: p.pressure })) schedule();
 }
 function cancelStroke() {
-  disposeLayers();
   activeBrush?.dispose(); activeBrush = null;
   if (frame) cancelAnimationFrame(frame); frame = 0; stroke = null; builder = null; painted = 0; redraw();
 }
@@ -136,7 +143,7 @@ const input = new InputSession({
     started = history.document.strokes.reduce((n, s) => n + s.points.length, 0);
     builder = new StrokeBuilder({ tool, input: p.type, color: $('color').value, size: +$('size').value, opacity: tool === 'eraser' ? 1 : +$('opacity').value / 100, time: p.time }); stroke = builder.stroke;
     stroke.layerId=activeLayerId;
-    disposeLayers();layerBuffers=renderLayerBuffers(canvas,history.document);
+    ensureLayerBuffers();
     activeLayerIndex=history.document.layers.findIndex(l=>l.id===activeLayerId);
     layerWork.width=canvas.width;layerWork.height=canvas.height;
     layerWork.getContext('2d').drawImage(layerBuffers[activeLayerIndex],0,0);
@@ -154,7 +161,15 @@ const input = new InputSession({
     if (frame) cancelAnimationFrame(frame); frame = 0;
     if (failure) { cancelStroke(); return; }
     paintPending();
-    try { history.commit(stroke); recordAction('drawing'); dirty = true; stroke = null; activeBrush?.dispose(); activeBrush = null; disposeLayers(); metrics(); message('未保存'); }
+    try {
+      history.commit(stroke); recordAction('drawing'); dirty = true;
+      const cachedLayer=layerBuffers[activeLayerIndex].getContext('2d');
+      cachedLayer.setTransform(1,0,0,1,0,0);
+      cachedLayer.clearRect(0,0,canvas.width,canvas.height);
+      cachedLayer.drawImage(layerWork,0,0);
+      layerBufferRevision=history.document.revision;
+      stroke = null; activeBrush?.dispose(); activeBrush = null; metrics(); message('未保存');
+    }
     catch (error) { cancelStroke(); message(error.message); }
   },
   cancel: cancelStroke, undo, trace

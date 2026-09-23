@@ -268,6 +268,9 @@ export function compositeLayers(canvas, document, buffers) {
   const ctx=canvas.getContext('2d'); ctx.save(); ctx.setTransform(1,0,0,1,0,0);
   ctx.clearRect(0,0,canvas.width,canvas.height);
   const layers=document.layers??[{visible:true,opacity:1,clip:false}];
+  if(layers.length===1 && layers[0].visible && layers[0].opacity===1 && !layers[0].clip){
+    ctx.drawImage(buffers[0],0,0);ctx.restore();return;
+  }
   let previous=null;
   let scratch=compositeScratch.get(canvas);
   if(!scratch){scratch=[canvas.ownerDocument.createElement('canvas'),canvas.ownerDocument.createElement('canvas')];compositeScratch.set(canvas,scratch);}

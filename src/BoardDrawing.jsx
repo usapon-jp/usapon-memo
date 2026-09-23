@@ -4,7 +4,7 @@ import { DrawingHistory, newDocument } from '../public/handwriting/core/document
 import { InputSession } from '../public/handwriting/core/input.mjs';
 import { BRUSH_SIZES } from '../public/handwriting/core/brush-sizes.mjs';
 import { StrokeBuilder } from '../public/handwriting/core/stroke.mjs';
-import { renderDocument, paintStroke } from '../public/handwriting/core/render.mjs';
+import { renderDocument, paintSegment, BrushStrokeRenderer } from '../public/handwriting/core/render.mjs';
 import { hexToHsv, hsvToHex } from '../public/handwriting/core/color-picker.mjs';
 import { isShortTap } from './boardDrawingInteraction.js';
 import './boardDrawing.css';
@@ -169,27 +169,79 @@ export default function BoardDrawing({ value, onChange, onModeChange, onError, o
     const base = document.createElement('canvas');
     const preview = document.createElement('canvas');
     const state = live.current;
+    let previewStroke = null;
+    let previewRenderer = null;
+    let previewPainted = 0;
+    let renderedDocument = null;
+    const simpleLayers = doc => !doc.layers || (doc.layers.length === 1 && doc.layers[0].visible && doc.layers[0].opacity === 1 && !doc.layers[0].clip);
+    const resetPreview = () => {
+      previewRenderer?.dispose();
+      previewRenderer = null;
+      previewStroke = null;
+      previewPainted = 0;
+    };
     const redraw = () => {
       const ctx = canvas.getContext('2d');
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(base, 0, 0);
-      if (!state.stroke) return;
+      if (!state.stroke) {
+        resetPreview();
+        ctx.drawImage(base, 0, 0);
+        return;
+      }
       const doc = state.stroke.document;
       const stroke = state.stroke.builder.stroke;
-      if (stroke.tool === 'eraser') {
-        ctx.save();
-        ctx.scale(canvas.width / doc.canvas.width, canvas.height / doc.canvas.height);
-        paintStroke(ctx, stroke);
-        ctx.restore();
-      } else {
+      if (!simpleLayers(doc) && stroke.tool !== 'eraser') {
+        resetPreview();
         renderDocument(preview, { ...doc, strokes: [stroke] });
+        ctx.drawImage(base, 0, 0);
         ctx.drawImage(preview, 0, 0);
+        return;
       }
+      const previewContext = preview.getContext('2d');
+      if (previewStroke !== stroke) {
+        resetPreview();
+        previewStroke = stroke;
+        previewContext.clearRect(0, 0, preview.width, preview.height);
+        if (stroke.tool === 'eraser') previewContext.drawImage(base, 0, 0);
+        else if (!(stroke.tool === 'pen' && stroke.opacity === 1)) {
+          previewRenderer = new BrushStrokeRenderer(preview, doc.canvas, stroke);
+        }
+      }
+      if (previewRenderer) {
+        previewRenderer.append();
+        previewContext.clearRect(0, 0, preview.width, preview.height);
+        previewRenderer.composite(previewContext);
+      } else {
+        previewContext.save();
+        previewContext.setTransform(preview.width / doc.canvas.width, 0, 0, preview.height / doc.canvas.height, 0, 0);
+        for (let index = previewPainted; index < stroke.points.length; index++) {
+          paintSegment(previewContext, stroke, stroke.points[Math.max(0, index - 1)], stroke.points[index]);
+        }
+        previewContext.restore();
+        previewPainted = stroke.points.length;
+      }
+      if (stroke.tool !== 'eraser') ctx.drawImage(base, 0, 0);
+      ctx.drawImage(preview, 0, 0);
     };
     state.redraw = redraw;
     state.refresh = () => {
-      if (state.value) renderDocument(base, state.value);
-      else base.getContext('2d').clearRect(0, 0, base.width, base.height);
+      const next = state.value;
+      if (!next) {
+        base.getContext('2d').clearRect(0, 0, base.width, base.height);
+        renderedDocument = null;
+      } else if (!sameDocumentRevision(next, renderedDocument)) {
+        const appendPreview = renderedDocument && simpleLayers(next) && simpleLayers(renderedDocument)
+          && next.id === renderedDocument.id && next.revision === renderedDocument.revision + 1
+          && next.strokes.length === renderedDocument.strokes.length + 1
+          && next.strokes.at(-1)?.id === previewStroke?.id;
+        if (appendPreview) {
+          const context = base.getContext('2d');
+          if (previewStroke.tool === 'eraser') context.clearRect(0, 0, base.width, base.height);
+          context.drawImage(preview, 0, 0);
+        } else renderDocument(base, next);
+        renderedDocument = next;
+      }
+      resetPreview();
       redraw();
     };
     const observer = new ResizeObserver(() => {
@@ -199,10 +251,11 @@ export default function BoardDrawing({ value, onChange, onModeChange, onError, o
         target.width = Math.max(1, Math.round(rect.width * dpr));
         target.height = Math.max(1, Math.round(rect.height * dpr));
       }
+      renderedDocument = null;
       state.refresh();
     });
     observer.observe(canvas);
-    return () => { observer.disconnect(); cancelAnimationFrame(state.frame); };
+    return () => { observer.disconnect(); cancelAnimationFrame(state.frame); resetPreview(); };
   }, []);
 
   useEffect(() => {
@@ -298,6 +351,9 @@ export default function BoardDrawing({ value, onChange, onModeChange, onError, o
     const state = live.current;
     if (!state.stroke) return;
     const { builder } = state.stroke;
+    if (state.frame) cancelAnimationFrame(state.frame);
+    state.frame = null;
+    state.redraw();
     state.stroke = null;
     if (!builder.stroke.points.length) {
       state.refresh();
