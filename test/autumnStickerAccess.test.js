@@ -36,11 +36,10 @@ test('秋フルセットはスタンプ26点と文房具12点で、無料素材�
   assert.equal(new Set(AUTUMN_PAID_STATIONERY_IDS.map(getAutumnPaidAssetFileName)).size, 12);
 });
 
-test('既存の合言葉レシートはIMG9803だけを端末に保存し、有料秋セットに合言葉はない', () => {
+test('無料お試しは５点にまとまり、旧IMG9803の保存データも読める', () => {
   assert.equal(STICKER_PACKS.autumn.code, undefined);
-  assert.equal(STICKER_PACKS.autumnTrial.code, 'どんぐり');
+  assert.equal(STICKER_PACKS.autumnTrial.code, undefined);
   assert.deepEqual(STICKER_PACKS.autumnTrial.stickerIds, AUTUMN_TRIAL_STICKER_IDS);
-  assert.deepEqual(STICKER_PACKS.autumnTrial.codeStickerIds, ['autumn-stamp-9803']);
   const data = normalizeData({
     unlockedStickerIds: ['autumn-stamp-9803'],
     visibleStickerIds: ['autumn-stamp-9803']
@@ -90,11 +89,15 @@ test('権利がなければprivate Storageを読まない', async () => {
   };
   const result = await loadAutumnStickerAccess(client, getAutumnStickerConfig({}));
   assert.equal(result.status, 'not-entitled');
+  assert.deepEqual(Object.keys(result.sources).sort(), [...AUTUMN_TRIAL_STICKER_IDS].sort());
   assert.equal(storageTouched, false);
   assert.equal(PACKAGE_THEME_PACK_ASSETS_BUCKET, 'package-theme-pack-assets');
 });
 
-test('無料お試しは同じUIDの有効な共有権利で5点を読み込む', async () => {
+test('無料お試しはログインなしでも５点を読み込む', async () => {
+  const signedOut = await loadAutumnStickerAccess({ auth: { getSession: async () => ({ data: { session: null }, error: null }) } }, getAutumnStickerConfig({}));
+  assert.equal(signedOut.status, 'signed-out');
+  assert.deepEqual(Object.keys(signedOut.sources).sort(), [...AUTUMN_TRIAL_STICKER_IDS].sort());
   const client = {
     auth: { getSession: async () => ({ data: { session: { user: { id: 'user-1' } } }, error: null }) },
     schema: (name) => ({ from: () => query(name === 'digital_shop'
@@ -108,7 +111,7 @@ test('無料お試しは同じUIDの有効な共有権利で5点を読み込む'
   assert.equal(AUTUMN_TRIAL_ENTITLEMENT_STICKER_IDS.includes(AUTUMN_FREE_STICKER_ID), false);
 });
 
-test('取り消された無料お試し権利では素材を解放しない', async () => {
+test('旧無料受取権利が取り消されても公開済みの５点は使える', async () => {
   const client = {
     auth: { getSession: async () => ({ data: { session: { user: { id: 'user-1' } } }, error: null }) },
     schema: () => ({ from: () => query({ data: [{ product_key: AUTUMN_TRIAL_PRODUCT_KEY, purchaser_user_id: 'user-1', revoked_at: '2026-09-08T00:00:00Z' }], error: null }) }),
@@ -116,7 +119,7 @@ test('取り消された無料お試し権利では素材を解放しない', as
   };
   const result = await loadAutumnStickerAccess(client, getAutumnStickerConfig({}));
   assert.equal(result.status, 'not-entitled');
-  assert.deepEqual(result.sources, {});
+  assert.deepEqual(Object.keys(result.sources).sort(), [...AUTUMN_TRIAL_STICKER_IDS].sort());
 });
 
  test('Googleログインは開いたページにかかわらず登録済みのメモURLへ戻る', () => {
@@ -137,14 +140,14 @@ test('ログインし直すとGoogleのアカウント選択を表示しメモ�
   } finally { if (previous === undefined) delete globalThis.window; else globalThis.window = previous; }
 });
 
-test('有料セットだけの購入者にも無料柄を含めた38点を表示する', async () => {
+test('有料セット購入者にも無料５点を含めた42点を表示する', async () => {
  const client = {
   auth: {getSession: async () => ({data:{session:{user:{id:'paid-user'}}}})},
   schema: name => ({from:()=>query({data:name==='package'?[{theme_pack_id:'autumn-letter-set'}]:[],error:null})}),
   storage: {from:()=>({download:async()=>({data:new Blob(['test']),error:null})})}
  };
  const result = await loadAutumnStickerAccess(client,getAutumnStickerConfig({}));
- try { assert.equal(result.status,'ready'); assert.equal(result.allPaidAssetsLoaded,true); assert.deepEqual(Object.keys(result.sources).sort(),[...AUTUMN_STICKER_IDS].sort()); }
+ try { assert.equal(result.status,'ready'); assert.equal(result.allPaidAssetsLoaded,true); assert.deepEqual(Object.keys(result.sources).sort(),[...new Set([...AUTUMN_STICKER_IDS,...AUTUMN_TRIAL_STICKER_IDS])].sort()); }
  finally { revokePaidStickerSources(result.sources); }
 });
 
@@ -161,6 +164,6 @@ test('起動時はボードで使用中の有料素材だけを読み込める',
   assert.equal(result.status,'ready');
   assert.equal(result.allPaidAssetsLoaded,false);
   assert.deepEqual(downloaded,[`${AUTUMN_ENTITLEMENT_ID}/${target}.png`]);
-  assert.deepEqual(Object.keys(result.sources).sort(),[AUTUMN_FREE_STICKER_ID,target].sort());
+  assert.deepEqual(Object.keys(result.sources).sort(),[...AUTUMN_TRIAL_STICKER_IDS,target].sort());
  } finally { revokePaidStickerSources(result.sources); }
 });

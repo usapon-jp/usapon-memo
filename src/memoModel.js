@@ -132,8 +132,6 @@ export const STICKER_PACKS = {
   },
   autumnTrial: {
     label: '秋のお試し',
-    code: 'どんぐり',
-    codeStickerIds: ['autumn-stamp-9803'],
     stickerIds: ['autumn-trial-cover', 'autumn-trial-sticky', 'autumn-trial-heading', 'autumn-trial-tape', 'autumn-stamp-9803']
   }
 };

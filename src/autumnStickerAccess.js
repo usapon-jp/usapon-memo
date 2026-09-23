@@ -75,7 +75,7 @@ export function revokePaidStickerSources(sources = {}, urlApi = URL) {
 }
 
 export async function loadAutumnStickerAccess(client = memoSupabase, settings = config, options = {}) {
-  const sources = {};
+  const sources = getAutumnTrialStickerSources(import.meta.env);
   if (!client) return { status: 'unconfigured', sources, allPaidAssetsLoaded: true, error: '' };
 
   const { data: { session }, error: sessionError } = await client.auth.getSession();
@@ -122,10 +122,9 @@ export async function loadAutumnStickerAccess(client = memoSupabase, settings = 
   }
   if (downloaded.some((entry) => !entry)) {
     revokePaidStickerSources(sources);
-    return { status: 'assets-unavailable', sources: {}, error: '購入済み素材をすべて読み込めませんでした。' };
+    return { status: 'assets-unavailable', sources: getAutumnTrialStickerSources(import.meta.env), error: '購入済み素材をすべて読み込めませんでした。' };
   }
   if (paidEntitled) sources[AUTUMN_FREE_STICKER_ID] = settings.freeStickerUrl;
-  if (trialEntitled) Object.assign(sources, getAutumnTrialStickerSources(import.meta.env));
   return {
     userId: session.user.id,
     packs: [...(paidEntitled ? ['autumn-letter-set'] : []), ...(trialEntitled ? ['goodnotes-autumn-trial-set'] : [])],

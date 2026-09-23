@@ -1246,8 +1246,8 @@ export default function App() {
 
   const clearPaidAutumnStickerSources = (updateState = true) => {
     revokePaidStickerSources(autumnStickerSourcesRef.current);
-    AUTUMN_STICKER_IDS.forEach((id) => {
-      if (id !== AUTUMN_FREE_STICKER_ID && STICKER_MAP[id]) STICKER_MAP[id].src = '';
+    AUTUMN_PAID_STICKER_IDS.forEach((id) => {
+      if (STICKER_MAP[id]) STICKER_MAP[id].src = '';
     });
     autumnStickerSourcesRef.current = {};
     if (updateState) setAutumnStickerAccess(current => ({ ...current, sources: {} }));
@@ -1271,8 +1271,8 @@ export default function App() {
         return;
       }
       if (preserveSources) revokePaidStickerSources(autumnStickerSourcesRef.current);
-      AUTUMN_STICKER_IDS.forEach((id) => {
-        if (id !== AUTUMN_FREE_STICKER_ID && STICKER_MAP[id]) STICKER_MAP[id].src = next.sources[id] || '';
+      AUTUMN_PAID_STICKER_IDS.forEach((id) => {
+        if (STICKER_MAP[id]) STICKER_MAP[id].src = next.sources[id] || '';
       });
       autumnStickerSourcesRef.current = next.sources;
       setAutumnStickerAccess(next);
@@ -5661,7 +5661,7 @@ function StickerPage({
     <p>表示するセットと、タブの順番を選べます。</p>
     <StickerTabs key={initialPack || 'default'} stickerIds={unlockedStickerIds} initialPack={initialPack || 'default'} preferences={stickerSetPreferences} onPreferencesChange={preferences => onUpdate({ stickerSetPreferences: preferences })} />
     <details className="settings-card sticker-account"><summary>アカウント・素材の受け取り</summary>
-      <p>{ready ? '受取済みの素材を表示しています。' : autumnAccess.status === 'loading' ? '素材を確認しています…' : '購入・受取時のGoogleアカウントでログインしてください。'}</p>
+      <p>無料お試し５点はログインなしで使えます。{ready ? '購入済みの素材も表示しています。' : autumnAccess.status === 'loading' ? '購入済みの素材を確認しています…' : '購入済みの素材は、購入時のGoogleアカウントでログインしてください。'}</p>
       <div className="settings-actions">
         <button type="button" onClick={onSignInAutumn}>Googleでログイン</button>
         <button type="button" onClick={onRefreshAutumn} disabled={autumnAccess.status === 'loading'}>素材を再確認</button>
