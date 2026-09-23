@@ -58,8 +58,8 @@ export class StickerEditor {
   duplicate() { const item = this.selected(); if (!item) return; this.commit(); const next = { ...clone(item), id: crypto.randomUUID(), x: item.x + 45, y: item.y + 45, z: this.elements.length }; this.elements.push(next); this.select(next.id); }
   remove() { const item = this.selected(); if (!item) return; this.commit(); this.elements = this.elements.filter(e => e.id !== item.id); this.selectedId = ''; this.changed(); }
   moveLayer(offset) { const item = this.selected(); if (!item) return; this.commit(); const ordered = [...this.elements].sort((a,b) => a.z - b.z); const index = ordered.findIndex(e => e.id === item.id), target = index + offset; if (target >= 0 && target < ordered.length) [ordered[index].z, ordered[target].z] = [ordered[target].z, ordered[index].z]; this.changed(); }
-  undo() { if (!this.past.length) return false; this.future.push(this.snapshot()); this.elements = this.past.pop(); this.selectedId = ''; this.changed(); return true; }
-  redo() { if (!this.future.length) return false; this.past.push(this.snapshot()); this.elements = this.future.pop(); this.selectedId = ''; this.changed(); return true; }
+  undo(preserveSelection = false) { if (!this.past.length) return false; const selectedId = this.selectedId; this.future.push(this.snapshot()); this.elements = this.past.pop(); this.selectedId = preserveSelection && this.elements.some(item => item.id === selectedId) ? selectedId : ''; this.changed(); return true; }
+  redo(preserveSelection = false) { if (!this.future.length) return false; const selectedId = this.selectedId; this.past.push(this.snapshot()); this.elements = this.future.pop(); this.selectedId = preserveSelection && this.elements.some(item => item.id === selectedId) ? selectedId : ''; this.changed(); return true; }
   async restoreOriginal() { const item = this.selected(); if (!item?.originalId) return false; const blob = await getOriginal(item.originalId); if (!blob) return false; const source = await resizeFile(blob); this.patch(item.id, { source, removedBackground: false }); return true; }
   async prepareRestore() {
     const item = this.selected();
@@ -204,12 +204,12 @@ export class StickerEditor {
       const end = e => {
         if (e.pointerId !== event.pointerId) return;
         if (frame) cancelAnimationFrame(frame);
+        this.photoGestureActive = false;
         if (changed) {
           const index = this.elements.findIndex(element => element.id === item.id);
           if (index >= 0) this.elements[index] = { ...this.elements[index], source: work.toDataURL('image/png'), removedBackground: true };
           this.changed();
         }
-        this.photoGestureActive = false;
         window.removeEventListener('pointermove', paint);
         window.removeEventListener('pointerup', end);
         window.removeEventListener('pointercancel', end);

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { DEFAULT_TEXT_FONT, fitImage, isBlankText, wrapTextLines } from '../public/handwriting/core/sticker-editor.mjs';
+import { DEFAULT_TEXT_FONT, fitImage, isBlankText, StickerEditor, wrapTextLines } from '../public/handwriting/core/sticker-editor.mjs';
 
 test('編集用写真は長辺2048pxを超えず、縦横比を保つ', () => {
   assert.deepEqual(fitImage(4096, 2048), { width: 2048, height: 1024 });
@@ -22,4 +22,25 @@ test('未入力または空白だけの文字は画面に残さない', () => {
   assert.equal(isBlankText(''), true);
   assert.equal(isBlankText('  \n '), true);
   assert.equal(isBlankText('文字'), false);
+});
+
+test('写真の背景削除を一操作ずつ戻してやり直しても選択を保つ', () => {
+  const editor = new StickerEditor({ layer: {}, onChange() {} });
+  editor.render = () => {};
+  editor.elements = [{ id: 'photo-1', type: 'image', source: 'original', removedBackground: false }];
+  editor.selectedId = 'photo-1';
+  editor.replaceSelectedImage('cutout');
+  editor.replaceSelectedImage('erased-once');
+  assert.equal(editor.selected().source, 'erased-once');
+
+  assert.equal(editor.undo(true), true);
+  assert.equal(editor.selected().source, 'cutout');
+  assert.equal(editor.undo(true), true);
+  assert.equal(editor.selected().source, 'original');
+  assert.equal(editor.selected().removedBackground, false);
+
+  assert.equal(editor.redo(true), true);
+  assert.equal(editor.selected().source, 'cutout');
+  assert.equal(editor.redo(true), true);
+  assert.equal(editor.selected().source, 'erased-once');
 });

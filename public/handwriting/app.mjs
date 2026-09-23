@@ -10,7 +10,7 @@ import { sendToMemo } from './host-bridge.mjs';
 import { setupCircularColorPicker } from './core/color-picker.mjs';
 import { setupColorPalettes } from './core/palette.mjs';
 import { renderLayerBuffers, compositeLayers } from './core/render.mjs?v=20260923-pencil3';
-import { StickerEditor, loadEditorDraft, saveEditorDraft, listEditorDrafts, renameEditorDraft } from './core/sticker-editor.mjs?v=20260923-draft-gallery2';
+import { StickerEditor, loadEditorDraft, saveEditorDraft, listEditorDrafts, renameEditorDraft } from './core/sticker-editor.mjs?v=20260923-photo-history1';
 import { removeBackgroundOnDevice } from './core/background-removal.mjs';
 const $ = id => document.getElementById(id);
 const canvas = $('drawing'); const ctx = canvas.getContext('2d');
@@ -150,8 +150,16 @@ function cancelStroke() {
   activeBrush?.dispose(); activeBrush = null;
   if (frame) cancelAnimationFrame(frame); frame = 0; stroke = null; builder = null; painted = 0; redraw();
 }
-function undo() { if (stroke || !actionPast.length) return; const kind = actionPast.pop(), changed = kind === 'editor' ? editor.undo() : history.undo(); if (changed) { actionFuture.push(kind); dirty = true; redraw(); message('1操作戻しました'); } }
-function redo() { if (stroke || !actionFuture.length) return; const kind = actionFuture.pop(), changed = kind === 'editor' ? editor.redo() : history.redo(); if (changed) { actionPast.push(kind); dirty = true; redraw(); message('1操作やり直しました'); } }
+function photoStepAvailable(actionStack, editorStack) {
+  const selected = editor.selected();
+  if (backgroundAbort || editor.photoGestureActive || selected?.type !== 'image' || actionStack.at(-1) !== 'editor') return false;
+  const previous = editorStack.at(-1)?.find(item => item.id === selected.id);
+  return Boolean(previous && Object.keys(selected).some(key => selected[key] !== previous[key]));
+}
+function undo(preservePhotoSelection = false) { if (stroke || !actionPast.length) return; const kind = actionPast.pop(), changed = kind === 'editor' ? editor.undo(preservePhotoSelection) : history.undo(); if (changed) { actionFuture.push(kind); dirty = true; redraw(); syncElementPanel(); message('1操作戻しました'); } }
+function redo(preservePhotoSelection = false) { if (stroke || !actionFuture.length) return; const kind = actionFuture.pop(), changed = kind === 'editor' ? editor.redo(preservePhotoSelection) : history.redo(); if (changed) { actionPast.push(kind); dirty = true; redraw(); syncElementPanel(); message('1操作やり直しました'); } }
+$('photoUndo').addEventListener('click', () => { if (photoStepAvailable(actionPast, editor.past)) undo(true); });
+$('photoRedo').addEventListener('click', () => { if (photoStepAvailable(actionFuture, editor.future)) redo(true); });
 const input = new InputSession({
   begin(p) {
     failure = false; painted = 0;
@@ -358,7 +366,7 @@ for (const dot of document.querySelectorAll('.color-dot')) dot.addEventListener(
   document.querySelectorAll('.color-dot').forEach(item => item.classList.toggle('is-selected', item === dot));
 });
 $('color').addEventListener('input', () => document.querySelectorAll('.color-dot').forEach(item => item.classList.remove('is-selected')));
-$('undo').addEventListener('click', undo); $('redo').addEventListener('click', redo);
+$('undo').addEventListener('click', () => undo()); $('redo').addEventListener('click', () => redo());
 $('clear').addEventListener('click', () => {
   if (stroke) return;
   if (history.clear()) { recordAction('drawing'); dirty = true; redraw(); message('全部消しました。「戻す」で復元できます（原本は未保存）'); }
@@ -433,6 +441,8 @@ function syncElementPanel() {
   $('photoEraser').setAttribute('aria-pressed', String(photo && editor.mode === 'erase'));
   $('photoRestore').setAttribute('aria-pressed', String(photo && editor.mode === 'restore'));
   $('photoRestore').disabled = !photo || !item.removedBackground || Boolean(backgroundAbort);
+  $('photoUndo').disabled = !photoStepAvailable(actionPast, editor.past);
+  $('photoRedo').disabled = !photoStepAvailable(actionFuture, editor.future);
   if (!photo || !['erase', 'restore'].includes(editor.mode)) {
     $('photoBrushSizes').hidden = true;
     $('photoEraser').setAttribute('aria-expanded', 'false');
