@@ -10,23 +10,68 @@ import { sendToMemo } from './host-bridge.mjs';
 import { setupCircularColorPicker } from './core/color-picker.mjs';
 import { setupColorPalettes } from './core/palette.mjs';
 import { renderLayerBuffers, compositeLayers } from './core/render.mjs';
+import { StickerEditor, loadEditorDraft, saveEditorDraft } from './core/sticker-editor.mjs';
+import { removeBackgroundOnDevice } from './core/background-removal.mjs';
 const $ = id => document.getElementById(id);
 const canvas = $('drawing'); const ctx = canvas.getContext('2d');
 const SQUARE_CANVAS_SIZE = 1400;
 const DRAFT_STORAGE_KEY = 'usapon_handwriting_draft_v1';
+const STICKER_DRAFT_ID = 'current';
 let initialDocument = newDocument({ width: SQUARE_CANVAS_SIZE, height: SQUARE_CANVAS_SIZE });
+let initialEditor = [];
 try {
   const saved = localStorage.getItem(DRAFT_STORAGE_KEY);
   if (saved) {
-    const restored = validateDocument(JSON.parse(saved));
+    const decoded = JSON.parse(saved);
+    const restored = validateDocument(decoded.document || decoded);
     initialDocument = restored.strokes.length
       ? restored
       : newDocument({ width: SQUARE_CANVAS_SIZE, height: SQUARE_CANVAS_SIZE });
+    initialEditor = Array.isArray(decoded.elements) ? decoded.elements : [];
   }
 } catch (error) {
   console.warn('Saved handwriting could not be restored.', error);
 }
+try {
+  const savedEditor = await loadEditorDraft(STICKER_DRAFT_ID);
+  if (savedEditor) {
+    initialDocument = validateDocument(savedEditor.document);
+    initialEditor = savedEditor.elements;
+  }
+} catch (error) {
+  console.warn('Saved sticker editor could not be restored.', error);
+}
 let history = new DrawingHistory(initialDocument); let stroke = null; let tool = 'pencil'; let dirty = false;
+let handoffBoardId = '';
+let actionPast = [], actionFuture = [];
+let backgroundAbort = null;
+let centeredPhotoId = '';
+const recordAction = kind => { actionPast.push(kind); if (actionPast.length > 50) actionPast.shift(); actionFuture = []; };
+const elementLayer = $('elementLayer');
+const editor = new StickerEditor({ layer: elementLayer, getCanvas: () => history.document.canvas, onCommit: () => recordAction('editor'), onChange: () => { dirty = true; syncElementPanel(); } });
+const photoEraserSizeLabel = document.createElement('label');
+photoEraserSizeLabel.className = 'photo-eraser-size'; photoEraserSizeLabel.setAttribute('aria-label', '写真用消しゴムの太さ');
+photoEraserSizeLabel.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/></svg><input id="photoEraserSize" type="range" min="8" max="80" value="34" aria-label="写真用消しゴムの太さ">';
+document.querySelector('.element-transform').append(photoEraserSizeLabel);
+$('photoEraserSize').addEventListener('input', () => { editor.eraseRadius = Number($('photoEraserSize').value); });
+editor.setElements(initialEditor);
+dirty = false;
+// Board handoff is deliberately separate from the PNG return transfer.  The source stays on
+// the board and its original Blob is copied into the editor's local IndexedDB store.
+try {
+  const sourceRaw = sessionStorage.getItem('usapon_handwriting_editor_source_v1');
+  if (sourceRaw) {
+    const source = JSON.parse(sourceRaw);
+    handoffBoardId = typeof source.boardId === 'string' ? source.boardId : '';
+    if (typeof source.dataUrl === 'string' && source.dataUrl.startsWith('data:image/')) {
+      const blob = await (await fetch(source.dataUrl)).blob();
+      await editor.addFiles([new File([blob], 'board-photo', { type: blob.type || 'image/png' })]);
+      sessionStorage.removeItem('usapon_handwriting_editor_source_v1');
+      history.document.id = crypto.randomUUID(); // never overwrite the current standalone draft
+      $('status').textContent = 'ボードの写真を別の編集原本として開きました';
+    }
+  }
+} catch (error) { console.warn('Board image handoff could not be opened.', error); }
 let activeBrush = null;
 let activeLayerId=history.document.layers[0].id, layerBuffers=null, activeLayerIndex=0;
 const layerWork=document.createElement('canvas');
@@ -44,13 +89,14 @@ function trace(entry) {
 function metrics() {
   const points = history.document.strokes.reduce((n, s) => n + s.points.length, 0);
   $('metrics').textContent = `${history.document.strokes.length}操作 / ${points}点 / Undo ${history.past.length} / 最終描画 ${lastFrameMs.toFixed(1)}ms / 最大 ${peakFrameMs.toFixed(1)}ms / Canvas ${canvas.width}×${canvas.height} / 原本版 ${history.document.revision}`;
-  $('undo').disabled = !history.past.length || Boolean(stroke); $('redo').disabled = !history.future.length || Boolean(stroke);
+  $('undo').disabled = !actionPast.length || Boolean(stroke); $('redo').disabled = !actionFuture.length || Boolean(stroke);
   $('clear').disabled = !history.document.strokes.length || Boolean(stroke);
 }
 function redraw() {
   if(!history.document.layers.some(l=>l.id===activeLayerId))activeLayerId=history.document.layers[0].id;
   $('surface').style.aspectRatio = `${history.document.canvas.width} / ${history.document.canvas.height}`;
   renderDocument(canvas, history.document); metrics(); renderLayerUi();
+  editor.render();
 }
 function schedule() { if (!frame) frame = requestAnimationFrame(paintPending); }
 function paintPending() {
@@ -85,8 +131,8 @@ function cancelStroke() {
   activeBrush?.dispose(); activeBrush = null;
   if (frame) cancelAnimationFrame(frame); frame = 0; stroke = null; builder = null; painted = 0; redraw();
 }
-function undo() { if (stroke) return; if (history.undo()) { dirty = true; redraw(); message('1操作戻しました'); } }
-function redo() { if (stroke) return; if (history.redo()) { dirty = true; redraw(); message('1操作やり直しました'); } }
+function undo() { if (stroke || !actionPast.length) return; const kind = actionPast.pop(), changed = kind === 'editor' ? editor.undo() : history.undo(); if (changed) { actionFuture.push(kind); dirty = true; redraw(); message('1操作戻しました'); } }
+function redo() { if (stroke || !actionFuture.length) return; const kind = actionFuture.pop(), changed = kind === 'editor' ? editor.redo() : history.redo(); if (changed) { actionPast.push(kind); dirty = true; redraw(); message('1操作やり直しました'); } }
 const input = new InputSession({
   begin(p) {
     failure = false; painted = 0;
@@ -111,7 +157,7 @@ const input = new InputSession({
     if (frame) cancelAnimationFrame(frame); frame = 0;
     if (failure) { cancelStroke(); return; }
     paintPending();
-    try { history.commit(stroke); dirty = true; stroke = null; activeBrush?.dispose(); activeBrush = null; disposeLayers(); metrics(); message('未保存'); }
+    try { history.commit(stroke); recordAction('drawing'); dirty = true; stroke = null; activeBrush?.dispose(); activeBrush = null; disposeLayers(); metrics(); message('未保存'); }
     catch (error) { cancelStroke(); message(error.message); }
   },
   cancel: cancelStroke, undo, trace
@@ -223,6 +269,7 @@ function configureSize() {
 }
 for (const button of document.querySelectorAll('[data-drawing-tool]')) button.addEventListener('click', () => {
   input.cancelAll();
+  setToolbarMode('drawing');
   const mode = button.dataset.drawingTool;
   tool = mode;
   configureSize();
@@ -278,7 +325,7 @@ $('color').addEventListener('input', () => document.querySelectorAll('.color-dot
 $('undo').addEventListener('click', undo); $('redo').addEventListener('click', redo);
 $('clear').addEventListener('click', () => {
   if (stroke) return;
-  if (history.clear()) { dirty = true; redraw(); message('全部消しました。「戻す」で復元できます（原本は未保存）'); }
+  if (history.clear()) { recordAction('drawing'); dirty = true; redraw(); message('全部消しました。「戻す」で復元できます（原本は未保存）'); }
 });
 document.addEventListener('keydown', e => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z' && !['INPUT', 'TEXTAREA'].includes(e.target.tagName)) { e.preventDefault(); e.shiftKey ? redo() : undo(); } });
 function download(blob, name) {
@@ -314,23 +361,114 @@ function exportWithBackground(maxEdge = 800) {
   drawing.width = drawing.height = output.width = output.height = 1;
   return result;
 }
-$('save').addEventListener('click', () => {
-  input.cancelAll();
+async function exportCompositeCanvas(maxEdge = 2048, { whiteOutline = false } = {}) {
+  const width = maxEdge, height = Math.round(maxEdge * history.document.canvas.height / history.document.canvas.width);
+  const output = document.createElement('canvas'); output.width = width; output.height = height;
+  renderDocument(output, history.document);
+  await editor.drawOn(output.getContext('2d'), width, height);
+  if (whiteOutline) {
+    const outline = document.createElement('canvas'); outline.width = width; outline.height = height;
+    const context = outline.getContext('2d'); context.filter = 'drop-shadow(0 0 8px white) drop-shadow(0 0 8px white)'; context.drawImage(output, 0, 0); context.filter = 'none'; context.drawImage(output, 0, 0);
+    output.getContext('2d').clearRect(0, 0, width, height); output.getContext('2d').drawImage(outline, 0, 0); outline.width = outline.height = 1;
+  }
+  return output;
+}
+async function exportCompositePng(maxEdge, options) { const canvas = await exportCompositeCanvas(maxEdge, options); return new Promise(resolve => canvas.toBlob(resolve, 'image/png')); }
+async function exportCompositeDataUrl(maxEdge, options) { const canvas = await exportCompositeCanvas(maxEdge, options); return { dataUrl: canvas.toDataURL('image/png'), width: canvas.width, height: canvas.height }; }
+function syncElementPanel() {
+  const item = editor.selected(), panel = $('elementPanel'); panel.hidden = !item;
+  document.body.classList.toggle('is-text-editing', item?.type === 'text');
+  document.body.classList.toggle('is-photo-editing', item?.type === 'image');
+  elementLayer.classList.toggle('is-selecting', ['select', 'erase', 'text'].includes(editor.mode));
+  if (!item) { centeredPhotoId = ''; return; }
+  const photo = item.type === 'image';
+  if (photo && item.id !== centeredPhotoId) {
+    centeredPhotoId = item.id;
+    requestAnimationFrame(() => {
+      canvasViewport.scrollLeft = Math.max(0, (canvasViewport.scrollWidth - canvasViewport.clientWidth) / 2);
+    });
+  }
+  panel.classList.toggle('is-text', !photo); panel.classList.toggle('is-photo', photo);
+  $('elementTitle').textContent = photo ? '写真' : '文字';
+  $('photoEditControls').hidden = !photo; $('textEditControls').hidden = photo;
+  $('photoKeep').setAttribute('aria-pressed', String(photo && !item.removedBackground));
+  $('photoRemove').setAttribute('aria-pressed', 'false');
+  $('photoEraser').setAttribute('aria-pressed', String(photo && editor.mode === 'erase'));
+  if (!backgroundAbort) $('photoEditHint').textContent = editor.mode === 'erase' ? '消したい部分を指でなぞって補正できます。' : 'そのまま使うか、端末内で背景を消せます。';
+  if (photo) { $('elementScale').value = Math.round((item.scale || 1) * 100); $('elementRotation').value = item.rotation || 0; }
+  if (item.type === 'text') { $('textValue').value = item.text; $('textColor').value = item.color; $('textSize').value = item.size; $('textSizeValue').value = item.size; $('textWeight').value = String(item.weight || 700); $('textStroke').value = item.stroke || 0; document.querySelectorAll('[data-text-font]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.textFont === item.font))); document.querySelectorAll('[data-text-color]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.textColor === item.color.toLowerCase()))); }
+}
+function previewSelectedText() { const item = editor.selected(); if (item?.type !== 'text') return; $('textSizeValue').value = $('textSize').value; editor.liveTextPatch({ color: $('textColor').value, size: Number($('textSize').value), weight: Number($('textWeight').value), stroke: Number($('textStroke').value) }); }
+function setToolbarMode(mode) {
+  const drawing = mode === 'drawing', toolbar = document.querySelector('.toolbar'), toggle = $('toolShelfToggle');
+  toolbar.classList.toggle('is-drawing-mode', drawing); toggle.setAttribute('aria-pressed', String(drawing));
+  toggle.setAttribute('aria-label', drawing ? '写真と文字に戻る' : '描く道具を開く'); toggle.title = drawing ? '写真・文字' : '描く道具';
+  if (drawing) { if (editor.selected()?.type === 'text') editor.finishTextEdit(); editor.mode = 'draw'; editor.select(''); }
+  else { editor.mode = 'select'; syncElementPanel(); }
+}
+$('toolShelfToggle').addEventListener('click', () => { const drawing = document.querySelector('.toolbar').classList.contains('is-drawing-mode'); setToolbarMode(drawing ? 'elements' : 'drawing'); message(drawing ? '写真や文字を追加できます' : '描く道具を開きました'); });
+const photoMenu = $('photoMenu'), photoMenuToggle = $('photoMenuToggle');
+function closePhotoMenu() { photoMenu.hidden = true; photoMenuToggle.setAttribute('aria-expanded', 'false'); }
+photoMenuToggle.addEventListener('click', event => { event.stopPropagation(); const open = photoMenu.hidden; closePhotoMenu(); if (open) { photoMenu.hidden = false; photoMenuToggle.setAttribute('aria-expanded', 'true'); } });
+$('photoNew').addEventListener('click', () => { closePhotoMenu(); $('photoInput').click(); });
+$('photoExisting').addEventListener('click', () => {
+  closePhotoMenu(); const photos = editor.elements.filter(item => item.type === 'image'); editor.mode = 'select'; syncElementPanel();
+  if (!photos.length) message('編集できる写真はまだありません');
+  else if (photos.length === 1) { editor.select(photos[0].id); message('写真を選びました'); }
+  else message('編集する写真をタップしてください');
+});
+document.addEventListener('pointerdown', event => { if (!photoMenu.hidden && !event.target.closest('.photo-add-wrap')) closePhotoMenu(); });
+$('photoInput').addEventListener('change', async event => { try { await editor.addFiles([...event.target.files]); editor.mode = 'select'; message('写真を追加しました。元写真はこの端末に残ります。'); } catch (error) { message('写真を追加できませんでした。'); } finally { event.target.value = ''; } });
+$('textAdd').addEventListener('click', () => { const item = editor.addText(); requestAnimationFrame(() => { const node = elementLayer.querySelector(`[data-element-id="${item.id}"]`); node?.focus({ preventScroll: true }); }); message('カーソル位置から文字を入力できます'); });
+$('elementClose').addEventListener('click', () => { if (editor.selected()?.type === 'text') editor.finishTextEdit(); editor.select(''); setToolbarMode('elements'); });
+$('elementDuplicate').addEventListener('click', () => editor.duplicate()); $('elementDelete').addEventListener('click', () => editor.remove()); $('elementBack').addEventListener('click', () => editor.moveLayer(-1)); $('elementFront').addEventListener('click', () => editor.moveLayer(1));
+$('elementOriginal').addEventListener('click', async () => { if (await editor.restoreOriginal()) message('元写真に戻しました'); else message('元写真を開けませんでした'); });
+$('photoKeep').addEventListener('click', () => { editor.mode = 'select'; syncElementPanel(); message('写真はそのままで貼ります'); });
+const startPhotoErase = () => { editor.mode = 'erase'; syncElementPanel(); message('消したい背景をなぞってください'); };
+$('photoEraser').addEventListener('click', startPhotoErase);
+$('photoRemove').addEventListener('click', async () => {
+  const item = editor.selected(); if (item?.type !== 'image' || backgroundAbort) return;
+  backgroundAbort = new AbortController(); const progress = $('photoProgress'), cancel = $('photoCancel'); progress.hidden = false; cancel.hidden = false; $('photoRemove').disabled = true;
+  $('photoEditHint').textContent = '切り抜きモデルを準備しています…'; message('写真は外部送信せず、この端末で処理します');
   try {
-    localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(history.document));
+    const source = await removeBackgroundOnDevice(item.source, { signal: backgroundAbort.signal, onProgress(event) { const value = Number(event.progress); progress.value = Number.isFinite(value) ? Math.min(1, value > 1 ? value / 100 : value) : 0; $('photoEditHint').textContent = event.status === 'running' ? '背景を消しています…' : `モデルを準備しています… ${Math.round(progress.value * 100)}%`; } });
+    if (editor.replaceSelectedImage(source)) { editor.mode = 'select'; message('背景を消しました。必要なら手動で補正できます'); }
+  } catch (error) {
+    if (error?.name !== 'AbortError') console.error('[background-removal]', error);
+    message(error?.name === 'AbortError' ? '背景削除を中止しました。元写真は残っています' : '自動で消せませんでした。手動で補正できます');
+  }
+  finally { backgroundAbort = null; progress.hidden = true; cancel.hidden = true; $('photoRemove').disabled = false; syncElementPanel(); }
+});
+$('photoCancel').addEventListener('click', () => backgroundAbort?.abort());
+for (const id of ['textColor', 'textSize', 'textWeight', 'textStroke']) $(id).addEventListener('input', previewSelectedText);
+document.querySelectorAll('[data-text-font]').forEach(button => button.addEventListener('click', () => { const item = editor.selected(); if (item?.type !== 'text') return; document.querySelectorAll('[data-text-font]').forEach(option => option.setAttribute('aria-pressed', String(option === button))); editor.liveTextPatch({ font: button.dataset.textFont }); }));
+document.querySelectorAll('[data-text-color]').forEach(button => { button.style.setProperty('--text-color', button.dataset.textColor); button.addEventListener('click', () => { $('textColor').value = button.dataset.textColor; document.querySelectorAll('[data-text-color]').forEach(option => option.setAttribute('aria-pressed', String(option === button))); previewSelectedText(); }); });
+setToolbarMode('elements');
+for (const id of ['elementScale', 'elementRotation']) $(id).addEventListener('pointerdown', () => editor.commit(), { once: false });
+$('elementScale').addEventListener('input', () => editor.livePatchSelected({ scale: Number($('elementScale').value) / 100 }));
+$('elementRotation').addEventListener('input', () => editor.livePatchSelected({ rotation: Number($('elementRotation').value) }));
+$('save').addEventListener('click', async () => {
+  input.cancelAll();
+  $('save').disabled = true;
+  try {
+    await saveEditorDraft({ id: STICKER_DRAFT_ID, document: history.document, elements: editor.elements });
     dirty = false;
     message('この端末に保存しました');
   } catch (error) {
-    message('保存できませんでした。スタンプとして保存してから、まっさらにしてください。');
-  }
+    console.error('[sticker-editor save]', error);
+    message('保存できませんでした。端末の空き容量を確認してください。');
+  } finally { $('save').disabled = false; }
 });
-$('load').addEventListener('click', () => {
+$('load').addEventListener('click', async () => {
   input.cancelAll();
   try {
-    const saved = localStorage.getItem(DRAFT_STORAGE_KEY);
+    const saved = await loadEditorDraft(STICKER_DRAFT_ID)
+      || (() => { const raw = localStorage.getItem(DRAFT_STORAGE_KEY); return raw ? JSON.parse(raw) : null; })();
     if (!saved) { message('保存した手書きはまだありません'); return; }
     if (dirty && !window.confirm('今の未保存の手書きを、保存した内容に戻しますか？')) return;
-    history = new DrawingHistory(validateDocument(JSON.parse(saved)));
+    history = new DrawingHistory(validateDocument(saved.document || saved));
+    editor.setElements(saved.elements || []);
+    actionPast = []; actionFuture = [];
     dirty = false;
     redraw();
     message('保存した続きを開きました');
@@ -340,7 +478,7 @@ $('png').addEventListener('click', async () => {
   input.cancelAll(); $('png').disabled = true;
   try {
     const whiteOutline = selectedPasteFinish === 'white-outline';
-    const blob = await exportStampPng(history.document, 2048, { whiteOutline });
+    const blob = await exportCompositePng(2048, { whiteOutline });
     download(blob, `stamp-${history.document.id}.png`);
     message(whiteOutline ? '白ふちスタンプとして保存しました' : '描いた部分をスタンプとして保存しました');
   }
@@ -389,7 +527,7 @@ $('pasteConfirm').addEventListener('click', async () => {
   try {
     const image = backgroundIncluded
       ? exportWithBackground()
-      : exportStampDataUrl(history.document, 800, { whiteOutline: selectedPasteFinish === 'white-outline' });
+      : await exportCompositeDataUrl(800, { whiteOutline: selectedPasteFinish === 'white-outline' });
     const target = sendToMemo({
       ...image,
       backgroundIncluded,
@@ -397,6 +535,7 @@ $('pasteConfirm').addEventListener('click', async () => {
       saveToMyStickers,
       stickerName: $('myStickerName').value.trim(),
       stickerFolderId: $('myStickerFolder').value
+      ,boardId: handoffBoardId
     });
     message('メモを開いています');
     dirty = false;
@@ -459,7 +598,7 @@ function renderLayerUi(){
   function button(label,fn){const b=document.createElement('button');b.type='button';b.textContent=label;b.onclick=fn;return b;}
   layerPanel.append(button('閉じる',()=>{layerPanel.hidden=true;}));
   const layers=history.document.layers;
-  function update(next){input.cancelAll();history.changeLayers(next);dirty=true;redraw();}
+  function update(next){input.cancelAll();history.changeLayers(next);recordAction('drawing');dirty=true;redraw();}
   [...layers].reverse().forEach(layer=>{
     const index=layers.findIndex(l=>l.id===layer.id),row=document.createElement('div');row.className='layer-row';
     const select=button(layer.name,()=>{input.cancelAll();activeLayerId=layer.id;renderLayerUi();});

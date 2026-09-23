@@ -19,7 +19,8 @@ test('手書き受け渡しはPNGと寸法だけを受け取る', () => {
     finish: 'paper',
     saveToMyStickers: false,
     stickerName: '',
-    stickerFolderId: 'unfiled'
+    stickerFolderId: 'unfiled',
+    boardId: ''
   });
 });
 
@@ -38,6 +39,12 @@ test('白ふちのマイステッカー登録情報を受け取る', () => {
   assert.equal(transfer.saveToMyStickers, true);
   assert.equal(transfer.stickerName, 'うさぎ');
   assert.equal(transfer.stickerFolderId, 'animals');
+  assert.equal(transfer.boardId, '');
+});
+
+test('受け渡し先のボードIDは完成ステッカーを元のボードへ戻すためだけに受け取る', () => {
+  const transfer = parseHandwritingTransfer(JSON.stringify({ version: 2, dataUrl: 'data:image/png;base64,AAAA', width: 320, height: 240, boardId: 'board-1' }));
+  assert.equal(transfer.boardId, 'board-1');
 });
 
 test('不正形式や大きすぎる寸法は受け取らない', () => {

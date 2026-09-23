@@ -1095,12 +1095,14 @@ export default function App() {
     let raw = '';
     try {
       raw = sessionStorage.getItem(HANDWRITING_TRANSFER_KEY) || '';
-      sessionStorage.removeItem(HANDWRITING_TRANSFER_KEY);
     } catch (error) {
       console.warn('[usapon-memo handwriting transfer read failed]', error);
     }
     const transfer = parseHandwritingTransfer(raw);
-    if (!transfer) return;
+    if (!transfer) {
+      if (raw) sessionStorage.removeItem(HANDWRITING_TRANSFER_KEY);
+      return;
+    }
     const url = new URL(window.location.href);
     url.searchParams.delete('handwritingPaste');
     window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
@@ -1142,9 +1144,10 @@ export default function App() {
             }]
           }));
         }
+        const requestedBoardExists = (latestDataRef.current.boards || []).some(board => board.id === transfer.boardId && !board.archived);
         addBoardItem({
           type: 'image',
-          boardId: activeBoardId,
+          boardId: requestedBoardExists ? transfer.boardId : activeBoardId,
           imageDataUrl: '',
           imageId: mediaRecord.id,
           imageMimeType: 'image/png',
@@ -1153,6 +1156,7 @@ export default function App() {
           x: 28,
           y: 28
         });
+        sessionStorage.removeItem(HANDWRITING_TRANSFER_KEY);
         setAppToast(existingSticker
           ? '登録済みのマイステッカーを貼り付けました。'
           : transfer.saveToMyStickers && !canAddToLibrary
@@ -2333,6 +2337,7 @@ function HomePage({
   const boardReorderDragRef = useRef(null);
   const activeBoard = boards.find(board => board.id === activeBoardId) || boards[0] || { id: 'home', label: 'ホーム' };
   const selectedBoardItem = boardItems.find(item => item.id === selectedBoardItemId && item.type === 'text') || null;
+  const selectedBoardImage = boardItems.find(item => item.id === selectedBoardItemId && item.type === 'image') || null;
   const shouldLoopBoardTabs = boards.length > 1 && !boardReorderMode;
   const boardTabSegments = useMemo(() => {
     if (!shouldLoopBoardTabs) return [{ id: 'main', boards, isClone: false }];
@@ -2851,7 +2856,7 @@ function HomePage({
         onMoveBoardItem(item.id, {});
         if (item.type === 'sticker' && STICKER_MAP[item.assetId]?.boardTextMode) {
           setStickerNote({ ...item });
-        } else if (item.type === 'text') {
+        } else if (item.type === 'text' || item.type === 'image') {
           markCurrentBoardActive();
           setSelectedBoardItemId(item.id);
           setQuickAdd(null);
@@ -3008,6 +3013,16 @@ function HomePage({
     });
     setQuickAdd(null);
     setPasteMenu(null);
+  };
+
+  const editSelectedBoardImage = () => {
+    if (!selectedBoardImage) return;
+    const dataUrl = selectedBoardImage.imageDataUrl || mediaUrlsById[selectedBoardImage.imageId] || '';
+    if (!dataUrl.startsWith('data:image/')) { onShowToast?.('写真を開けませんでした。'); return; }
+    try {
+      sessionStorage.setItem('usapon_handwriting_editor_source_v1', JSON.stringify({ version: 1, boardId: activeBoardId, itemId: selectedBoardImage.id, dataUrl }));
+      window.location.href = `${import.meta.env.BASE_URL}handwriting/index.html?fromBoard=${encodeURIComponent(activeBoardId)}`;
+    } catch { onShowToast?.('写真を編集ページへ渡せませんでした。'); }
   };
 
   const createImageBoardItem = async (file, position = quickAdd) => {
@@ -3725,6 +3740,12 @@ function HomePage({
                 setSelectedBoardItemId('');
               }}
             />
+          )}
+          {selectedBoardImage && !directText && (
+            <div className="board-image-toolbar" role="toolbar" aria-label="写真の操作">
+              <button type="button" onClick={editSelectedBoardImage}>写真を編集</button>
+              <button type="button" onClick={() => { onDeleteBoardItem(selectedBoardImage.id); setSelectedBoardItemId(''); }}>削除</button>
+            </div>
           )}
           {directText && (
             <form

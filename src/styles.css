@@ -3857,3 +3857,6 @@ body {
 .board-sticker-note-wide .sticker-note-text { top:12%; left:8%; width:84%; height:70%; }
 .board-sticker-note-heading .sticker-note-text { top:27%; left:7%; width:72%; height:46%; line-height:1; text-align:center; white-space:nowrap; text-overflow:ellipsis; }
 .board-sticker-note-tape .sticker-note-text { top:30%; left:10%; box-sizing:border-box; width:80%; height:40%; padding:0 2px; background:rgba(255,255,255,.48); line-height:1; text-align:center; white-space:nowrap; text-overflow:ellipsis; }
+.board-image-toolbar { position:absolute; z-index:18; left:50%; bottom:12px; display:flex; gap:6px; transform:translateX(-50%); padding:6px; border-radius:14px; background:#fffdf8; box-shadow:0 6px 18px #654c4630; }
+.board-image-toolbar button { min-height:36px; border:0; border-radius:10px; padding:6px 10px; background:#f5eadb; color:#655950; font:700 12px inherit; }
+.board-image-toolbar button:last-child { background:#fff0f2; color:#af5968; }

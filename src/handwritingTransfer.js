@@ -27,7 +27,8 @@ export const parseHandwritingTransfer = (raw) => {
       finish,
       saveToMyStickers: finish !== 'paper' && Boolean(value.saveToMyStickers),
       stickerName: typeof value.stickerName === 'string' ? value.stickerName.trim().slice(0, 48) : '',
-      stickerFolderId: typeof value.stickerFolderId === 'string' ? value.stickerFolderId.slice(0, 80) : 'unfiled'
+      stickerFolderId: typeof value.stickerFolderId === 'string' ? value.stickerFolderId.slice(0, 80) : 'unfiled',
+      boardId: typeof value.boardId === 'string' ? value.boardId.slice(0, 100) : ''
     };
   } catch {
     return null;

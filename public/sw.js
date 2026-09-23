@@ -38,6 +38,17 @@ self.addEventListener('fetch', (event) => {
   const request = event.request;
   if (request.method !== 'GET') return;
 
+  if (new URL(request.url).pathname.endsWith('/handwriting/models/isnet-general-use-q8.onnx')) {
+    event.respondWith(caches.open('usapon-cutout-model-feed6f32a').then(async (cache) => {
+      const saved = await cache.match(request);
+      if (saved) return saved;
+      const response = await fetch(request);
+      if (response.ok) event.waitUntil(cache.put(request, response.clone()).catch(() => {}));
+      return response;
+    }));
+    return;
+  }
+
   if (request.mode === 'navigate') {
     event.respondWith(
       fetch(request).then((response) => {
