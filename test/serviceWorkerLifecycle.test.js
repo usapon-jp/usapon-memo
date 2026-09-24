@@ -6,10 +6,11 @@ import vm from 'node:vm';
 const main = readFileSync(new URL('../src/main.jsx', import.meta.url), 'utf8');
 const lifecycle = main.slice(main.indexOf('const APP_BUILD_ID')).replaceAll('import.meta.env.BASE_URL', "'/usapon-memo/'");
 
-function mountLifecycle(controller) {
+function mountLifecycle(controller, href = 'https://example.test/usapon-memo/') {
   const windowEvents = {};
   const workerEvents = {};
   let reloads = 0;
+  const location = { href, reload: () => { reloads += 1; }, replace: (url) => { location.replacedWith = url; } };
   const serviceWorker = {
     controller,
     addEventListener: (name, callback) => { workerEvents[name] = callback; },
@@ -17,11 +18,12 @@ function mountLifecycle(controller) {
   };
   vm.runInNewContext(lifecycle, {
     navigator: { serviceWorker },
-    window: { addEventListener: (name, callback) => { windowEvents[name] = callback; }, location: { reload: () => { reloads += 1; } } },
+    window: { addEventListener: (name, callback) => { windowEvents[name] = callback; }, location },
+    URL,
     console
   });
   windowEvents.load();
-  return { takeControl() { serviceWorker.controller = {}; workerEvents.controllerchange(); }, reloadCount: () => reloads };
+  return { takeControl() { serviceWorker.controller = {}; workerEvents.controllerchange(); }, reloadCount: () => reloads, location };
 }
 
 test('first service worker takeover keeps the open trial editor', () => {
@@ -35,4 +37,11 @@ test('an existing service worker update reloads once', () => {
   page.takeControl();
   page.takeControl();
   assert.equal(page.reloadCount(), 1);
+});
+
+test('an update during the trial entry restores its consumed URL marker', () => {
+  const page = mountLifecycle({}, 'https://example.test/usapon-memo/?trial=autumn&source=booth');
+  page.location.href = 'https://example.test/usapon-memo/?source=booth';
+  page.takeControl();
+  assert.equal(page.location.replacedWith, 'https://example.test/usapon-memo/?source=booth&trial=autumn');
 });

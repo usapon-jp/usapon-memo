@@ -15,11 +15,18 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     let refreshing = false;
     const hadController = Boolean(navigator.serviceWorker.controller);
+    const enteredFromAutumnTrial = new URL(window.location.href).searchParams.get('trial') === 'autumn';
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       // A first install takes control after this page has already opened. Keep
       // its in-progress URL state; only reload when replacing an old worker.
       if (!hadController || refreshing) return;
       refreshing = true;
+      if (enteredFromAutumnTrial) {
+        const reloadUrl = new URL(window.location.href);
+        reloadUrl.searchParams.set('trial', 'autumn');
+        window.location.replace(reloadUrl.href);
+        return;
+      }
       window.location.reload();
     });
 
