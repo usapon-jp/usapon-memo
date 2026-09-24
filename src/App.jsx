@@ -83,12 +83,15 @@ import { captureBoardUndo, emptyBoardUndoHistory, redoBoardAction, undoBoardActi
 import {
   MEDIA_KINDS,
   createMediaId,
+  deleteMediaRecord,
   getAllMediaRecords,
+  getMediaRecord,
   putMediaRecord,
   putMediaRecords
 } from './mediaStorage.js';
 import { canAutoOfferInstall, detectInstallContext, INSTALL_GUIDE_HIDDEN_KEY } from './installGuide.js';
 import { HANDWRITING_TRANSFER_KEY, parseHandwritingTransfer } from './handwritingTransfer.js';
+import { PHOTO_FLOW_CONTEXT_KEY, PHOTO_FLOW_RESULT_KEY, parsePhotoFlowContext, parsePhotoFlowResult } from './photoFlowTransfer.js';
 import {
   MY_STICKER_FOLDER_LIMIT,
   MY_STICKER_LIMIT,
@@ -253,11 +256,9 @@ const formatBytes = (bytes = 0) => {
   return `${(bytes / 1024 / 1024).toFixed(2)}MB`;
 };
 
-const formatCompressionMessage = (label, result) => {
-  if (!result?.originalBytes || !result?.compressedBytes) return '';
-  const savedPercent = Math.max(0, Math.round((1 - result.compressedBytes / result.originalBytes) * 100));
-  return `${label}を圧縮しました: ${formatBytes(result.originalBytes)} → ${formatBytes(result.compressedBytes)}（${savedPercent}%削減）`;
-};
+const formatCompressionMessage = (_label, result) => (
+  result?.originalBytes > result?.compressedBytes ? '圧縮しました' : ''
+);
 
 const logImageCompressionDebug = (label, result) => {
   const debugInfo = {
@@ -440,7 +441,6 @@ const compressImageFile = async (file, options = {}) => {
   };
 };
 
-const resizeImageFile = async (file) => compressImageFile(file, { preserveTransparency: false, maxLongSide: 1200 });
 const resizeFreeImageFile = async (file) => compressImageFile(file, { preserveTransparency: true, maxLongSide: 1200 });
 
 const createThumbnailDataUrl = async (dataUrl, maxLongSide = 360) => {
@@ -833,6 +833,7 @@ export default function App() {
   const autumnStickerSourcesRef = useRef({});
   const autumnStickerRequestRef = useRef(0);
   const handwritingTransferConsumedRef = useRef(false);
+  const photoFlowReturnHandledRef = useRef(false);
   const latestDataRef = useRef(data);
   const autosaveTimerRef = useRef(null);
   latestDataRef.current = data;
@@ -1091,6 +1092,51 @@ export default function App() {
       window.removeEventListener('pagehide', flushForPageHide);
       if (autosaveTimerRef.current) saveLatestData('unmount', false);
     };
+  }, [mediaReady]);
+
+  useEffect(() => {
+    if (!mediaReady || photoFlowReturnHandledRef.current) return;
+    const url = new URL(window.location.href);
+    const returning = url.searchParams.get('photoFlowReturn');
+    if (!['apply', 'cancel'].includes(returning)) return;
+    photoFlowReturnHandledRef.current = true;
+    const restorePhotoFlow = async () => {
+      try {
+        const context = parsePhotoFlowContext(sessionStorage.getItem(PHOTO_FLOW_CONTEXT_KEY));
+        if (!context) throw new Error('写真の編集内容を開けませんでした。');
+        const result = returning === 'apply' ? parsePhotoFlowResult(sessionStorage.getItem(PHOTO_FLOW_RESULT_KEY)) : null;
+        if (returning === 'apply' && !result) throw new Error('編集した写真を受け取れませんでした。');
+        const resultRecord = result ? await getMediaRecord(result.mediaId) : null;
+        if (result && !resultRecord?.dataUrl) throw new Error('編集した写真を読み込めませんでした。');
+        const photoRecord = resultRecord
+          ? await saveMedia(MEDIA_KINDS.photoCard, {
+            dataUrl: resultRecord.dataUrl,
+            mimeType: resultRecord.mimeType,
+            naturalWidth: resultRecord.width,
+            naturalHeight: resultRecord.height
+          })
+          : await getMediaRecord(context.mediaId);
+        if (!photoRecord?.dataUrl) throw new Error('元の写真を読み込めませんでした。');
+        setDraft({
+          ...normalizeMemo(context.draft),
+          photoPlacement: context.placement,
+          photoDataUrl: photoRecord.dataUrl,
+          photoImageId: photoRecord.id,
+          photoAspectRatio: photoRecord.width && photoRecord.height ? photoRecord.width / photoRecord.height : context.draft.photoAspectRatio
+        });
+        setActiveBoardId(context.draft.boardId);
+        setPage('create');
+        sessionStorage.removeItem(PHOTO_FLOW_CONTEXT_KEY);
+        sessionStorage.removeItem(PHOTO_FLOW_RESULT_KEY);
+        if (result) void deleteMediaRecord(result.mediaId).catch(error => console.warn('[usapon-memo photo flow cleanup]', error));
+        url.searchParams.delete('photoFlowReturn');
+        window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
+      } catch (error) {
+        console.error('[usapon-memo photo flow return failed]', error);
+        setAppToast(error.message || '写真の編集内容を開けませんでした。');
+      }
+    };
+    void restorePhotoFlow();
   }, [mediaReady]);
 
   useEffect(() => {
@@ -1599,6 +1645,18 @@ export default function App() {
     return nextItem;
   };
 
+  const finishDirectPhoto = ({ boardId, mediaRecord }) => {
+    addBoardItem({
+      type: 'image', boardId, imageDataUrl: '', imageId: mediaRecord.id,
+      imageMimeType: mediaRecord.mimeType, naturalWidth: mediaRecord.width,
+      naturalHeight: mediaRecord.height, x: 28, y: 28
+    });
+    setActiveBoardId(boardId);
+    setPage('home');
+    setDraft(createDraft({ boardId }));
+    setAppToast('画像をボードに貼りました。');
+  };
+
   const patchBoardItem = (id, patch) => {
     setData(current => ({
       ...current,
@@ -2019,6 +2077,7 @@ export default function App() {
           setDraft={setDraft}
           onBack={() => setPage('home')}
           onSave={saveMemo}
+          onSaveBoardImage={finishDirectPhoto}
           onSaveMedia={saveMedia}
           onShowToast={setAppToast}
         />
@@ -4378,6 +4437,7 @@ function MemoCreatePage({
   setDraft,
   onBack,
   onSave,
+  onSaveBoardImage,
   onSaveMedia,
   onShowToast
 }) {
@@ -4393,16 +4453,20 @@ function MemoCreatePage({
   const photoInputRef = useRef(null);
   const createCardRef = useRef(null);
   const photoPointersRef = useRef(new globalThis.Map());
+  const photoTapStartRef = useRef(new globalThis.Map());
   const photoGestureRef = useRef(null);
   const contentPointersRef = useRef(new globalThis.Map());
   const contentGestureRef = useRef(null);
   const stickerGestureRef = useRef(null);
   const draftRef = useRef(draft);
+  const photoPlacement = draft.photoPlacement === 'image' ? 'image' : 'card';
+  const hasPhoto = Boolean(draft.photoDataUrl || draft.photoImageId);
+  const imageOnly = draft.cardType === 'photo' && photoPlacement === 'image';
   const cardResizeRef = useRef(null);
   const checklistInputRefs = useRef({});
   const pendingFocusId = useRef(null);
   const canSave = draft.cardType === 'photo'
-    ? Boolean(draft.photoDataUrl || draft.photoImageId || draft.caption.trim() || draft.title.trim())
+    ? (imageOnly ? hasPhoto : Boolean(hasPhoto || draft.caption.trim() || draft.title.trim()))
     : draft.cardType === 'schedule'
       ? Boolean(draft.title.trim() || draft.scheduleDate || draft.scheduleTime || draft.schedulePlace || draft.stickers.length)
       : draft.cardType === 'link'
@@ -4414,7 +4478,7 @@ function MemoCreatePage({
   const selectedPaletteColor = draft.cardType === 'photo' ? draft.tapeColor : draft.color;
   const paletteLabel = draft.cardType === 'photo' ? 'マステ色' : 'メモ色';
   const createCardStyle = {
-    ...getCreateCardSizeStyle(draft),
+    ...(imageOnly ? { width: 'min(100%, 300px)', height: 'auto', minHeight: 0 } : getCreateCardSizeStyle(draft)),
     '--memo-tape-color': getTapeColor(draft.cardType === 'photo' ? draft.tapeColor : draft.color),
     '--photo-tape-color': getTapeColor(draft.tapeColor || draft.color)
   };
@@ -4519,7 +4583,7 @@ function MemoCreatePage({
     if (!file) return;
     setImageBusy(true);
     try {
-      const image = await resizeImageFile(file);
+      const image = await resizeFreeImageFile(file);
       logImageCompressionDebug('写真', image);
       const mediaRecord = await onSaveMedia?.(MEDIA_KINDS.photoCard, image);
       setDraft(current => ({
@@ -4669,14 +4733,16 @@ function MemoCreatePage({
   };
 
   const startPhotoDrag = (event) => {
-    if (!draft.photoDataUrl && !draft.photoImageId) return;
+    if (imageOnly || (!draft.photoDataUrl && !draft.photoImageId)) return;
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
+    photoTapStartRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
     photoPointersRef.current.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
     resetPhotoGesture();
   };
 
   const movePhotoDrag = (event) => {
+    if (imageOnly) return;
     if (!photoPointersRef.current.has(event.pointerId)) return;
     photoPointersRef.current.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
     const gesture = photoGestureRef.current;
@@ -4706,8 +4772,11 @@ function MemoCreatePage({
   };
 
   const stopPhotoDrag = (event) => {
+    const origin = photoTapStartRef.current.get(event.pointerId);
+    photoTapStartRef.current.delete(event.pointerId);
     photoPointersRef.current.delete(event.pointerId);
     resetPhotoGesture();
+    if (origin && Math.hypot(event.clientX - origin.x, event.clientY - origin.y) < 8 && !imageOnly) setPhotoToolsOpen(true);
   };
 
   const resetContentGesture = () => {
@@ -4981,7 +5050,54 @@ function MemoCreatePage({
     setSelectedStickerId(current => current === id ? '' : current);
   };
 
-  const cleanAndSave = () => {
+  const photoSource = () => draft.photoDataUrl || mediaUrlsById[draft.photoImageId] || '';
+  const sourceImageSize = (dataUrl) => new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve({ naturalWidth: image.naturalWidth, naturalHeight: image.naturalHeight });
+    image.onerror = reject;
+    image.src = dataUrl;
+  });
+
+  const openPhotoEditor = async () => {
+    const source = photoSource();
+    if (!source.startsWith('data:image/')) { onShowToast?.('写真を開けませんでした。'); return; }
+    setImageBusy(true);
+    try {
+      let mediaId = draft.photoImageId;
+      if (!mediaId) {
+        const size = await sourceImageSize(source);
+        const record = await onSaveMedia(MEDIA_KINDS.photoCard, { ...makeImageResultFromDataUrl(source), ...size });
+        mediaId = record.id;
+      }
+      sessionStorage.setItem(PHOTO_FLOW_CONTEXT_KEY, JSON.stringify({
+        version: 1,
+        mediaId,
+        placement: photoPlacement,
+        draft: { ...draft, photoDataUrl: '', photoImageId: mediaId }
+      }));
+      window.location.href = `${import.meta.env.BASE_URL}handwriting/index.html?photoFlow=1`;
+    } catch (error) {
+      console.error('[usapon-memo photo edit handoff failed]', error);
+      onShowToast?.('写真を編集画面へ渡せませんでした。');
+      setImageBusy(false);
+    }
+  };
+
+  const cleanAndSave = async () => {
+    if (imageOnly) {
+      const source = photoSource();
+      if (!source.startsWith('data:image/')) return;
+      setImageBusy(true);
+      try {
+        const size = await sourceImageSize(source);
+        const record = await onSaveMedia(MEDIA_KINDS.boardImage, { ...makeImageResultFromDataUrl(source), ...size });
+        onSaveBoardImage({ boardId: draft.boardId, mediaRecord: record });
+      } catch (error) {
+        console.error('[usapon-memo direct photo save failed]', error);
+        onShowToast?.('画像をボードに貼れませんでした。');
+      } finally { setImageBusy(false); }
+      return;
+    }
     const nextDraft = normalizeMemo({
       ...draft,
       photoDataUrl: draft.photoImageId ? '' : draft.photoDataUrl,
@@ -5012,7 +5128,7 @@ function MemoCreatePage({
         <button type="button" className="create-nav-button" onClick={onBack} aria-label="ホームへ戻る">
           <ArrowLeft size={34} strokeWidth={2.4} />
         </button>
-        <h1 className="create-title">{draft.cardType === 'photo' ? '写真カード' : draft.cardType === 'schedule' ? '予定カード' : draft.cardType === 'link' ? 'リンクカード' : 'やることリスト'}</h1>
+        <h1 className="create-title">{draft.cardType === 'photo' ? '写真を貼る' : draft.cardType === 'schedule' ? '予定カード' : draft.cardType === 'link' ? 'リンクカード' : 'やることリスト'}</h1>
         {ENABLE_CREATE_SETTINGS_PANEL ? (
           <button
             type="button"
@@ -5023,7 +5139,7 @@ function MemoCreatePage({
           >
             <MoreHorizontal size={32} strokeWidth={3} />
           </button>
-        ) : <button type="button" className="create-save-button" onClick={cleanAndSave} disabled={!canSave || imageBusy}><Check size={17} strokeWidth={2.6} />ホームに追加</button>}
+        ) : <button type="button" className="create-save-button" onClick={cleanAndSave} disabled={!canSave || imageBusy}><Check size={17} strokeWidth={2.6} />{draft.cardType === 'photo' ? 'ボードに貼る' : 'ホームに追加'}</button>}
       </header>
 
       <StickyNoteCard
@@ -5034,7 +5150,7 @@ function MemoCreatePage({
         cardType={draft.cardType}
         textSize={stickyTextSize}
         textWeight={stickyTextWeight}
-        className={`create-card create-${draft.cardType} ${resizingCard ? 'is-resizing' : ''}`}
+        className={`create-card create-${draft.cardType} ${imageOnly ? 'is-image-only' : ''} ${resizingCard ? 'is-resizing' : ''}`}
         style={createCardStyle}
         onPointerDown={startContentAdjust}
         onPointerMove={moveContentAdjust}
@@ -5062,14 +5178,14 @@ function MemoCreatePage({
               onPointerCancel={stopPhotoDrag}
             >
               <div
-                className={`photo-picker photo-crop-frame ${getPhotoCropClass(draft.photoCropRatio)}`}
-                style={{ '--photo-frame-ratio': getPhotoFrameRatio(draft) }}
+                className={`photo-picker photo-crop-frame ${imageOnly ? 'is-custom' : getPhotoCropClass(draft.photoCropRatio)}`}
+                style={{ '--photo-frame-ratio': imageOnly ? draft.photoAspectRatio || 1 : getPhotoFrameRatio(draft) }}
                 role="button"
                 tabIndex={0}
-                aria-label={draft.photoDataUrl || draft.photoImageId ? '写真の切り抜き位置を調整' : '写真を選ぶ'}
+                aria-label={draft.photoDataUrl || draft.photoImageId ? (imageOnly ? '貼り付ける画像' : '写真の切り抜き位置を調整') : '写真を選ぶ'}
                 onClick={() => {
                   if (draft.photoDataUrl || draft.photoImageId) {
-                    setPhotoToolsOpen(true);
+                    if (!imageOnly) setPhotoToolsOpen(true);
                   } else {
                     photoInputRef.current?.click();
                   }
@@ -5084,7 +5200,7 @@ function MemoCreatePage({
                 <input ref={photoInputRef} type="file" accept="image/*" onChange={handlePhotoChange} />
                 {draft.photoDataUrl ? (
                   <>
-                    <img src={draft.photoDataUrl} alt="選択した写真" style={getPhotoImageStyle(draft)} draggable="false" />
+                    <img src={draft.photoDataUrl} alt="選択した写真" style={imageOnly ? { width: '100%', height: '100%', transform: 'translate(-50%, -50%)', objectFit: 'contain' } : getPhotoImageStyle(draft)} draggable="false" />
                   </>
                 ) : draft.photoImageId ? (
                   <span><Camera size={28} />画像を読み込み中</span>
@@ -5093,12 +5209,8 @@ function MemoCreatePage({
                 )}
               </div>
             </div>
-            {(draft.photoDataUrl || draft.photoImageId) && photoToolsOpen && (
+            {hasPhoto && photoToolsOpen && !imageOnly && (
               <div className="photo-tools" aria-label="写真操作">
-                <div className="photo-tool-actions">
-                  <button type="button" onClick={() => photoInputRef.current?.click()}>差し替え</button>
-                  <button type="button" onClick={removePhoto}>削除</button>
-                </div>
                 <div className="photo-fit-actions" aria-label="写真の表示方法">
                   <button
                     type="button"
@@ -5117,14 +5229,14 @@ function MemoCreatePage({
                 </div>
               </div>
             )}
-            <input
+            {!imageOnly && <input
               ref={primaryInputRef}
               type="text"
               value={draft.caption}
               placeholder="キャプション"
               aria-label="写真のキャプション"
               onChange={(event) => setDraft(current => ({ ...current, caption: event.target.value }))}
-            />
+            />}
           </div>
         ) : (
           <div className="create-content-layer content-offset-layer" style={getContentOffsetStyle(draft)}>
@@ -5288,15 +5400,29 @@ function MemoCreatePage({
             )}
           </div>
         )}
-        <button
+        {!imageOnly && <button
           type="button"
           className="card-resize-handle"
           onPointerDown={startCardResize}
           aria-label="カードサイズを変更"
-        />
+        />}
       </StickyNoteCard>
 
-      <section className="memo-options">
+      {draft.cardType === 'photo' && hasPhoto && (
+        <div className="photo-flow-options">
+          <div className="photo-placement-tabs" role="group" aria-label="写真の貼り方">
+            <button type="button" aria-pressed={!imageOnly} onClick={() => setDraft(current => ({ ...current, photoPlacement: 'card' }))}><StickyNote size={17} />カード</button>
+            <button type="button" aria-pressed={imageOnly} onClick={() => setDraft(current => ({ ...current, photoPlacement: 'image' }))}><ImagePlus size={17} />画像だけ</button>
+          </div>
+          <div className="photo-flow-actions">
+            <button type="button" onClick={() => void openPhotoEditor()} disabled={imageBusy}><Pencil size={16} />写真を編集</button>
+            <button type="button" onClick={() => photoInputRef.current?.click()}><ImagePlus size={16} />差し替え</button>
+            <button type="button" onClick={removePhoto} aria-label="写真を削除" title="写真を削除"><Trash2 size={17} /></button>
+          </div>
+        </div>
+      )}
+
+      {!imageOnly && <section className="memo-options">
         <div className="color-row" aria-label={paletteLabel}>
           {COLOR_OPTIONS.map(color => (
             <button
@@ -5326,7 +5452,7 @@ function MemoCreatePage({
             updateCardType={updateCardType}
           />
         )}
-      </section>
+      </section>}
 
     </section>
   );

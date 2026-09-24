@@ -97,6 +97,11 @@ export const getMediaRecord = async (id) => {
   }));
 };
 
+export const deleteMediaRecord = async (id) => {
+  if (!id) return;
+  await withMediaStore('readwrite', store => store.delete(id));
+};
+
 export const getAllMediaRecords = async () => (
   withMediaStore('readonly', store => new Promise((resolve, reject) => {
     const request = store.getAll();

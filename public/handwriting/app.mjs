@@ -12,7 +12,17 @@ import { setupColorPalettes } from './core/palette.mjs';
 import { renderLayerBuffers, compositeLayers } from './core/render.mjs?v=20260923-pencil3';
 import { StickerEditor, loadEditorDraft, saveEditorDraft, listEditorDrafts, renameEditorDraft } from './core/sticker-editor.mjs?v=20260924-region-preview2';
 import { removeBackgroundOnDevice } from './core/background-removal.mjs';
+import { readPhotoFlowImage, savePhotoFlowImage } from './core/photo-flow.mjs';
 const $ = id => document.getElementById(id);
+const PHOTO_FLOW_CONTEXT_KEY = 'usapon_photo_flow_context_v1';
+const PHOTO_FLOW_RESULT_KEY = 'usapon_photo_flow_result_v1';
+let photoFlowContext = null;
+if (new URLSearchParams(window.location.search).get('photoFlow') === '1') {
+  try {
+    const candidate = JSON.parse(sessionStorage.getItem(PHOTO_FLOW_CONTEXT_KEY) || 'null');
+    if (candidate?.version === 1 && candidate.draft?.cardType === 'photo' && typeof candidate.mediaId === 'string') photoFlowContext = candidate;
+  } catch { /* The normal editor remains available if the transfer is unavailable. */ }
+}
 const canvas = $('drawing'); const ctx = canvas.getContext('2d');
 const SQUARE_CANVAS_SIZE = 1400;
 const DRAFT_STORAGE_KEY = 'usapon_handwriting_draft_v1';
@@ -25,7 +35,7 @@ let activeDraftCreatedAt = null;
 let initialDocument = newDocument({ width: SQUARE_CANVAS_SIZE, height: SQUARE_CANVAS_SIZE });
 let initialEditor = [];
 let legacySaved = null;
-try {
+if (!photoFlowContext) try {
   const saved = localStorage.getItem(DRAFT_STORAGE_KEY);
   if (saved) {
     const decoded = JSON.parse(saved);
@@ -39,7 +49,7 @@ try {
 } catch (error) {
   console.warn('Saved handwriting could not be restored.', error);
 }
-try {
+if (!photoFlowContext) try {
   const savedEditor = await loadEditorDraft(activeDraftId) || (activeDraftId !== STICKER_DRAFT_ID ? await loadEditorDraft(STICKER_DRAFT_ID) : null);
   if (savedEditor) {
     activeDraftId = savedEditor.id;
@@ -71,8 +81,23 @@ dirty = false;
 // Board handoff is deliberately separate from the PNG return transfer.  The source stays on
 // the board and its original Blob is copied into the editor's local IndexedDB store.
 try {
+  if (photoFlowContext) {
+    document.body.classList.add('is-photo-flow');
+    $('photoFlowBack').href = '../?photoFlowReturn=cancel';
+    $('photoFlowBack').setAttribute('aria-label', '写真の貼り方に戻る');
+    document.querySelector('.brand span').textContent = '写真を編集';
+    const source = await readPhotoFlowImage(photoFlowContext.mediaId);
+    if (!source?.dataUrl?.startsWith('data:image/')) throw new Error('写真を読み込めませんでした');
+    const blob = await (await fetch(source.dataUrl)).blob();
+    await editor.addFiles([new File([blob], 'photo-to-edit', { type: source.mimeType || blob.type || 'image/png' })]);
+    editor.mode = 'select';
+    editor.past = []; editor.future = []; actionPast = []; actionFuture = [];
+    syncElementPanel();
+    $('photoFlowApply').hidden = false;
+    $('status').textContent = '写真を編集して、右上の「写真に反映」で戻れます';
+  }
   const sourceRaw = sessionStorage.getItem('usapon_handwriting_editor_source_v1');
-  if (sourceRaw) {
+  if (sourceRaw && !photoFlowContext) {
     const source = JSON.parse(sourceRaw);
     handoffBoardId = typeof source.boardId === 'string' ? source.boardId : '';
     if (typeof source.dataUrl === 'string' && source.dataUrl.startsWith('data:image/')) {
@@ -84,6 +109,26 @@ try {
     }
   }
 } catch (error) { console.warn('Board image handoff could not be opened.', error); }
+$('photoFlowBack').addEventListener('click', () => { if (photoFlowContext) dirty = false; });
+$('photoFlowApply').addEventListener('click', async () => {
+  if (!photoFlowContext) return;
+  const item = editor.elements.find(element => element.type === 'image');
+  if (!item?.source) { message('編集する写真がありません'); return; }
+  $('photoFlowApply').disabled = true;
+  try {
+    const image = await new Promise((resolve, reject) => {
+      const next = new Image(); next.onload = () => resolve(next); next.onerror = reject; next.src = item.source;
+    });
+    const mediaId = await savePhotoFlowImage(item.source, image.naturalWidth, image.naturalHeight);
+    sessionStorage.setItem(PHOTO_FLOW_RESULT_KEY, JSON.stringify({ version: 1, mediaId }));
+    dirty = false;
+    window.location.href = '../?photoFlowReturn=apply';
+  } catch (error) {
+    console.error('[photo flow apply failed]', error);
+    message('編集した写真を戻せませんでした。もう一度お試しください');
+    $('photoFlowApply').disabled = false;
+  }
+});
 let activeBrush = null;
 let activeLayerId=history.document.layers[0].id, layerBuffers=null, activeLayerIndex=0;
 const layerWork=document.createElement('canvas');

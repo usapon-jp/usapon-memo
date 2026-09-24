@@ -12,6 +12,14 @@
   font-size: 9px;
 }
 
+.photo-flow-apply[hidden] { display: none; }
+.is-photo-flow #draftsOpen,
+.is-photo-flow #save,
+.is-photo-flow #paste,
+.is-photo-flow .header-actions > .more,
+.is-photo-flow .dock { display: none; }
+.is-photo-flow .header-actions .photo-flow-apply { display: inline-flex; }
+
 .element-panel.is-photo .element-panel-head,
 .element-panel.is-photo .element-actions {
   display: none;
