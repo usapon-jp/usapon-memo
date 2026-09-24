@@ -89,9 +89,10 @@ import {
   putMediaRecord,
   putMediaRecords
 } from './mediaStorage.js';
-import { canAutoOfferInstall, detectInstallContext, INSTALL_GUIDE_HIDDEN_KEY } from './installGuide.js';
+import { detectInstallContext, INSTALL_GUIDE_HIDDEN_KEY } from './installGuide.js';
 import { HANDWRITING_TRANSFER_KEY, parseHandwritingTransfer } from './handwritingTransfer.js';
 import { PHOTO_FLOW_CONTEXT_KEY, PHOTO_FLOW_RESULT_KEY, parsePhotoFlowContext, parsePhotoFlowResult } from './photoFlowTransfer.js';
+import { consumeAutumnTrialEntry } from './trialEntry.js';
 import {
   MY_STICKER_FOLDER_LIMIT,
   MY_STICKER_LIMIT,
@@ -823,11 +824,9 @@ export default function App() {
   const [installContext] = useState(detectInstallContext);
   const [installGuideOpen, setInstallGuideOpen] = useState(false);
   const [materialPack, setMaterialPack] = useState('');
+  const [editorStickerPack, setEditorStickerPack] = useState('');
   const [autumnStickerAccess, setAutumnStickerAccess] = useState({ status: 'loading', sources: {}, error: '' });
-  const [installGuideHidden, setInstallGuideHidden] = useState(() => {
-    try { return localStorage.getItem(INSTALL_GUIDE_HIDDEN_KEY) === '1'; } catch { return false; }
-  });
-  const installOfferShownRef = useRef(false);
+  const trialEntryConsumedRef = useRef(false);
   const initializedBoardRef = useRef(false);
   const snapshotStageRef = useRef(null);
   const autumnStickerSourcesRef = useRef({});
@@ -1231,6 +1230,17 @@ export default function App() {
   }, [installContext.isStandalone]);
 
   useEffect(() => {
+    if (trialEntryConsumedRef.current) return;
+    const entry = consumeAutumnTrialEntry(window.location.href);
+    if (!entry) return;
+    trialEntryConsumedRef.current = true;
+    setDraft(createDraft({ boardId: activeBoardId }));
+    setEditorStickerPack(entry.initialStickerPack);
+    setPage('create');
+    window.history.replaceState(window.history.state, '', entry.cleanPath);
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
     const initializeMedia = async () => {
       try {
@@ -1564,7 +1574,6 @@ export default function App() {
       updatedAt: new Date().toISOString()
     });
 
-    const isFirstMemo = data.memos.length === 0;
     setData(current => {
       const exists = current.memos.some(item => item.id === nextMemo.id);
       return {
@@ -1578,10 +1587,6 @@ export default function App() {
     setPage('home');
     setDraft(createDraft({ boardId: nextMemo.boardId }));
     setAppToast('メモを保存しました。');
-    if (isFirstMemo && !installOfferShownRef.current && canAutoOfferInstall(installContext, installGuideHidden)) {
-      installOfferShownRef.current = true;
-      setInstallGuideOpen(true);
-    }
   };
 
   const patchMemo = (id, patch) => {
@@ -1792,7 +1797,6 @@ export default function App() {
 
   const hideInstallGuide = () => {
     try { localStorage.setItem(INSTALL_GUIDE_HIDDEN_KEY, '1'); } catch { /* 現在の表示だけ閉じる */ }
-    setInstallGuideHidden(true);
     setInstallGuideOpen(false);
   };
 
@@ -1822,6 +1826,7 @@ export default function App() {
   };
 
   const openNewCard = (cardType = 'checklist') => {
+    setEditorStickerPack('');
     setDraft(createDraft({
       boardId: activeBoardId,
       cardType,
@@ -1988,6 +1993,7 @@ export default function App() {
   };
 
   const openEditMemo = (memo) => {
+    setEditorStickerPack('');
     const photoDataUrl = memo.photoDataUrl || (memo.photoImageId ? mediaUrlsById[memo.photoImageId] : '');
     setDraft(normalizeMemo({
       ...memo,
@@ -2074,6 +2080,7 @@ export default function App() {
           customStickers={data.customStickers}
           customStickerFolders={data.customStickerFolders}
           mediaUrlsById={mediaUrlsById}
+          initialStickerPack={editorStickerPack}
           setDraft={setDraft}
           onBack={() => setPage('home')}
           onSave={saveMemo}
@@ -3670,7 +3677,7 @@ function HomePage({
           </button>
           <button type="button" onClick={() => openMenuPage('stickers')}>
             <StickyNote size={19} />
-            ステッカー
+            ステッカー管理
           </button>
           <button type="button" onClick={() => { window.location.href = `${import.meta.env.BASE_URL}handwriting/index.html`; }}>
             <Pencil size={19} />
@@ -4434,6 +4441,7 @@ function MemoCreatePage({
   customStickers = [],
   customStickerFolders = [],
   mediaUrlsById = {},
+  initialStickerPack = '',
   setDraft,
   onBack,
   onSave,
@@ -5440,7 +5448,7 @@ function MemoCreatePage({
         </div>
 
         {draft.cardType !== 'photo' && (
-          <StickerTabs stickerIds={visibleStickerIds} preferences={stickerSetPreferences} onSelect={(id,event) => addStickerToCorner(event,id)}
+          <StickerTabs key={initialStickerPack || 'default'} stickerIds={visibleStickerIds} initialPack={initialStickerPack || 'default'} preferences={stickerSetPreferences} onSelect={(id,event) => addStickerToCorner(event,id)}
             customStickers={customStickers} customFolders={customStickerFolders} customMediaUrls={mediaUrlsById} onSelectCustom={addCustomStickerToCorner} />
         )}
 

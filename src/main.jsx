@@ -14,8 +14,11 @@ const APP_BUILD_ID = typeof __APP_BUILD_ID__ === 'string' ? __APP_BUILD_ID__ : '
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     let refreshing = false;
+    const hadController = Boolean(navigator.serviceWorker.controller);
     navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if (refreshing) return;
+      // A first install takes control after this page has already opened. Keep
+      // its in-progress URL state; only reload when replacing an old worker.
+      if (!hadController || refreshing) return;
       refreshing = true;
       window.location.reload();
     });
